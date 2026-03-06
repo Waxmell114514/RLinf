@@ -205,10 +205,11 @@ EOF
     # calls explicitly target the venv's interpreter, bypassing automatic environment
     # discovery.  This prevents `uv pip` from escaping to the system Python on
     # platforms such as Colab/Kaggle where CONDA_PREFIX or other env vars interfere
-    # with uv's venv detection.  realpath is used to turn the potentially-relative
-    # VENV_DIR into an absolute path, which stays correct even if the working
-    # directory changes later in the script.
-    export UV_PYTHON="$(realpath "$VENV_DIR/bin/python")"
+    # with uv's venv detection.  We use `cd … && pwd` rather than `realpath` so
+    # that the path stays as the venv directory itself (no symlink resolution).
+    # Resolving symlinks with realpath can lead to the uv-managed base interpreter,
+    # which uv treats as externally managed and refuses to install packages into.
+    export UV_PYTHON="$(cd "$VENV_DIR" && pwd)/bin/python"
 }
 
 install_flash_attn() {
