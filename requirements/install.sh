@@ -201,6 +201,14 @@ EOF
         source "$VENV_DIR/bin/activate"
     fi
     UV_TORCH_BACKEND=auto uv sync --active $NO_INSTALL_RLINF_CMD
+    # Export UV_PYTHON so that all subsequent `uv pip install` / `uv pip uninstall`
+    # calls explicitly target the venv's interpreter, bypassing automatic environment
+    # discovery.  This prevents `uv pip` from escaping to the system Python on
+    # platforms such as Colab/Kaggle where CONDA_PREFIX or other env vars interfere
+    # with uv's venv detection.  realpath is used to turn the potentially-relative
+    # VENV_DIR into an absolute path, which stays correct even if the working
+    # directory changes later in the script.
+    export UV_PYTHON="$(realpath "$VENV_DIR/bin/python")"
 }
 
 install_flash_attn() {
