@@ -101,12 +101,14 @@ python experiments/efference_probe/run_probes.py \
 | Gate | Expected | If it fails |
 |---|---|---|
 | P0 (shuffled labels) | 0.45–0.55 | the pipeline leaks; check grouping and sample construction |
-| **P2r** (mismatch oracle) | ≥ 0.9 for `mirror`/`freeze` | labels or `states` logging are broken — fix before scaling |
+| **P2r** (mismatch oracle) | ≥ 0.9, every transform | labels or `states` logging are broken — fix before scaling |
+| C_phase (task phase alone) | ≈ 0.5 | residual phase imbalance; check the signed phase-bias block |
 | C_cmd (command alone) | ≈ 0.5 | the schedule correlates with something it should not |
 | Class step-index distributions | overlapping | phase matching is failing; see `step_index_report.csv` |
 
-> **Use P2r, not P2, as the plumbing gate.** SPEC §5 names P2, but P2 as
-> specified cannot pass. See [The P2 problem](#the-p2-problem).
+> **Use P2r, not P2, as the plumbing gate.** SPEC §5 names P2, but P2 is
+> transform-dependent: at chance for `swap`, near 1.0 for `mirror`/`freeze`.
+> See [The P2 problem](#the-p2-problem).
 
 ### S2 — main collection and core probes
 
@@ -221,31 +223,62 @@ would be order 1, not order 0.01. The run aborts if it fails.
 ### The P2 problem
 
 SPEC §3.3 defines P2 — the mechanical oracle ceiling — as logistic regression
-on `a_cmd[m] ⊕ Δstates`, and SPEC §5 uses `P2 ≥ 0.9` as the S1 gate for "the
-labels or Δstates logging are broken".
+on `a_cmd[m] ⊕ Δstates`, and SPEC §5 uses `P2 ≥ 0.9` on T1/T2 as the S1 gate
+for "the labels or Δstates logging are broken".
 
-**A linear probe on that concatenation cannot work.** "Did the world move the
-way I asked?" is an *agreement* between two vectors — a distance — and a linear
-model has no way to form one from the two blocks side by side. On synthetic
-data where the state is *exactly* driven by the executed chunk and the labels
-are fully determined, the concatenation probe scores **0.52** balanced accuracy
-while the same data with comparison features scores **0.94** (AUROC 1.00).
+**A linear probe on that concatenation cannot form the comparison.** "Did the
+world move the way I asked?" is an *agreement* between two vectors — bilinear,
+not linear — and no linear function of the two blocks side by side can express
+it. That much is a theorem, not an empirical claim.
 
-So the code reports both:
+But it does not follow that P2 sits at chance. Agreement is not the only
+linearly available signal: whenever a transform shifts the *mean* of `Δstates`,
+a linear probe separates the classes on the marginal alone, without ever
+forming a comparison. Measured on the synthetic fixture, with commands that are
+zero-mean i.i.d. versus directed (as real reaching motion is):
+
+| transform | commands | P2 (concat) | P2r (mismatch) | C_dstates alone |
+|---|---|---|---|---|
+| `swap` | zero-mean | 0.446 | 0.973 | 0.495 |
+| `swap` | directed | 0.412 | 0.982 | 0.475 |
+| `mirror` | zero-mean | 0.483 | 0.987 | 0.491 |
+| `mirror` | directed | **1.000** | 1.000 | 1.000 |
+| `freeze` | zero-mean | 0.475 | 1.000 | 0.520 |
+| `freeze` | directed | **1.000** | 1.000 | 0.996 |
+
+So, precisely:
+
+- For **`swap`** — mean-preserving, since a donor chunk has the same action
+  statistics — P2 really is at chance, in both regimes. `main.yaml`'s primary
+  transform is `swap`, so P2 will be uninformative for the headline run.
+- For **`mirror` and `freeze`** on directed motion, P2 clears 0.9 easily. These
+  are exactly the transforms SPEC §5's gate names, so **the gate will pass on
+  real data** — an earlier version of this README claimed it would false-alarm,
+  which is wrong.
+
+Either way P2 is **not interpretable as a ceiling**. When it is low it is low
+for a parameterisation reason, not because the information is absent; when it
+is high, `C_dstates` alone is high too, so it is detecting "the arm did not
+move the way arms normally move", not "the outcome disagrees with the command".
+
+Hence both are reported:
 
 - **P2** — the literal concatenation. Kept, because it is the honest *linear*
-  oracle and the right comparison for P3/P4, which are also linear probes.
+  oracle and the like-for-like comparison for P3/P4, which are also linear.
 - **P2r** — the same information plus the interaction terms the comparison
   needs: the chunk-summed command, the state delta, their elementwise products,
   and per-group norms and cosines (translation and rotation handled separately,
   since they carry different units). This is the mechanical ceiling, and the
   gate to check when validating the plumbing.
 
-The distinction is not a technicality — it is Q2 restated. P1/P3/P4 are linear
-probes *on purpose*, because the question is whether the comparison is linearly
-available. P2r says what is mechanically knowable; P2 says what is knowable
-under the same linear constraint the hidden-state probes work under. Reporting
-only one of them would misstate the ladder.
+**Use P2r for the S1 gate.** It is near 1.0 in every regime above, so it fails
+only when something is actually broken, whereas P2 is transform-dependent.
+
+One caution for the write-up: `P3 > P2` is not by itself evidence of an
+efference copy. It shows the network has already performed a comparison a
+linear probe cannot perform on raw inputs, which is interesting — but the
+efference question is P1 versus P3/P4. A sentence of the form "P3 exceeds the
+mechanical oracle" would be a category error against P2 and false against P2r.
 
 Two further controls, not in the spec, are run by default:
 
@@ -253,8 +286,12 @@ Two further controls, not in the spec, are run by default:
   *before* the hijack, so any signal here means the schedule or the phase
   matching correlates with something it should not.
 - **C_dstates** (`Δstates` alone) — how much of the label is trivially
-  mechanical. Expect this to be high for `freeze` (a frozen chunk barely moves
-  the arm) and low for `swap`.
+  mechanical. Expect this near 1.0 for `freeze`/`mirror` on directed motion
+  (the marginal shift above) and near chance for `swap`. When C_dstates is
+  high, P2 is not measuring a comparison.
+- **C_phase** (`cur_call`, `cur_call²`) — task phase alone. Bounds how much of
+  any hidden-state result could be explained by residual phase imbalance
+  between the classes.
 
 ### Probe methodology
 
@@ -267,9 +304,26 @@ Two further controls, not in the spec, are run by default:
   on. The per-`C` table is reported alongside so the ladder's ordering can be
   checked for stability. `--fast` skips selection for exploratory sweeps.
 - Balanced accuracy and AUROC, mean ± fold standard deviation.
-- The `(layer, pool)` cell used for F2/F3 is chosen as the maximum over 27
-  configurations, so it is a *reported* maximum, not an independent estimate —
-  F1 shows the whole sweep for exactly that reason.
+- The `(layer, pool)` cell used for F2/F3 is chosen as the maximum over
+  `layers x pools` configurations, so it is a *reported* maximum, not an
+  independent estimate. Comparing it against 0.5 overstates it: on a pure null
+  the maximum over 27 cells lands around 0.60, roughly +0.10 above chance.
+  Three things address that, and the ladder should be read against them rather
+  than against 0.5:
+  - **`selection_floor`** in `summary.md` runs P0 (shuffled labels) over the
+    *identical* grid and reports its maximum. That absorbs exactly the same
+    selection advantage, so it is the like-for-like floor. F2 draws it as a
+    red line.
+  - **F1 facets over every pool and includes P0**, so the whole grid the
+    maximum was taken over is visible, along with how high the null climbs
+    across it.
+  - **`--permutations N`** gives a calibrated null for the selected cell
+    specifically (report P1/P3/P4 against its p95, not against 0.5).
+
+  What is still missing: there is no significance test *between* rungs. The
+  error bars in F1/F2/F3 are cross-validation fold standard deviations, and
+  folds share training data, so they are not calibrated intervals — do not read
+  "P4's bar clears P1's" as a test.
 
 ### Sample construction
 
@@ -354,8 +408,23 @@ data/<run_id>/
 env_slot, call_idx, is_probe_episode, label, transform, donor_env_slot,
 donor_episode_id, skipped_reason, a_cmd_model, a_cmd_env, a_exec,
 states_before, states_after, logprob_sum, logprobs, entropy_mean,
-entropy_tokens, reward, success_substep, terminated, truncated,
+entropy_tokens, reward_delta, success_substep, terminated, truncated,
 first_success_call, success_flag, post_success`.
+
+`reward_delta` is named for what it is: the LIBERO env configs set
+`use_rel_reward`, so per-substep rewards telescope and the per-chunk sum is
+*(reward at the end of this chunk) − (reward at the end of the previous one)*,
+not a chunk return. Nothing in the analysis reads it; don't average it.
+
+`post_success` is always `False` as things stand — recording stops at the first
+success, so no later call is ever written. It is kept so the downstream filter
+stays correct if that rule is relaxed.
+
+Rows are written to `calls.parquet` after **every batch**, not only at the end.
+A fault three hours into a run therefore costs one batch, not the whole run.
+Episodes still running when a budget cap fires are marked `censored: true` in
+`manifest.json` and excluded from success-rate reporting — they were cut off,
+not failed.
 
 Array columns are stored **flattened**; their shapes are recorded in
 `run_config.yaml` under `schema.array_columns`. `a_cmd_model` is the policy's
@@ -410,7 +479,21 @@ python experiments/efference_probe/run_probes.py --run /tmp/synth --stage main -
   last substep of each chunk is observed, so `Δstates` is chunk-level. Set it
   false for per-substep states at a substantial rendering cost.
 - The undo-alignment metric fits the controller gain by least squares on
-  self-caused calls; it is a proxy, and is reported as a stretch number.
+  self-caused calls; it is a proxy, and is reported as a stretch number. It
+  scores the command *innovation* (the part not predicted by simply continuing
+  the previous command) rather than the raw next command — scoring the raw
+  command reduces to `+(A_prev · A_cur)` and reports a large fake "correction"
+  for any policy whose commands are temporally autocorrelated, which every
+  smooth reach is. The uncorrected number is reported alongside so the size of
+  that artefact stays visible.
+- Episode-level hijack-count/success correlations are deliberately *not*
+  reported: hijacks accumulate only while an episode runs and successful
+  episodes end early, so that correlation is strongly negative even under a
+  null. The probe-vs-clean contrast is randomised per episode and is the
+  comparison to use.
+- `Δstates` composes the end-effector rotation properly (`R_after · R_beforeᵀ`)
+  rather than subtracting absolute axis-angles componentwise, which wraps: two
+  orientations a hair apart can otherwise differ by ~2π.
 
 ---
 

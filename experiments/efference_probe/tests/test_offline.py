@@ -21,6 +21,7 @@ from efference_probe.analysis import to_markdown  # noqa: E402
 from efference_probe.config import RunConfig, load_config  # noqa: E402
 from efference_probe.datasets import (  # noqa: E402
     HiddenStore,
+    RunData,
     build_features,
     build_probe_samples,
     load_run,
@@ -329,15 +330,47 @@ def test_mismatch_oracle_recovers_the_label(synthetic_run):
     assert result.balanced_acc_mean > 0.85
 
 
-def test_concatenation_oracle_underperforms_the_comparison_oracle(synthetic_run):
-    """Documents why P2r exists: a linear model on a_cmd + dstates cannot form
-    the agreement between them, so P2 understates the mechanical ceiling."""
-    samples = build_probe_samples(
-        synthetic_run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+def test_concatenation_oracle_fails_for_mean_preserving_transforms(tmp_path):
+    """Why P2r exists, stated precisely.
+
+    A linear model on ``a_cmd + dstates`` cannot form the agreement between
+    them.  For a mean-*preserving* transform (swap: a donor chunk has the same
+    action statistics) that leaves nothing else to separate on, so P2 sits at
+    chance while the comparison features recover the label.
+    """
+    path = make_synthetic_run(
+        tmp_path / "swap", transform="swap", command_mean=0.0, seed=11
     )
-    concat = _probe(synthetic_run, samples, ["a_cmd", "dstates"], seed=0)
-    mismatch = _probe(synthetic_run, samples, ["mismatch"], seed=0)
-    assert mismatch.balanced_acc_mean > concat.balanced_acc_mean + 0.2
+    run = load_run(path)
+    samples = build_probe_samples(
+        run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+    )
+    concat = _probe(run, samples, ["a_cmd", "dstates"], seed=0)
+    mismatch = _probe(run, samples, ["mismatch"], seed=0)
+    assert concat.balanced_acc_mean < 0.65
+    assert mismatch.balanced_acc_mean > 0.85
+
+
+def test_concatenation_oracle_succeeds_for_mean_shifting_transforms(tmp_path):
+    """The counterpart, and the reason P2 is not a ceiling either way.
+
+    With directed motion, ``freeze`` shifts the mean of the state delta, so a
+    linear probe separates the classes on the marginal alone -- without ever
+    comparing command to outcome.  ``C_dstates`` rising with it is the tell.
+    SPEC 5's ``P2 >= 0.9`` gate is therefore transform-dependent, and P2r is
+    the gate to use.
+    """
+    path = make_synthetic_run(
+        tmp_path / "freeze", transform="freeze", command_mean=0.25, seed=11
+    )
+    run = load_run(path)
+    samples = build_probe_samples(
+        run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+    )
+    concat = _probe(run, samples, ["a_cmd", "dstates"], seed=0)
+    dstates_only = _probe(run, samples, ["dstates"], seed=0)
+    assert concat.balanced_acc_mean > 0.9
+    assert dstates_only.balanced_acc_mean > 0.9
 
 
 def test_planted_hidden_signal_is_recovered(synthetic_run):
@@ -348,32 +381,157 @@ def test_planted_hidden_signal_is_recovered(synthetic_run):
     assert result.balanced_acc_mean > 0.6
 
 
-def test_block_scaling_changes_feature_norms(synthetic_run):
+def test_undo_alignment_is_not_fooled_by_command_autocorrelation(tmp_path):
+    """The metric must measure correction, not command persistence.
+
+    Scoring the raw next command against the negated error reduces to
+    ``+(A_prev . A_cur)``: for `freeze` the residual is exactly
+    ``-gain * A_prev``.  So a policy that never looks at the state still scores
+    a large positive "undo alignment" purely from temporal autocorrelation in
+    its own commands -- and the SELF control cannot catch it, because for SELF
+    samples the residual is noise and the control sits at zero regardless.
+    """
+    from efference_probe.analysis import undo_alignment
+
+    path = make_synthetic_run(
+        tmp_path / "ar1",
+        transform="freeze",
+        command_autocorr=0.9,
+        seed=5,
+        episodes_per_task=10,
+        n_tasks=3,
+        n_calls=24,
+        p_hijack=0.3,
+    )
+    run = load_run(path)
+    samples = build_probe_samples(
+        run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+    )
+    report = undo_alignment(run, samples)
+
+    # The generator's policy is open-loop, so the true effect is exactly zero.
+    assert report["command_autocorrelation_rho"] > 0.7
+    assert report["uncorrected_hijack_mean_alignment"] > 0.5
+    assert abs(report["hijack_mean_alignment"]) < 0.15
+
+
+def test_block_scaling_reaches_the_classifier(synthetic_run):
+    """Scaling before StandardScaler is a no-op; it must be applied after.
+
+    ``StandardScaler`` divides every column by its own standard deviation, so a
+    per-block constant applied to the feature matrix is exactly cancelled.  The
+    control has to change the fitted model or it cannot fail.
+    """
+    from efference_probe.probes import BlockScaler
+
+    rng = np.random.default_rng(0)
+    features = rng.normal(size=(40, 6)) * np.array([1.0, 1.0, 1.0, 50.0, 50.0, 50.0])
+    spans = [("a", 3), ("b", 3)]
+    standardised = (features - features.mean(0)) / features.std(0)
+    scaled = BlockScaler(spans).transform(standardised)
+    assert np.allclose(scaled[:, :3], standardised[:, :3] / np.sqrt(3))
+    assert not np.allclose(scaled, standardised)
+    with pytest.raises(ValueError, match="block spans cover"):
+        BlockScaler([("a", 2)]).transform(standardised)
+
+
+def test_geometric_rotation_delta_does_not_wrap():
+    """Componentwise subtraction of absolute axis-angles wraps; composing does not."""
+    from efference_probe.datasets import _axis_angle_to_matrix, _matrix_to_axis_angle
+
+    before = np.array([[0.0, 0.0, -3.14159]])
+    after = np.array([[0.0, 0.0, 3.14159]])
+    naive = float(np.linalg.norm(after - before))
+    relative = _axis_angle_to_matrix(after) @ np.transpose(
+        _axis_angle_to_matrix(before), (0, 2, 1)
+    )
+    geometric = float(np.linalg.norm(_matrix_to_axis_angle(relative)))
+    assert naive > 6.0
+    assert geometric < 1e-4
+
+
+def test_phase_bias_report_detects_signed_offset():
+    """The marginal step-index report cannot see a within-pair signed bias."""
+    from efference_probe.datasets import phase_bias_report
+
+    samples = pd.DataFrame(
+        {
+            "pair_id": np.repeat(np.arange(20), 2),
+            "y": np.tile([1, 0], 20),
+            "cur_call": np.concatenate([[10 + i % 3, 7 + i % 3] for i in range(20)]),
+            "episode_id": np.repeat(np.arange(20), 2),
+        }
+    )
+    report = phase_bias_report(samples)
+    assert report["signed_mean_difference"] == pytest.approx(3.0)
+    assert report["fraction_negative_earlier"] == 1.0
+
+
+def test_global_negatives_are_not_treated_as_paired(synthetic_run):
+    samples = build_probe_samples(
+        synthetic_run.calls,
+        warmup_calls=4,
+        negatives="global",
+        rng=np.random.default_rng(0),
+    )
+    assert (samples["pair_id"] == -1).all()
+    from efference_probe.datasets import phase_bias_report
+
+    assert "note" in phase_bias_report(samples)
+
+
+def test_raw_positive_count_exceeds_kept_after_pairing(synthetic_run):
+    """Pairing drops positives non-randomly; both counts must be available."""
+    from efference_probe.datasets import count_raw_positives
+
     samples = build_probe_samples(
         synthetic_run.calls, warmup_calls=4, rng=np.random.default_rng(0)
     )
-    store = HiddenStore(synthetic_run.run_dir / "hidden")
-    plain, spans = build_features(
-        synthetic_run,
-        samples,
-        ["a_cmd", "h_cur"],
-        layer=8,
-        pool="act_mean",
-        store=store,
-        block_scaling="none",
+    raw = count_raw_positives(synthetic_run.calls, warmup_calls=4)
+    kept = int((samples["y"] == 1).sum())
+    assert raw >= kept > 0
+
+
+def test_scheduler_settings_refuse_to_guess(synthetic_run):
+    """Class boundaries must come from the run config, never from a default."""
+    from efference_probe.analysis import _scheduler_settings
+
+    stripped = RunData(
+        run_dir=synthetic_run.run_dir,
+        calls=synthetic_run.calls,
+        schema=synthetic_run.schema,
+        config={"config": {"hijack": {"transform": "swap"}}},
+        manifest={},
     )
-    scaled, _ = build_features(
-        synthetic_run,
-        samples,
-        ["a_cmd", "h_cur"],
-        layer=8,
-        pool="act_mean",
-        store=store,
-        block_scaling="sqrt_dim",
+    with pytest.raises(KeyError, match="min_clean_gap"):
+        _scheduler_settings(stripped)
+
+
+def test_vision_store_rejects_a_missing_call(tmp_path):
+    """`payload["vis"][None]` is np.newaxis, not an error -- guard required."""
+    budget = DiskBudget(tmp_path, max_gb=1.0, max_hours=1.0)
+    writer = RunWriter(tmp_path, budget)
+    writer.add_hidden(
+        0, 0, np.zeros((1, 1, 4), dtype=np.float16), np.ones(5, dtype=np.float16)
     )
-    assert plain.shape == scaled.shape
-    width = spans[0][1]
-    assert np.allclose(scaled[:, :width] * np.sqrt(width), plain[:, :width], atol=1e-4)
+    writer.flush_episode(0)
+    store = HiddenStore(tmp_path / "hidden")
+    assert store.vision([(0, 0)]).shape == (1, 5)
+    with pytest.raises(KeyError):
+        store.vision([(0, 7)])
+
+
+def test_writer_checkpoint_survives_an_interrupted_run(tmp_path):
+    """A crash must not cost every label collected so far."""
+    budget = DiskBudget(tmp_path, max_gb=1.0, max_hours=1.0)
+    writer = RunWriter(tmp_path, budget)
+    writer.add_call({"episode_id": 0, "call_idx": 0})
+    writer.checkpoint({"stop_reason": "in_progress"})
+    assert (tmp_path / "calls.parquet").is_file()
+    assert len(pd.read_parquet(tmp_path / "calls.parquet")) == 1
+    writer.add_call({"episode_id": 0, "call_idx": 1})
+    writer.checkpoint({"stop_reason": "in_progress"})
+    assert len(pd.read_parquet(tmp_path / "calls.parquet")) == 2
 
 
 # --------------------------------------------------------------------------

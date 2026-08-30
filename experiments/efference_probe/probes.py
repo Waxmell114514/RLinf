@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import balanced_accuracy_score, r2_score, roc_auc_score
@@ -62,10 +63,46 @@ class ProbeResult:
         return row
 
 
-def _make_classifier(c_value: float, max_iter: int) -> Pipeline:
+class BlockScaler(BaseEstimator, TransformerMixin):
+    """Divide each feature block by the square root of its width.
+
+    Applied *after* standardisation, which is the only place it can do
+    anything: ``StandardScaler`` divides every column by its own standard
+    deviation, so any per-block constant applied beforehand is exactly
+    cancelled.  The point is to stop a 56-dimensional action block from being
+    swamped by a 4096-dimensional hidden block under a shared L2 penalty, so
+    the reweighting has to survive to the classifier.
+    """
+
+    def __init__(self, spans: Optional[list[tuple[str, int]]] = None) -> None:
+        self.spans = spans
+
+    def fit(self, x, y=None):  # noqa: D102 - sklearn API
+        return self
+
+    def transform(self, x):  # noqa: D102 - sklearn API
+        if not self.spans:
+            return x
+        scaled = np.array(x, dtype=np.float64, copy=True)
+        start = 0
+        for _name, width in self.spans:
+            scaled[:, start : start + width] /= np.sqrt(width)
+            start += width
+        if start != scaled.shape[1]:
+            raise ValueError(
+                f"block spans cover {start} columns but the matrix has "
+                f"{scaled.shape[1]}"
+            )
+        return scaled
+
+
+def _make_classifier(
+    c_value: float, max_iter: int, spans: Optional[list[tuple[str, int]]] = None
+) -> Pipeline:
     return Pipeline(
         [
             ("scale", StandardScaler()),
+            ("blocks", BlockScaler(spans)),
             (
                 "clf",
                 # L2 is the solver default; naming it explicitly is
@@ -130,6 +167,7 @@ def run_probe(
     shuffle_labels: bool = False,
     max_iter: int = 2000,
     select_c: bool = True,
+    spans: Optional[list[tuple[str, int]]] = None,
 ) -> ProbeResult:
     """Fit and score one probe.
 
@@ -168,17 +206,19 @@ def run_probe(
         groups_train = groups[train_index]
 
         if select_c and len(c_values) > 1:
-            chosen = _select_c(x_train, y_train, groups_train, c_values, seed, max_iter)
+            chosen = _select_c(
+                x_train, y_train, groups_train, c_values, seed, max_iter, spans
+            )
         else:
             chosen = max(c_values)
-        model = _make_classifier(chosen, max_iter)
+        model = _make_classifier(chosen, max_iter, spans)
         balanced, auroc = _fit_score(model, x_train, y_train, x_test, y_test)
         result.fold_balanced_acc.append(balanced)
         result.fold_auroc.append(auroc)
         result.selected_c.append(float(chosen))
 
         for c_value in c_values:
-            fold_model = _make_classifier(c_value, max_iter)
+            fold_model = _make_classifier(c_value, max_iter, spans)
             fold_balanced, _ = _fit_score(fold_model, x_train, y_train, x_test, y_test)
             per_c_scores[c_value].append(fold_balanced)
 
@@ -203,6 +243,7 @@ def _select_c(
     c_values: tuple[float, ...],
     seed: int,
     max_iter: int,
+    spans: Optional[list[tuple[str, int]]] = None,
 ) -> float:
     """Pick C on a single inner grouped split of the outer-training data."""
     try:
@@ -218,7 +259,7 @@ def _select_c(
     train_index, validation_index = inner[0]
     best_c, best_score = max(c_values), -np.inf
     for c_value in c_values:
-        model = _make_classifier(c_value, max_iter)
+        model = _make_classifier(c_value, max_iter, spans)
         score, _ = _fit_score(
             model,
             x[train_index],
@@ -235,7 +276,7 @@ def ridge_readout(
     x: np.ndarray,
     y: np.ndarray,
     groups: np.ndarray,
-    alphas: tuple[float, ...] = (1.0, 10.0, 100.0, 1000.0),
+    alphas: tuple[float, ...] = (0.1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5),
     n_splits: int = 5,
     seed: int = 0,
 ) -> dict[str, Any]:
@@ -296,6 +337,11 @@ def ridge_readout(
         "fold_r2": fold_r2,
         "per_dim_r2": np.mean(np.stack(per_dim), axis=0).tolist(),
         "selected_alpha": selected,
+        # A grid-edge alpha means the search never bracketed the optimum, so
+        # the R^2 is a lower bound on what this representation supports.
+        "alpha_at_grid_edge": any(
+            alpha in (min(alphas), max(alphas)) for alpha in selected
+        ),
         "n_samples": int(x.shape[0]),
         "n_features": int(x.shape[1]),
     }

@@ -59,13 +59,18 @@ class DiskBudget:
         self.max_seconds = max_hours * 3600.0
         self.start = time.time()
         self._bytes = 0
+        self._output_bytes = 0
 
     def add_bytes(self, count: int) -> None:
         self._bytes += int(count)
 
+    def set_output_bytes(self, count: int) -> None:
+        """Size of files that get rewritten in place, tracked separately."""
+        self._output_bytes = int(count)
+
     @property
     def bytes_written(self) -> int:
-        return self._bytes
+        return self._bytes + self._output_bytes
 
     @property
     def elapsed_seconds(self) -> float:
@@ -73,7 +78,7 @@ class DiskBudget:
 
     def exceeded(self) -> Optional[str]:
         """Return the name of the exhausted budget, or None."""
-        if self._bytes >= self.max_bytes:
+        if self.bytes_written >= self.max_bytes:
             return "disk"
         if self.elapsed_seconds >= self.max_seconds:
             return "time"
@@ -81,7 +86,7 @@ class DiskBudget:
 
     def summary(self) -> dict[str, float]:
         return {
-            "disk_gb": self._bytes / (1024**3),
+            "disk_gb": self.bytes_written / (1024**3),
             "elapsed_hours": self.elapsed_seconds / 3600.0,
             "max_disk_gb": self.max_bytes / (1024**3),
             "max_hours": self.max_seconds / 3600.0,
@@ -184,16 +189,28 @@ class RunWriter:
         with open(path, "w") as handle:
             yaml.safe_dump(payload, handle, sort_keys=False, default_flow_style=False)
 
+    def checkpoint(self, manifest_extra: Optional[dict[str, Any]] = None) -> None:
+        """Write calls.parquet and the manifest with everything buffered so far.
+
+        Call rows live in memory until they are written, so a crash three hours
+        into a run would otherwise leave a directory full of hidden-state
+        archives with no labels to go with them -- the hidden states alone are
+        unusable, and the GPU hours unrecoverable.  Rewriting the whole parquet
+        after each batch is a few milliseconds at this scale.
+        """
+        self._write(manifest_extra)
+
     def finalize(self, manifest_extra: Optional[dict[str, Any]] = None) -> Path:
         """Flush any remaining episodes and write calls.parquet + manifest."""
         for episode_id in list(self._hidden):
             self.flush_episode(episode_id)
+        return self._write(manifest_extra)
 
+    def _write(self, manifest_extra: Optional[dict[str, Any]] = None) -> Path:
         frame = pd.DataFrame(self._rows)
         parquet_path = self.out_dir / "calls.parquet"
         if not frame.empty:
             frame.to_parquet(parquet_path, index=False)
-            self.budget.add_bytes(parquet_path.stat().st_size)
 
         manifest = {
             "n_calls": len(self._rows),
@@ -205,6 +222,15 @@ class RunWriter:
             manifest.update(manifest_extra)
         with open(self.out_dir / "manifest.json", "w") as handle:
             json.dump(manifest, handle, indent=2, default=_json_default)
+        # Budget accounting reads the directory rather than accumulating
+        # per-write sizes, so repeated checkpoints do not double-count.
+        self.budget.set_output_bytes(
+            sum(
+                path.stat().st_size
+                for path in (parquet_path, self.out_dir / "manifest.json")
+                if path.exists()
+            )
+        )
         return parquet_path
 
 

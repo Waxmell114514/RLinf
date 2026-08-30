@@ -32,9 +32,12 @@ Every number below comes from `run_probes.py`. The run card (T1) is at
 | Gate | Expected | Observed |
 |---|---|---|
 | P0 (shuffled labels) | 0.45–0.55 | |
-| P2r (mismatch oracle) | ≥ 0.9 on mirror/freeze | |
+| P2r (mismatch oracle) | ≥ 0.9, every transform | |
 | C_cmd (command alone) | ≈ 0.5 | |
+| C_phase (task phase alone) | ≈ 0.5 | |
 | Step-index overlap | classes overlap | |
+| Signed within-pair phase bias | sign test not significant | |
+| Positives kept vs available | note the drop; pairing is not random | |
 
 Greedy-vs-sampled decision (SPEC §3.7): *(fill — greedy success rate over the
 pilot vs the sampled-eval reference, and the choice made)*
@@ -55,6 +58,11 @@ Run card: *(paste `run_card.csv`)*
 | P2r | mismatch features (mechanical ceiling) | | | |
 | C_cmd | `a_cmd[m]` alone (control) | | | |
 | C_dstates | `Δstates` alone (control) | | | |
+| C_phase | `cur_call`, `cur_call²` (control) | | | |
+
+Selection-aware floor (`extra.selection_floor.max_over_cells`): *(fill — this,
+not 0.5, is the floor for P1/P3/P4, which are reported at their best cell)*
+Permutation null at the selected cell, if run (`--permutations`): *(fill)*
 
 Best `(layer, pool)`: *(fill — and note this is a maximum over 27 cells; F1
 shows the sweep)*
@@ -118,12 +126,15 @@ skipped hijacks, failed episodes, warnings)*
 
 Two things to keep in view when writing this up:
 
-1. **P2 vs P2r is a result about probe class, not about the model.** P2 sitting
-   near chance says a linear model cannot form a command–outcome comparison
-   from concatenated blocks. It does not say the mechanics are undecodable —
-   P2r shows they are. Comparing P1/P3/P4 against P2r is comparing against a
-   ceiling a linear probe cannot reach; comparing against P2 is the like-for-
-   like comparison. Say which one is being used, wherever the ladder is shown.
+1. **P2 vs P2r is a result about probe class, not about the model.** A linear
+   model cannot form a command–outcome comparison from concatenated blocks, so
+   P2 is at chance for the mean-preserving transform (`swap`). It is *not* at
+   chance for `mirror`/`freeze` on directed motion — there it separates on the
+   marginal state delta alone, which `C_dstates` will show. Either way P2 is
+   not a ceiling. Comparing P1/P3/P4 against P2r compares against a ceiling a
+   linear probe cannot reach; comparing against P2 is the like-for-like
+   comparison. Say which is being used, wherever the ladder is shown — and note
+   that `P3 > P2` is not by itself evidence of an efference copy.
 2. **Q1's null is the expected outcome.** The setup is memoryless and
    vision-only per call, so anything P1 finds above chance is most likely
    visual atypicality, not agency attribution. That should be stated as the

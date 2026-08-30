@@ -226,9 +226,9 @@ class EfferenceHarness:
     # -- main loop -------------------------------------------------------
 
     def run(self) -> Path:
-        self.setup()
-        self.writer.write_run_config(self._run_config_payload())
         try:
+            self.setup()
+            self.writer.write_run_config(self._run_config_payload())
             for task_id in self.task_ids():
                 reset_ids = self.reset_state_ids_for_task(task_id)
                 num_envs = self.cfg.env.num_envs
@@ -242,21 +242,26 @@ class EfferenceHarness:
                         break
                 if self._stop_reason is not None:
                     break
+        except BaseException as error:
+            # Rows only reach disk when they are written, so a fault at hour
+            # three would otherwise leave hidden-state archives with no labels.
+            self._stop_reason = f"failed: {type(error).__name__}: {error}"
+            raise
         finally:
             self.teardown()
-
-        parquet_path = self.writer.finalize(
-            {
-                "stop_reason": self._stop_reason or "completed",
-                "verification": self._verification,
-                "config_hash": self.cfg.hash(),
-            }
-        )
+            parquet_path = self.writer.finalize(self._manifest_extra())
         self.log(
             f"done: {self.writer.n_calls} calls -> {parquet_path} "
             f"({self.budget.summary()['disk_gb']:.2f} GB)"
         )
         return parquet_path
+
+    def _manifest_extra(self) -> dict[str, Any]:
+        return {
+            "stop_reason": self._stop_reason or "completed",
+            "verification": self._verification,
+            "config_hash": self.cfg.hash(),
+        }
 
     def _run_batch(self, task_id: int, batch_ids: np.ndarray, batch_index: int) -> None:
         """Run one batch: ``len(batch_ids)`` episodes of a single task."""
@@ -307,6 +312,7 @@ class EfferenceHarness:
         n_hijacks = {int(episode_ids[slot]): 0 for slot in range(n_real)}
 
         sampling = self._sampling_params()
+        budget_stopped = False
         for call_idx in range(self.cfg.env.max_calls_per_episode):
             if not recording.any():
                 break
@@ -378,7 +384,11 @@ class EfferenceHarness:
                     ),
                     "entropy_mean": float(captured.entropy_mean[slot]),
                     "entropy_tokens": flatten(captured.entropy_tokens[slot]),
-                    "reward": float(reward_sum[slot]),
+                    # env/libero_*.yaml sets use_rel_reward, so per-substep
+                    # rewards telescope: this sums to (reward at the end of
+                    # this chunk - reward at the end of the previous one), not
+                    # a chunk return.  Named accordingly so nobody averages it.
+                    "reward_delta": float(reward_sum[slot]),
                     "success_substep": success_substep,
                     "terminated": bool(terminated[slot].any()),
                     "truncated": bool(truncated[slot].any()),
@@ -415,9 +425,17 @@ class EfferenceHarness:
             obs = obs_after
             self.heartbeat(f"task {task_id} batch {batch_index} call {call_idx}")
             if self.budget.exceeded() is not None:
+                budget_stopped = True
                 break
 
-        self._finish_batch(rows, first_success_call, n_hijacks, task_id)
+        # Episodes still running when the budget ran out are censored, not
+        # failed: counting them as failures would understate the success rate
+        # that SPEC 3.7's greedy-vs-sampled gate compares against.
+        censored = {
+            int(episode_ids[slot]): bool(budget_stopped and recording[slot])
+            for slot in range(n_real)
+        }
+        self._finish_batch(rows, first_success_call, n_hijacks, task_id, censored)
 
     def _finish_batch(
         self,
@@ -425,6 +443,7 @@ class EfferenceHarness:
         first_success_call: dict[int, int],
         n_hijacks: dict[int, int],
         task_id: int,
+        censored: dict[int, bool],
     ) -> None:
         """Stamp episode-level outcomes onto rows and flush to disk."""
         for episode_id, episode_rows in rows.items():
@@ -434,8 +453,9 @@ class EfferenceHarness:
                 row["success_flag"] = bool(
                     success_call >= 0 and row["call_idx"] >= success_call
                 )
-                # Calls after first success carry post-hoc-contaminated states;
-                # SPEC 2 excludes them from probe data.
+                # Always False as things stand: recording stops at the
+                # first success, so no later call is ever written.  Kept so the
+                # downstream filter stays correct if that rule is relaxed.
                 row["post_success"] = bool(
                     success_call >= 0 and row["call_idx"] > success_call
                 )
@@ -447,6 +467,7 @@ class EfferenceHarness:
                     "n_calls": len(episode_rows),
                     "first_success_call": success_call,
                     "success": bool(success_call >= 0),
+                    "censored": censored.get(episode_id, False),
                     "n_hijacks": n_hijacks[episode_id],
                     "is_probe_episode": bool(
                         episode_rows[0]["is_probe_episode"] if episode_rows else False
@@ -454,6 +475,8 @@ class EfferenceHarness:
                 }
             )
             self.writer.flush_episode(episode_id)
+        # Checkpoint after every batch so a crash costs one batch, not the run.
+        self.writer.checkpoint(self._manifest_extra())
 
     # -- policy ----------------------------------------------------------
 

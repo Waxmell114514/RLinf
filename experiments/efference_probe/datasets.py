@@ -34,6 +34,7 @@ SELF = "SELF"
 BLOCK_A_CMD = "a_cmd"
 BLOCK_DSTATES = "dstates"
 BLOCK_MISMATCH = "mismatch"
+BLOCK_PHASE = "phase"
 BLOCK_H_CUR = "h_cur"
 BLOCK_H_PREV = "h_prev"
 BLOCK_VIS_CUR = "vis_cur"
@@ -160,6 +161,12 @@ class HiddenStore:
                     "capture.capture_vision=true"
                 )
             row = payload["_index"].get(int(call_idx))
+            if row is None:
+                # `payload["vis"][None]` is np.newaxis, not an error: without
+                # this guard a missing call silently returns the whole array.
+                raise KeyError(
+                    f"episode {episode_id} has no vision features for call {call_idx}"
+                )
             rows.append(payload["vis"][row].astype(np.float32))
         return np.stack(rows) if rows else np.zeros((0, 0), dtype=np.float32)
 
@@ -269,10 +276,12 @@ def build_probe_samples(
         )
     elif negatives == "global":
         chosen = _sample_global(positives, negative_candidates, rng)
-        for index, record in enumerate(positives):
-            record["pair_id"] = index
-        for index, record in enumerate(chosen):
-            record["pair_id"] = index
+        # -1 marks "not paired": a global negative has no counterpart, and a
+        # paired test keyed on a positional pair_id would silently compare
+        # unrelated calls.
+        for record in positives + chosen:
+            record["pair_id"] = -1
+            record["phase_distance"] = -1
     else:
         raise ValueError(f"unknown negatives mode: {negatives!r}")
 
@@ -326,7 +335,11 @@ def _match_by_phase(
         pool = by_episode_candidate.get(episode_id, [])
         if not pool:
             if not paired:
-                kept_positives.extend(episode_positives)
+                for positive in episode_positives:
+                    unmatched = dict(positive)
+                    unmatched["pair_id"] = -1
+                    unmatched["phase_distance"] = -1
+                    kept_positives.append(unmatched)
             continue
         cost = np.abs(
             np.asarray([p["cur_call"] for p in episode_positives])[:, None]
@@ -351,7 +364,10 @@ def _match_by_phase(
         if not paired:
             for row, positive in enumerate(episode_positives):
                 if row not in matched_rows:
-                    kept_positives.append(dict(positive))
+                    unmatched = dict(positive)
+                    unmatched["pair_id"] = -1
+                    unmatched["phase_distance"] = -1
+                    kept_positives.append(unmatched)
     return kept_positives, chosen
 
 
@@ -414,10 +430,12 @@ def build_features(
         blocks: any of ``a_cmd``, ``dstates``, ``h_cur``, ``h_prev``,
             ``vis_cur``.
         layer, pool: required whenever a hidden-state block is requested.
-        block_scaling: ``"none"`` leaves blocks as-is (after the caller's
-            standardisation); ``"sqrt_dim"`` divides each block by the square
-            root of its width, so a 56-dim action block is not drowned out by a
-            4096-dim hidden block under a shared L2 penalty.
+        block_scaling: accepted only as ``"none"``.  Down-weighting a block
+            has to happen *after* standardisation -- ``StandardScaler`` divides
+            every column by its own standard deviation and exactly cancels any
+            constant applied here -- so it lives in
+            :class:`efference_probe.probes.BlockScaler`, which consumes the
+            ``block_spans`` returned below.
 
     Returns:
         ``(X, block_spans)`` where ``block_spans`` records each block's width.
@@ -449,26 +467,85 @@ def build_features(
             values = store.vectors(prev_pairs, layer_index, pool_index)
         elif block == BLOCK_VIS_CUR:
             values = store.vision(cur_pairs)
+        elif block == BLOCK_PHASE:
+            # Task phase alone.  Bounds how much of any hidden-state result
+            # could be explained by residual phase imbalance between classes.
+            calls_index = samples["cur_call"].to_numpy(dtype=np.float32)
+            values = np.stack([calls_index, calls_index**2], axis=1)
         else:
             raise ValueError(f"unknown feature block: {block!r}")
-        if block_scaling == "sqrt_dim":
-            values = values / np.sqrt(values.shape[1])
-        elif block_scaling != "none":
-            raise ValueError(f"unknown block_scaling: {block_scaling!r}")
+        if block_scaling != "none":
+            raise ValueError(
+                "block scaling is applied after standardisation by "
+                "probes.BlockScaler; pass the returned block_spans to "
+                "run_probe(spans=...) instead of scaling here"
+            )
         parts.append(values.astype(np.float32))
         spans.append((block, values.shape[1]))
 
     return np.concatenate(parts, axis=1), spans
 
 
+def _axis_angle_to_matrix(vectors: np.ndarray) -> np.ndarray:
+    """Rodrigues: ``[n, 3]`` axis-angle to ``[n, 3, 3]`` rotation matrices."""
+    angles = np.linalg.norm(vectors, axis=1, keepdims=True)
+    safe = np.where(angles < 1e-8, 1.0, angles)
+    axes = vectors / safe
+    x, y, z = axes[:, 0], axes[:, 1], axes[:, 2]
+    zeros = np.zeros_like(x)
+    skew = np.stack([zeros, -z, y, z, zeros, -x, -y, x, zeros], axis=1).reshape(
+        -1, 3, 3
+    )
+    sin = np.sin(angles)[..., None]
+    cos = np.cos(angles)[..., None]
+    identity = np.broadcast_to(np.eye(3), (len(vectors), 3, 3))
+    return identity + sin * skew + (1.0 - cos) * (skew @ skew)
+
+
+def _matrix_to_axis_angle(matrices: np.ndarray) -> np.ndarray:
+    """``[n, 3, 3]`` rotation matrices to ``[n, 3]`` axis-angle."""
+    trace = np.trace(matrices, axis1=1, axis2=2)
+    angles = np.arccos(np.clip((trace - 1.0) / 2.0, -1.0, 1.0))
+    axes = np.stack(
+        [
+            matrices[:, 2, 1] - matrices[:, 1, 2],
+            matrices[:, 0, 2] - matrices[:, 2, 0],
+            matrices[:, 1, 0] - matrices[:, 0, 1],
+        ],
+        axis=1,
+    )
+    norms = np.linalg.norm(axes, axis=1, keepdims=True)
+    unit = np.divide(axes, norms, out=np.zeros_like(axes), where=norms > 1e-8)
+    return unit * angles[:, None]
+
+
 def _delta_states(
     calls: pd.DataFrame,
     lookup: dict[tuple[int, int], int],
     pairs: list[tuple[int, int]],
+    geometric_rotation: bool = True,
 ) -> np.ndarray:
+    """State delta over one chunk.
+
+    Dimensions 3:6 of a LIBERO state are an *absolute* end-effector axis-angle.
+    Subtracting them componentwise is not a rotation delta and wraps: two
+    orientations a hair apart can differ by ~2*pi in the raw difference, which
+    both blows up the magnitude and produces outliers that standardise badly.
+    The rotation block is therefore composed properly, as
+    ``R_after @ R_before^T`` mapped back to axis-angle; translation and gripper
+    are plain differences.
+    """
     after = _rows_from_calls(calls, lookup, pairs, "states_after")
     before = _rows_from_calls(calls, lookup, pairs, "states_before")
-    return after - before
+    delta = after - before
+    if geometric_rotation and after.shape[1] >= 6:
+        relative = _axis_angle_to_matrix(
+            after[:, 3:6].astype(np.float64)
+        ) @ np.transpose(
+            _axis_angle_to_matrix(before[:, 3:6].astype(np.float64)), (0, 2, 1)
+        )
+        delta[:, 3:6] = _matrix_to_axis_angle(relative).astype(delta.dtype)
+    return delta
 
 
 def _mismatch_features(
@@ -556,3 +633,69 @@ def step_index_report(samples: pd.DataFrame) -> pd.DataFrame:
             "p95": grouped.quantile(0.95),
         }
     )
+
+
+def phase_bias_report(samples: pd.DataFrame) -> dict[str, Any]:
+    """Signed within-pair phase bias, which the marginal report cannot see.
+
+    Comparing the two classes' marginal call-index distributions is a weak
+    check: it passes even for globally-sampled negatives, and it hides a
+    consistent *signed* offset inside pairs.  The offset is structural --
+    a negative needs several clean calls before it, and that availability
+    decays as hijacks accumulate, skewing the negative pool earlier -- and
+    hidden states drift with task progress, so it is exactly the confound the
+    matching exists to remove.
+    """
+    if "pair_id" not in samples.columns or (samples["pair_id"] < 0).all():
+        return {"note": "samples are not paired; signed phase bias undefined"}
+    paired = samples[samples["pair_id"] >= 0]
+    wide = paired.pivot_table(index="pair_id", columns="y", values="cur_call").dropna()
+    if wide.empty or 0 not in wide.columns or 1 not in wide.columns:
+        return {"note": "no complete pairs"}
+    differences = (wide[1] - wide[0]).to_numpy()
+    report: dict[str, Any] = {
+        "n_pairs": int(len(differences)),
+        "signed_mean_difference": float(np.mean(differences)),
+        "signed_median_difference": float(np.median(differences)),
+        "abs_mean_difference": float(np.mean(np.abs(differences))),
+        "fraction_negative_earlier": float(np.mean(differences > 0)),
+    }
+    nonzero = differences[differences != 0]
+    if len(nonzero):
+        try:
+            from scipy import stats
+
+            report["sign_test_p"] = float(
+                stats.binomtest(int((nonzero > 0).sum()), len(nonzero), 0.5).pvalue
+            )
+        except ImportError:
+            pass
+    return report
+
+
+def count_raw_positives(
+    calls: pd.DataFrame,
+    min_clean_gap: int = 2,
+    warmup_calls: int = 4,
+    drop_post_success: bool = True,
+) -> int:
+    """How many post-hijack calls exist before pairing discards any.
+
+    Paired matching keeps ``min(n_positives, n_negatives)`` per episode, and
+    negatives are structurally scarcer (a negative needs a clean window, a
+    positive only needs a hijack).  Episodes with dense hijacks therefore lose
+    positives, non-randomly -- so the raw count has to be reported next to the
+    kept count rather than inferred from it.
+    """
+    frame = calls
+    if drop_post_success and "post_success" in frame.columns:
+        frame = frame[~frame["post_success"].astype(bool)]
+    total = 0
+    for _episode_id, episode in frame.groupby("episode_id", sort=False):
+        labels = dict(zip(episode["call_idx"], episode["label"]))
+        for call_idx, label in labels.items():
+            if label != SELF or call_idx < warmup_calls + 1:
+                continue
+            if labels.get(call_idx - 1) == HIJACK:
+                total += 1
+    return total

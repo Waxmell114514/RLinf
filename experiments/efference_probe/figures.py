@@ -7,7 +7,7 @@ deviations as error bars, and nothing else.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import matplotlib
 
@@ -32,32 +32,44 @@ def _save(figure: plt.Figure, path: Path) -> Path:
 def figure_layer_depth(
     results: pd.DataFrame,
     out_path: Path,
-    pool: str,
-    probes: tuple[str, ...] = ("P1", "P3", "P4"),
+    pools: Sequence[str],
+    probes: tuple[str, ...] = ("P0", "P1", "P3", "P4"),
     n_samples: Optional[int] = None,
 ) -> Path:
-    """F1: balanced accuracy vs layer for the hidden-state probes."""
-    figure, axis = plt.subplots(figsize=(6.5, 4.2))
-    subset = results[results["pool"] == pool]
-    for probe in probes:
-        rows = subset[subset["name"] == probe].sort_values("layer")
-        if rows.empty:
-            continue
-        axis.errorbar(
-            rows["layer"],
-            rows["balanced_acc_mean"],
-            yerr=rows["balanced_acc_std"],
-            marker="o",
-            capsize=3,
-            label=probe,
-        )
-    axis.axhline(CHANCE, linestyle="--", color="grey", label="chance (0.5)")
-    axis.set_xlabel("LM layer (0 = embeddings)")
-    axis.set_ylabel("Balanced accuracy")
-    suffix = f", n={n_samples}" if n_samples else ""
-    axis.set_title(f"Hijack decodability by depth (pool={pool}{suffix})")
-    axis.legend()
-    axis.grid(alpha=0.3)
+    """F1: balanced accuracy vs layer, one panel per pool.
+
+    Every pool is shown, and P0 is drawn alongside: since F2 reports the
+    hidden-state probes at their best cell, the reader needs to see the whole
+    grid the maximum was taken over, and how high the shuffled-label null
+    climbs across the same grid.
+    """
+    pools = list(pools)
+    figure, axes = plt.subplots(
+        1, len(pools), figsize=(4.2 * len(pools), 4.2), sharey=True, squeeze=False
+    )
+    for axis, pool in zip(axes[0], pools):
+        subset = results[results["pool"] == pool]
+        for probe in probes:
+            rows = subset[subset["name"] == probe].sort_values("layer")
+            if rows.empty:
+                continue
+            axis.errorbar(
+                rows["layer"],
+                rows["balanced_acc_mean"],
+                yerr=rows["balanced_acc_std"],
+                marker="o" if probe != "P0" else "x",
+                linestyle="-" if probe != "P0" else ":",
+                capsize=3,
+                label=probe,
+            )
+        axis.axhline(CHANCE, linestyle="--", color="grey")
+        axis.set_xlabel("LM layer (0 = embeddings)")
+        axis.set_title(f"pool = {pool}")
+        axis.grid(alpha=0.3)
+    axes[0][0].set_ylabel("Balanced accuracy")
+    axes[0][-1].legend(fontsize="small")
+    suffix = f" (n={n_samples})" if n_samples else ""
+    figure.suptitle(f"Hijack decodability by depth{suffix}")
     return _save(figure, Path(out_path))
 
 
@@ -67,6 +79,7 @@ def figure_ladder(
     layer: int,
     pool: str,
     n_samples: Optional[int] = None,
+    selection_floor: Optional[float] = None,
 ) -> Path:
     """F2: the ladder, P0 through the mechanical oracle."""
     heights, errors, labels = [], [], []
@@ -87,11 +100,24 @@ def figure_ladder(
     figure, axis = plt.subplots(figsize=(6.5, 4.2))
     positions = np.arange(len(labels))
     axis.bar(positions, heights, yerr=errors, capsize=4, color="steelblue")
-    axis.axhline(CHANCE, linestyle="--", color="grey")
+    axis.axhline(CHANCE, linestyle="--", color="grey", label="chance (0.5)")
+    if selection_floor is not None:
+        # P1/P3/P4 are reported at the cell where they peak, so 0.5 is not the
+        # right floor for them: this is how high the shuffled-label null gets
+        # under the same maximisation.
+        axis.axhline(
+            selection_floor,
+            linestyle="-.",
+            color="firebrick",
+            label=f"selection-aware floor ({selection_floor:.3f})",
+        )
     axis.set_xticks(positions)
     axis.set_xticklabels(labels)
     axis.set_ylabel("Balanced accuracy")
-    axis.set_ylim(0.4, 1.02)
+    # Full range: a truncated axis exaggerates every difference, and any bar
+    # below the cut would render as nothing at all.
+    axis.set_ylim(0.0, 1.02)
+    axis.legend(fontsize="small")
     suffix = f", n={n_samples}" if n_samples else ""
     axis.set_title(f"Probe ladder (layer={layer}, pool={pool}{suffix})")
     axis.grid(axis="y", alpha=0.3)

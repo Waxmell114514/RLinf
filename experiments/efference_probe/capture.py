@@ -218,7 +218,11 @@ class HiddenStateCapture:
     ) -> np.ndarray:
         """Reduce every requested layer to ``[B, n_pools, D]`` on CPU."""
         if attention_mask is not None:
-            ctx_mask = attention_mask[:, :split].to(hidden_states[-1].dtype)
+            # float32, not the model dtype: the context is ~280 tokens long and
+            # bfloat16 has a spacing of 2 in [256, 512), so a bf16 accumulator
+            # would miscount the denominator by up to 1 -- a silent, per-task
+            # scaling error in ctx_mean.
+            ctx_mask = attention_mask[:, :split].to(torch.float32)
             # A fully-masked context would divide by zero; it never happens for
             # a real prompt, but guard rather than emit silent NaNs.
             ctx_denominator = ctx_mask.sum(dim=1, keepdim=True).clamp(min=1.0)
@@ -240,8 +244,8 @@ class HiddenStateCapture:
                     if ctx_mask is None:
                         value = context.float().mean(dim=1)
                     else:
-                        weighted = (context * ctx_mask.unsqueeze(-1)).float()
-                        value = weighted.sum(dim=1) / ctx_denominator.float()
+                        weighted = context.float() * ctx_mask.unsqueeze(-1)
+                        value = weighted.sum(dim=1) / ctx_denominator
                 else:  # pragma: no cover - guarded in __init__
                     raise ValueError(f"unknown pool {pool!r}")
                 pooled.append(value)
@@ -252,31 +256,41 @@ class HiddenStateCapture:
 
     # -- action distribution ---------------------------------------------
 
-    def action_logits(self, logits: torch.Tensor, split: int) -> torch.Tensor:
-        """Slice and mask the logits that decode the action tokens.
+    @property
+    def bin_offset(self) -> int:
+        """First vocabulary index that encodes an action bin."""
+        return self.vocab_size - self.n_action_bins
 
-        Mirrors the masking in ``predict_action_batch``: everything outside the
-        action-bin range of the vocabulary is set to ``-inf``.
+    def action_logits(self, logits: torch.Tensor, split: int) -> torch.Tensor:
+        """Slice out the logits that decode the action tokens.
+
+        ``predict_action_batch`` masks everything outside the action-bin range
+        to ``-inf`` and then softmaxes over the full 32k vocabulary.  Only
+        ``n_action_bins`` (256) columns are ever finite, and a softmax over a
+        vector padded with ``-inf`` is identical to the softmax over just the
+        finite part -- so we keep the 256-wide core instead.  That is exact,
+        not an approximation, and it turns a 143 MB fp32 temporary per call
+        (times several more inside the entropy computation) into about 1 MB.
+
+        Returned indices are relative to :attr:`bin_offset`.
         """
         # `copy=True` matters: predict_action_batch later masks
         # `outputs.logits` in place through a view, and we must not alias it.
-        sliced = logits[:, split : split + self.n_act, :].to(
-            dtype=torch.float32, copy=True
-        )
-        sliced[..., : self.vocab_size - self.n_action_bins] = -math.inf
-        sliced[..., self.vocab_size :] = -math.inf
-        return sliced
+        return logits[
+            :, split : split + self.n_act, self.bin_offset : self.vocab_size
+        ].to(dtype=torch.float32, copy=True)
 
     def _entropy_from_masked(self, masked: torch.Tensor) -> np.ndarray:
         """Per-token entropy of the *unscaled* action distribution.
 
         Deliberately computed at temperature 1 and without top-k, so the number
         measures the policy's own uncertainty rather than the sampling knobs in
-        the run config.
+        the run config.  ``masked`` holds only the finite action-bin columns,
+        so no ``-inf`` reaches the ``p log p`` product and no NaN guard is
+        needed.
         """
         logp = torch.log_softmax(masked, dim=-1)
-        probs = logp.exp()
-        entropy = -(probs * logp.nan_to_num(neginf=0.0)).sum(dim=-1)
+        entropy = -(logp.exp() * logp).sum(dim=-1)
         return entropy.detach().to("cpu", torch.float32).numpy()
 
     # -- verification ----------------------------------------------------
@@ -292,7 +306,8 @@ class HiddenStateCapture:
         do_sample: bool,
         temperature: float,
         top_k: int,
-        tolerance: float = 0.05,
+        atol: float = 0.05,
+        rtol: float = 0.02,
     ) -> dict[str, Any]:
         """Reproduce the model's own action logprobs from our slice.
 
@@ -303,6 +318,13 @@ class HiddenStateCapture:
         Call :meth:`arm_verification` before the forward, then pass the
         ``action_tokens`` and ``prev_logprobs`` that ``predict_action_batch``
         returned.
+
+        The tolerance is relative as well as absolute, because the model's own
+        logprobs are computed in the logits' dtype.  Under bfloat16 one ulp at
+        a logprob of -10 is already 0.0625, so a fixed 0.05 would abort a
+        perfectly correct run the first time sampling drew a low-probability
+        token.  A misaligned window produces errors of order 1 to 10, so the
+        check keeps all of its discriminating power.
         """
         if self._pending_logits is None:
             raise RuntimeError(
@@ -317,13 +339,26 @@ class HiddenStateCapture:
                 threshold = masked.topk(kept, dim=-1).values[..., -1, None]
                 masked = masked.masked_fill(masked < threshold, -math.inf)
         logp = torch.log_softmax(masked, dim=-1)
-        target = action_tokens.reshape(masked.shape[0], self.n_act).to(logp.device)
+        # `masked` covers only the action-bin columns, so token ids have to be
+        # shifted into that window before gathering.
+        target = (
+            action_tokens.reshape(masked.shape[0], self.n_act).to(logp.device)
+            - self.bin_offset
+        )
+        if int(target.min()) < 0 or int(target.max()) >= masked.shape[-1]:
+            raise RuntimeError(
+                "action tokens fall outside the action-bin vocabulary range "
+                f"[{self.bin_offset}, {self.vocab_size}) -- capture.py's view "
+                "of the model's vocabulary layout is wrong"
+            )
         ours = logp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
         theirs = model_logprobs.reshape(ours.shape).to(ours.device).float()
         max_abs_diff = float((ours - theirs).abs().max().item())
+        tolerance = atol + rtol * float(theirs.abs().max().item())
         result = {
             "max_abs_logprob_diff": max_abs_diff,
             "tolerance": tolerance,
+            "logits_dtype": str(masked.dtype),
             "seq_len": int(self._seq_len),
             "readout_start": int(self._seq_len - self.n_act - 1),
             "passed": max_abs_diff <= tolerance,
@@ -332,8 +367,8 @@ class HiddenStateCapture:
             raise RuntimeError(
                 "hidden-state indexing check failed: recomputed action "
                 f"logprobs differ from the model's by {max_abs_diff:.4f} "
-                f"(tolerance {tolerance}). The pool offsets in capture.py no "
-                "longer match predict_action_batch -- re-derive them before "
+                f"(tolerance {tolerance:.4f}). The pool offsets in capture.py "
+                "no longer match predict_action_batch -- re-derive them before "
                 "collecting data."
             )
         return result

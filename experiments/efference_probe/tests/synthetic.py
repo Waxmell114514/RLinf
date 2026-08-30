@@ -45,12 +45,21 @@ def make_synthetic_run(
     transform: str = "swap",
     seed: int = 0,
     success_probability: float = 0.3,
+    command_mean: float = 0.0,
+    command_autocorr: float = 0.0,
 ) -> Path:
     """Write a run directory that looks like a real collection.
 
     Args:
         hidden_signal: how strongly the post-transition hidden state encodes
             the hijack.  0 makes P1 a null; large values make it decodable.
+        command_mean: per-episode drift added to every commanded delta.  Zero
+            gives i.i.d. zero-mean commands; a nonzero value imitates directed
+            reaching, where a mean-shifting transform is separable from the
+            marginal state delta alone.
+        command_autocorr: AR(1) coefficient linking each command to the
+            previous one.  The policy is open-loop either way -- it never sees
+            the state -- so any "undo alignment" measured here is an artefact.
     """
     out_dir = Path(out_dir)
     (out_dir / "hidden").mkdir(parents=True, exist_ok=True)
@@ -77,13 +86,20 @@ def make_synthetic_run(
         hidden_calls: dict[int, list[int]] = {int(e): [] for e in episode_ids}
         episode_rows: dict[int, list[dict]] = {int(e): [] for e in episode_ids}
         was_hijacked = np.zeros(num_envs, dtype=bool)
+        previous_command = None
 
         for call_idx in range(n_calls):
             if not recording.any():
                 break
-            commanded = rng.normal(
-                scale=0.3, size=(num_envs, N_CHUNKS, ACTION_DIM)
-            ).astype(np.float32)
+            noise = rng.normal(scale=0.3, size=(num_envs, N_CHUNKS, ACTION_DIM)).astype(
+                np.float32
+            )
+            if command_autocorr and previous_command is not None:
+                commanded = command_autocorr * previous_command + noise
+            else:
+                commanded = noise
+            previous_command = commanded.copy()
+            commanded[..., :6] += command_mean
             decisions = scheduler.decide(call_idx, recording)
             executed = build_executed_chunk(commanded, decisions)
 
@@ -188,7 +204,17 @@ def make_synthetic_run(
         "run_id": "synthetic",
         "config_hash": "synthetic",
         "git_sha": "synthetic",
-        "config": {"hijack": {"min_clean_gap": 2, "transform": transform}},
+        "config": {
+            "hijack": {
+                "min_clean_gap": 2,
+                "warmup_calls": 4,
+                "transform": transform,
+                "p_hijack": p_hijack,
+                "probe_episode_fraction": 1.0,
+            },
+            "model": {"num_action_chunks": N_CHUNKS, "action_dim": ACTION_DIM},
+            "env": {"task_suite_name": "synthetic"},
+        },
         "schema": {
             "array_columns": {},
             "num_action_chunks": N_CHUNKS,
