@@ -1,0 +1,39 @@
+# S1 pilot: one task, 20 initial states.  Run P0/P1/P2/P2r and check the
+# acceptance gates before spending the main budget.
+run_id: pilot01
+out_root: experiments/efference_probe/data
+notes: "S1 pilot, single task"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: false
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [0]
+  init_states_per_task: 20
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 0
+
+hijack:
+  enabled: true
+  transform: swap
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 1.0
+  max_disk_gb: 10.0

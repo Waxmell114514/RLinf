@@ -1,0 +1,424 @@
+# Efference-copy probing for OpenVLA-OFT on LIBERO
+
+Does a pretrained VLA carry anything like an *efference copy* — a trace of its
+own outgoing command that would let it tell self-caused sensory change from
+externally-caused change?
+
+This directory holds the code for the experiment described in
+`SPEC_efference_probe_rlinf.md`. It is **inference only**: nothing here trains,
+fine-tunes, or writes a checkpoint. It reuses RLinf's LIBERO env wrapper, model
+loader and action-space conventions, and **no file under `rlinf/` is modified**.
+
+Everything below has been exercised offline against a synthetic run
+(`tests/synthetic.py`); the parts that need a GPU, LIBERO and a checkpoint —
+`capture.py` and `harness.py` — have not been executed, because this repo
+checkout has no torch. Treat the first smoke run as the real integration test,
+and see [Before the first run](#before-the-first-run).
+
+---
+
+## Before the first run
+
+Fill these in (SPEC §9):
+
+- [ ] **Checkpoint path** — absolute path to the OpenVLA-OFT **SFT** checkpoint,
+      and which LIBERO suite it matches. Set `model.model_path` and
+      `model.unnorm_key` in the config (they must agree: a `libero_goal`
+      checkpoint needs `unnorm_key: libero_goal_no_noops` and
+      `env.task_suite_name: libero_goal`). Note the GRPO checkpoint too if you
+      have one — that is E4.
+- [ ] **GPU budget** — `budget.max_gpu_hours` and `budget.max_disk_gb` are hard
+      stops; the run finalises cleanly when either is hit and records which.
+- [ ] **A known-good `run_eval.sh` line** — S0.1 below starts from it.
+
+Environment (same variables `evaluations/run_eval.sh` exports):
+
+```bash
+export MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa
+export ROBOT_PLATFORM=LIBERO LIBERO_TYPE=standard
+export TOKENIZERS_PARALLELISM=false
+export PYTHONPATH=$PWD:$PYTHONPATH
+```
+
+`LIBERO_TYPE` must stay `standard`. LIBERO-Pro/Plus perturbation modes are
+explicitly out of scope (SPEC §1).
+
+Extra Python packages beyond what RLinf already installs:
+`scikit-learn`, `matplotlib`, `pandas` (SPEC §0.5). The analysis half needs
+nothing else — the markdown tables are hand-rolled rather than pulling in
+`tabulate`.
+
+---
+
+## Staged run
+
+Each stage stops for human review. `logbook.md` is appended to automatically.
+
+### S0 — infra gate
+
+```bash
+# 1. Stock sanity: unmodified eval, reduced env count, for a health reference.
+bash evaluations/run_eval.sh libero libero_goal_openvlaoft_eval \
+    env.eval.total_num_envs=20
+
+# 2. Smoke test the harness: 1 task, 2 envs, 6 calls, aggressive freeze hijacks.
+python experiments/efference_probe/run_collect.py \
+    --config experiments/efference_probe/configs/smoke.yaml \
+    --set model.model_path=/abs/path/to/ckpt
+```
+
+**Acceptance.** The run prints `indexing check passed: {...}` (see
+[Hidden-state capture](#hidden-state-capture)); `data/smoke01/calls.parquet`
+has a full row set with no nulls; `data/smoke01/hidden/ep00000.npz` holds `h`
+with shape `[n_calls, 3, 3, 4096]`; frames are on disk; labels follow the
+schedule. Check with:
+
+```bash
+python - <<'PY'
+import numpy as np, pandas as pd
+c = pd.read_parquet("experiments/efference_probe/data/smoke01/calls.parquet")
+print(c[["episode_id","call_idx","label","transform","terminated"]])
+print("nulls:", int(c.isna().sum().sum()))
+with np.load("experiments/efference_probe/data/smoke01/hidden/ep00000.npz") as a:
+    print("hidden:", a["h"].shape, a["h"].dtype, "calls:", a["call_idx"])
+PY
+```
+
+`--dry-run` resolves and prints a config without loading the model.
+
+### S1 — pilot (1 task, 20 episodes)
+
+```bash
+python experiments/efference_probe/run_collect.py \
+    --config experiments/efference_probe/configs/pilot.yaml \
+    --set model.model_path=/abs/path/to/ckpt
+python experiments/efference_probe/run_probes.py \
+    --run experiments/efference_probe/data/pilot01 --stage pilot
+```
+
+**Acceptance gates** (read `analysis/summary.md`):
+
+| Gate | Expected | If it fails |
+|---|---|---|
+| P0 (shuffled labels) | 0.45–0.55 | the pipeline leaks; check grouping and sample construction |
+| **P2r** (mismatch oracle) | ≥ 0.9 for `mirror`/`freeze` | labels or `states` logging are broken — fix before scaling |
+| C_cmd (command alone) | ≈ 0.5 | the schedule correlates with something it should not |
+| Class step-index distributions | overlapping | phase matching is failing; see `step_index_report.csv` |
+
+> **Use P2r, not P2, as the plumbing gate.** SPEC §5 names P2, but P2 as
+> specified cannot pass. See [The P2 problem](#the-p2-problem).
+
+### S2 — main collection and core probes
+
+```bash
+python experiments/efference_probe/run_collect.py \
+    --config experiments/efference_probe/configs/main.yaml \
+    --set model.model_path=/abs/path/to/ckpt
+python experiments/efference_probe/run_probes.py \
+    --run experiments/efference_probe/data/main01 --stage main
+```
+
+Produces F1 (layer-depth curves), F2 (the ladder), F4, F5, the T1 run card and
+`summary.md`.
+
+### S3 — controls
+
+The `--stage main` run already emits the cross-task split, the per-transform
+breakdown, the global-pool negatives check, and the `dstates`-only control.
+For the T1/T2 transform gradient, collect the two extra runs:
+
+```bash
+for t in mirror freeze; do
+  python experiments/efference_probe/run_collect.py \
+      --config experiments/efference_probe/configs/main_$t.yaml \
+      --set model.model_path=/abs/path/to/ckpt
+  python experiments/efference_probe/run_probes.py \
+      --run experiments/efference_probe/data/main01_$t --stage main
+done
+```
+
+A `sqrt_dim` block-scaling variant of the concatenated probes (P3/P4) guards
+against the 56-dimensional action block being swamped by 4096 hidden dims under
+a shared L2 penalty:
+
+```bash
+python experiments/efference_probe/run_probes.py --run <run> \
+    --block-scaling sqrt_dim --out <run>/analysis_sqrtdim
+```
+
+### S4 — stretch
+
+- **P5** (vision/projector features): re-collect with
+  `--set capture.capture_vision=true`, then `--probes P5`.
+- **E3(iii)** undo-alignment: already reported under `extra.undo_alignment`.
+- **E4** SFT vs GRPO: rerun `main.yaml` with the other checkpoint and a new
+  `run_id`, then compare ladders.
+
+---
+
+## What the code does
+
+```
+config.py     dataclass config + YAML loader + stable config hash
+hijack.py     transforms (mirror/freeze/swap) and the schedule      [pure numpy]
+capture.py    forward-hook capture of hidden states and entropy     [torch]
+harness.py    the collection loop: env + model, no Ray              [torch + rlinf]
+storage.py    run-dir layout, parquet/npz/jpeg writers
+datasets.py   probe-sample construction and feature assembly        [pure numpy]
+probes.py     grouped-CV logistic probes and the E1 ridge readout   [sklearn]
+analysis.py   the ladder, controls, E1, E3, markdown summary
+figures.py    F1-F5 and the T1 run card
+run_collect.py / run_probes.py    CLI entry points
+tests/        synthetic run generator + 31 offline tests
+```
+
+The split is deliberate: everything from `datasets.py` rightwards runs without
+torch or LIBERO, so probes can be re-run on a laptop while the GPU is busy.
+
+### Hidden-state capture
+
+`predict_action_batch` already calls the language model with
+`output_hidden_states=True`, so every layer's activations exist whether or not
+anyone reads them. `capture.py` attaches a **forward hook** to
+`model.language_model`, pools what it needs, and moves it to CPU as float16.
+No second forward pass, no monkeypatching, no forked model class — and nothing
+to re-sync when `rlinf/` changes.
+
+**Pool definitions (a correction to SPEC §2).** With
+`n_act = action_dim × num_action_chunks = 56`, the sequence is
+
+```
+[ BOS | 256 vision patches | rest of prompt | 56 action placeholders ]
+```
+
+SPEC §2 describes the pools as `[-56:]` / `[:-56]` / `-57`. The placeholder
+block really is the last 56 positions, but **its hidden states are not what the
+model reads**. `predict_action_batch` takes its action hidden states from
+`[-n_act-1 : -1]` and its logits from `[n_patches + n_prompt_tokens : + n_act]`
+— the same window, shifted one step left in the usual next-token-prediction
+offset. So:
+
+| Pool | Positions | What it is |
+|---|---|---|
+| `act_mean` | mean over `[-57:-1]` | exactly the window the model decodes all 56 action tokens from |
+| `ctx_last` | position `-57` | the last real prompt token; also the value-head position; the scene summary immediately before the policy commits |
+| `ctx_mean` | attention-masked mean over `[:-57]` | BOS, vision patches and prompt |
+
+`ctx_mean` is **attention-masked** because prompts are left-padded to
+`max_prompt_length`; an unmasked mean would average in pad positions.
+
+This is checked at runtime rather than trusted. On the first call the harness
+recomputes the model's own action logprobs from our slice and compares:
+
+```
+indexing check passed: {'max_abs_logprob_diff': 0.0007, 'tolerance': 0.05,
+                        'seq_len': 440, 'readout_start': 383, 'passed': True}
+```
+
+A wrong offset shifts the distribution onto a different token, so the mismatch
+would be order 1, not order 0.01. The run aborts if it fails.
+
+### The P2 problem
+
+SPEC §3.3 defines P2 — the mechanical oracle ceiling — as logistic regression
+on `a_cmd[m] ⊕ Δstates`, and SPEC §5 uses `P2 ≥ 0.9` as the S1 gate for "the
+labels or Δstates logging are broken".
+
+**A linear probe on that concatenation cannot work.** "Did the world move the
+way I asked?" is an *agreement* between two vectors — a distance — and a linear
+model has no way to form one from the two blocks side by side. On synthetic
+data where the state is *exactly* driven by the executed chunk and the labels
+are fully determined, the concatenation probe scores **0.52** balanced accuracy
+while the same data with comparison features scores **0.94** (AUROC 1.00).
+
+So the code reports both:
+
+- **P2** — the literal concatenation. Kept, because it is the honest *linear*
+  oracle and the right comparison for P3/P4, which are also linear probes.
+- **P2r** — the same information plus the interaction terms the comparison
+  needs: the chunk-summed command, the state delta, their elementwise products,
+  and per-group norms and cosines (translation and rotation handled separately,
+  since they carry different units). This is the mechanical ceiling, and the
+  gate to check when validating the plumbing.
+
+The distinction is not a technicality — it is Q2 restated. P1/P3/P4 are linear
+probes *on purpose*, because the question is whether the comparison is linearly
+available. P2r says what is mechanically knowable; P2 says what is knowable
+under the same linear constraint the hidden-state probes work under. Reporting
+only one of them would misstate the ladder.
+
+Two further controls, not in the spec, are run by default:
+
+- **C_cmd** (`a_cmd` alone) — must sit at chance. The command is produced
+  *before* the hijack, so any signal here means the schedule or the phase
+  matching correlates with something it should not.
+- **C_dstates** (`Δstates` alone) — how much of the label is trivially
+  mechanical. Expect this to be high for `freeze` (a frozen chunk barely moves
+  the arm) and low for `swap`.
+
+### Probe methodology
+
+- 5-fold `StratifiedGroupKFold` **grouped by episode** — consecutive calls
+  within an episode are strongly correlated, and a plain k-fold would leak
+  neighbouring frames across the split.
+- Features standardised; L2 logistic regression with `class_weight="balanced"`.
+- `C` chosen **inside each outer fold** on one inner grouped split, so the
+  reported score is not inflated by picking `C` against the data it is scored
+  on. The per-`C` table is reported alongside so the ladder's ordering can be
+  checked for stability. `--fast` skips selection for exploratory sweeps.
+- Balanced accuracy and AUROC, mean ± fold standard deviation.
+- The `(layer, pool)` cell used for F2/F3 is chosen as the maximum over 27
+  configurations, so it is a *reported* maximum, not an independent estimate —
+  F1 shows the whole sweep for exactly that reason.
+
+### Sample construction
+
+Each probe sample is a pair of consecutive calls `(prev, cur)` with
+`cur = prev + 1`. Positives had `prev` hijacked; negatives did not. In both
+classes `cur` itself is SELF — guaranteed for positives by the scheduler's
+clean-gap rule — so the classes differ in exactly one thing.
+
+Negatives are **phase-matched** by solving a minimum-total-distance assignment
+between positives and eligible calls *within each episode*. Greedy
+nearest-neighbour matching (the obvious implementation) leaves late positives
+with whatever early calls are left over, which reintroduces the phase confound
+it is meant to remove. Negatives are also floored at `warmup_calls + 1`, the
+earliest index a positive can occupy. `--no-controls` aside, the run always
+reports both classes' step-index distributions; they must overlap.
+
+`negatives="global"` (reported as a robustness check) samples from the whole
+run and deliberately does *not* control for phase.
+
+---
+
+## Design decisions
+
+**Hijacks are applied in the environment action space**, after
+`rlinf.envs.action_utils.prepare_actions` has mapped the policy's `[0,1]`
+gripper output onto LIBERO's `±1` convention. That makes `freeze` and `mirror`
+unambiguous: dimension 6 is already a signed gripper command and 0–5 are
+already the deltas the controller integrates. Note that
+`prepare_actions_for_libero` rewrites its input **in place and does not copy**,
+so the harness always hands it a copy — otherwise the `a_cmd` being logged
+would be silently corrupted.
+
+**One task per batch.** Every batch holds `num_envs` different initial states
+of a *single* task. Two consequences: swap donors are always same-task
+episodes, which is what makes T3 a control for "weird actions" rather than a
+new confound; and with `is_eval: True` LIBERO rebuilds its envs only when the
+task changes, so that is one rebuild per task instead of one per episode.
+
+**Episode boundaries are managed explicitly** (`auto_reset: False`,
+`ignore_terminations: False`), so `chunk_step` reports real per-substep
+terminations and the first-success call can be pinned exactly. Recording stops
+at first success; post-success calls never enter the data.
+
+**Clean control episodes.** `hijack.probe_episode_fraction` (default 0.8)
+leaves a fraction of episodes completely un-hijacked, which is how SPEC §3.2's
+"per episode flagged as a probe episode" is realised. It gives E3 its
+success-rate comparison within one run instead of paying for a second
+collection pass. Clean episodes are still valid swap donors.
+
+**Entropy is computed at temperature 1** and without top-k, so it measures the
+policy's own uncertainty rather than the sampling knobs in the run config.
+`logprob_sum` comes from the model's own `prev_logprobs` and does reflect them.
+
+**No Ray.** The harness talks to `LiberoEnv` and the model directly. The worker
+layer exists to move tensors between processes, which buys nothing for a
+single-GPU inference loop and would cost debugging time. What is reused
+verbatim is everything where drift would be silent: `rlinf.models.get_model`
+for checkpoint loading, `LiberoEnv` for the sim, `prepare_actions` for the
+action convention, and the shipped `model/` and `env/` YAMLs as config bases.
+
+**Determinism.** Fixed `seed`, `use_fixed_reset_state_ids: True`, and reset
+state ids computed explicitly from LIBERO's `(task, trial)` bin edges. The
+hijack RNG is derived from `(seed, task_id, batch_index)`, so a single batch can
+be reproduced without replaying the suite. The design is paired within a run, so
+bit-exactness across runs is not required — don't spend time chasing it.
+
+---
+
+## Data layout
+
+```
+data/<run_id>/
+  run_config.yaml     resolved config, git SHA, checkpoint, indexing-check report
+  calls.parquet       one row per model call
+  hidden/ep00000.npz  h[n_calls, n_layers, n_pools, hidden] float16 + call_idx
+  frames/ep00000/     call0000_main.jpg, call0000_wrist.jpg
+  manifest.json       counts, budget usage, per-episode summary
+  analysis/           written by run_probes.py
+```
+
+`calls.parquet` columns: `run_id, episode_id, task_id, reset_state_id,
+env_slot, call_idx, is_probe_episode, label, transform, donor_env_slot,
+donor_episode_id, skipped_reason, a_cmd_model, a_cmd_env, a_exec,
+states_before, states_after, logprob_sum, logprobs, entropy_mean,
+entropy_tokens, reward, success_substep, terminated, truncated,
+first_success_call, success_flag, post_success`.
+
+Array columns are stored **flattened**; their shapes are recorded in
+`run_config.yaml` under `schema.array_columns`. `a_cmd_model` is the policy's
+raw output, `a_cmd_env` the same chunk after the gripper mapping (this is the
+canonical 56-dimensional efference vector the probes use), `a_exec` what was
+actually stepped. `states` is LIBERO's 8-dim
+`[eef_pos(3), eef_axisangle(3), gripper_qpos(2)]`.
+
+Storage: ~221 KB of hidden states per call at 9 layers × 3 pools × 4096, so a
+7k-call run is ~1.5 GB — comfortably inside the 30 GB cap.
+
+Videos are not written (it would mean a new dependency). Frames are, so:
+
+```bash
+ffmpeg -framerate 5 -pattern_type glob \
+    -i 'data/main01/frames/ep00000/*_main.jpg' ep00000.mp4
+```
+
+---
+
+## Tests
+
+```bash
+python -m pytest experiments/efference_probe/tests/test_offline.py -q   # 31 tests
+```
+
+They cover the hijack schedule (warm-up, clean gap, realised rate, donor
+selection, no mutation of commanded actions), the sequence arithmetic behind
+the pools, probe-sample construction (pairing, phase matching, post-success
+exclusion), probe behaviour against planted ground truth (P0 at chance, C_cmd
+at chance, the mismatch oracle recovering the label, P2 underperforming P2r),
+the storage round-trip, and config validation.
+
+`tests/synthetic.py` writes a full fake run directory, so the analysis half can
+be exercised end to end with no GPU:
+
+```bash
+python experiments/efference_probe/tests/synthetic.py /tmp/synth
+python experiments/efference_probe/run_probes.py --run /tmp/synth --stage main --fast
+```
+
+---
+
+## Known limitations
+
+- `capture.py` and `harness.py` have not been run against a real checkpoint —
+  this checkout has no torch. The indexing self-check exists precisely because
+  that verification has to happen on first contact with the model.
+- P5 needs `model.projector` to exist on the OFT model. If it does not, vision
+  capture disables itself with a warning rather than sinking the run.
+- `skip_intermediate_renders: True` (the default, for speed) means only the
+  last substep of each chunk is observed, so `Δstates` is chunk-level. Set it
+  false for per-substep states at a substantial rendering cost.
+- The undo-alignment metric fits the controller gain by least squares on
+  self-caused calls; it is a proxy, and is reported as a stretch number.
+
+---
+
+## Scope
+
+Out of scope by design (SPEC §1): perturbation-robustness benchmarking. Success
+rate under hijack appears only as one supporting number in E3, never as a
+headline. `LIBERO_TYPE` stays `standard`.
+
+Per SPEC §8, the code reports numbers and anomalies; interpretation belongs in
+the write-up. `results.md` is the template for that.
