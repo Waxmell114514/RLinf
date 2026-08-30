@@ -1,0 +1,45 @@
+# S2 main collection: the whole suite, 20 initial states per task.
+# ~200 episodes, ~6-7k calls, ~1.2k hijacks.
+run_id: main01
+out_root: experiments/efference_probe/data
+notes: "S2 main collection, T3 swap"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  # SPEC 3.7: greedy if the smoke-test success rate is within 0.8x of the
+  # sampled reference, otherwise mirror the eval yaml (do_sample: true,
+  # temperature: 1.6).  Record the choice in results.md either way.
+  do_sample: false
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: null           # null = every task in the suite
+  init_states_per_task: 20
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 0
+
+hijack:
+  enabled: true
+  transform: swap          # T3, the primary transform
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false    # set true for the P5 stretch
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

@@ -1,0 +1,42 @@
+# S0 smoke test: 1 task, 2 envs, a handful of calls, aggressive hijacking.
+# Acceptance (SPEC 5, S0.3): one full calls.parquet row set with no nulls, a
+# hidden npz of shape [calls, n_layers, n_pools, hidden_size], a saved frame,
+# and labels that follow the schedule.
+run_id: smoke01
+out_root: experiments/efference_probe/data
+notes: "S0 infra gate"
+
+model:
+  # HUMAN INPUT: absolute path to the OpenVLA-OFT SFT checkpoint.
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: false
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [0]
+  init_states_per_task: 2
+  num_envs: 2
+  max_calls_per_episode: 6
+  seed: 0
+
+hijack:
+  enabled: true
+  transform: freeze      # T2: the largest, easiest-to-see effect
+  p_hijack: 0.5
+  warmup_calls: 1
+  min_clean_gap: 1
+  probe_episode_fraction: 1.0
+
+capture:
+  layers: [0, 16, 32]
+  verify_indexing: true
+
+frames:
+  mode: all
+
+budget:
+  max_gpu_hours: 0.5
+  max_disk_gb: 2.0
+  heartbeat_seconds: 60
