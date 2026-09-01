@@ -216,7 +216,7 @@ def _build(cls, data: Any):
 
 def load_config(path: str, overrides: Optional[list[str]] = None) -> RunConfig:
     """Load a YAML config and apply ``a.b=value`` overrides."""
-    with open(path) as handle:
+    with open(path, encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     cfg = _build(RunConfig, data)
     for override in overrides or []:

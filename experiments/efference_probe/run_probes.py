@@ -82,7 +82,9 @@ def _selection_floor(results: pd.DataFrame) -> dict:
     }
 
 
-def _permutation_null(run, samples, config, layer: str, pool: str, n_permutations: int):
+def _permutation_null(
+    run, samples, config, layer: str, pool: str, n_permutations: int, store=None
+):
     """Permutation null at the selected cell: balanced accuracy under shuffled labels."""
     scores = []
     for index in range(n_permutations):
@@ -95,8 +97,9 @@ def _permutation_null(run, samples, config, layer: str, pool: str, n_permutation
             select_c=False,
             block_scaling=config.block_scaling,
             max_cache_gb=config.max_cache_gb,
+            n_jobs=config.n_jobs,
         )
-        results = analysis.run_ladder(run, samples, permuted)
+        results = analysis.run_ladder(run, samples, permuted, store=store)
         if results:
             scores.append(results[0].balanced_acc_mean)
     if not scores:
@@ -140,6 +143,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-figures", action="store_true")
     parser.add_argument("--no-controls", action="store_true")
     parser.add_argument("--cache-gb", type=float, default=8.0)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=-1,
+        help=(
+            "parallel worker processes for probe cells (-1 = all cores). "
+            "Cells are independent fits with fixed seeds, so this changes "
+            "wall clock only, never the numbers."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -149,7 +162,9 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(args.out) if args.out else Path(args.run) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
     plumbing = analysis.plumbing_report(run)
-    (out_dir / "plumbing.json").write_text(json.dumps(plumbing, indent=2) + "\n")
+    (out_dir / "plumbing.json").write_text(
+        json.dumps(plumbing, indent=2) + "\n", encoding="utf-8"
+    )
     logging.info("plumbing integrity: %s", json.dumps(plumbing, sort_keys=True))
     if not plumbing["passed"]:
         print("plumbing integrity check failed; inspect the reported mismatches")
@@ -164,7 +179,13 @@ def main(argv: list[str] | None = None) -> int:
         select_c=not args.fast,
         block_scaling=args.block_scaling,
         max_cache_gb=args.cache_gb,
+        n_jobs=args.jobs,
     )
+
+    # One store for the whole run.  Each ladder/control call used to build its
+    # own, re-reading and re-decompressing every hidden archive from scratch --
+    # which is cheap on a local SSD and brutal over NFS.
+    store = analysis.HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
 
     samples = analysis.make_samples(run, config)
     if samples.empty:
@@ -174,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         "probe samples: %d (%d positive)", len(samples), int((samples["y"] == 1).sum())
     )
 
-    results = analysis.run_ladder(run, samples, config)
+    results = analysis.run_ladder(run, samples, config, store=store)
     frame = analysis.results_to_frame(results) if results else pd.DataFrame()
     layer, pool = _best_hidden_config(frame) if not frame.empty else (0, "act_mean")
     logging.info("best hidden config: layer=%s pool=%s", layer, pool)
@@ -190,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     extra["e3"] = analysis.run_e3(run, samples)
     if args.permutations:
         extra["permutation_null"] = _permutation_null(
-            run, samples, config, layer, pool, args.permutations
+            run, samples, config, layer, pool, args.permutations, store=store
         )
 
     if not args.no_controls:
@@ -210,21 +231,27 @@ def main(argv: list[str] | None = None) -> int:
                 select_c=not args.fast,
                 block_scaling=args.block_scaling,
                 max_cache_gb=args.cache_gb,
+                n_jobs=args.jobs,
             ),
+            store=store,
         )
         analysis.results_to_frame(global_results).to_csv(
             out_dir / "global_negatives_results.csv", index=False
         )
 
-        per_transform = analysis.run_per_transform(run, samples, config, layer, pool)
+        per_transform = analysis.run_per_transform(
+            run, samples, config, layer, pool, store=store
+        )
         analysis.results_to_frame(per_transform).to_csv(
             out_dir / "per_transform_results.csv", index=False
         )
 
-        cross_task = analysis.run_cross_task(run, samples, config, layer, pool)
+        cross_task = analysis.run_cross_task(
+            run, samples, config, layer, pool, store=store
+        )
         cross_task.to_csv(out_dir / "cross_task_results.csv", index=False)
 
-        e1 = analysis.run_e1(run, config)
+        e1 = analysis.run_e1(run, config, store=store)
         e1.to_csv(out_dir / "e1_readout.csv", index=False)
 
         extra["undo_alignment"] = analysis.undo_alignment(run, samples)

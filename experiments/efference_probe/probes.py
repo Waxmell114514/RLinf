@@ -211,16 +211,26 @@ def run_probe(
             )
         else:
             chosen = max(c_values)
-        model = _make_classifier(chosen, max_iter, spans)
-        balanced, auroc = _fit_score(model, x_train, y_train, x_test, y_test)
+        # The per-C sweep refits this fold at every candidate C, and `chosen`
+        # is always one of them, so scoring the selected model separately
+        # would repeat a fit that is already being done.  Sweep first, then
+        # read the fold's score back out: identical numbers, one fewer fit
+        # per fold.
+        fold_scores: dict[float, tuple[float, float]] = {}
+        for c_value in c_values:
+            fold_model = _make_classifier(c_value, max_iter, spans)
+            fold_scores[c_value] = _fit_score(
+                fold_model, x_train, y_train, x_test, y_test
+            )
+            per_c_scores[c_value].append(fold_scores[c_value][0])
+
+        if chosen not in fold_scores:  # defensive: _select_c returns a listed C
+            model = _make_classifier(chosen, max_iter, spans)
+            fold_scores[chosen] = _fit_score(model, x_train, y_train, x_test, y_test)
+        balanced, auroc = fold_scores[chosen]
         result.fold_balanced_acc.append(balanced)
         result.fold_auroc.append(auroc)
         result.selected_c.append(float(chosen))
-
-        for c_value in c_values:
-            fold_model = _make_classifier(c_value, max_iter, spans)
-            fold_balanced, _ = _fit_score(fold_model, x_train, y_train, x_test, y_test)
-            per_c_scores[c_value].append(fold_balanced)
 
     result.balanced_acc_mean = float(np.mean(result.fold_balanced_acc))
     result.balanced_acc_std = float(np.std(result.fold_balanced_acc, ddof=1))

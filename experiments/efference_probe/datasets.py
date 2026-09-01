@@ -80,11 +80,15 @@ def load_run(run_dir: str | Path) -> RunData:
     import json
 
     run_dir = Path(run_dir)
-    with open(run_dir / "run_config.yaml") as handle:
+    with open(run_dir / "run_config.yaml", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
     calls = pd.read_parquet(run_dir / "calls.parquet")
     manifest_path = run_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+    manifest = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_path.is_file()
+        else {}
+    )
     return RunData(
         run_dir=run_dir,
         calls=calls,

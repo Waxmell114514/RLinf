@@ -585,7 +585,7 @@ class Logbook:
 
     def write(self, message: str) -> None:
         stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(self.path, "a") as handle:
+        with open(self.path, "a", encoding="utf-8") as handle:
             handle.write(f"- `{stamp}` {message}\n")
 
 
