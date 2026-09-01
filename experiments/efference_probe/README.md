@@ -101,14 +101,15 @@ python experiments/efference_probe/run_probes.py \
 | Gate | Expected | If it fails |
 |---|---|---|
 | P0 (shuffled labels) | 0.45–0.55 | the pipeline leaks; check grouping and sample construction |
-| **P2r** (mismatch oracle) | ≥ 0.9, every transform | labels or `states` logging are broken — fix before scaling |
+| **Plumbing integrity** (`analysis/plumbing.json`) | `passed=true`; action/state mismatch counts are 0 | labels, transforms, donors, or state alignment are broken — fix before scaling |
+| P2r (endpoint mismatch baseline) | report; no universal threshold | inspect transform strength and controller dynamics |
 | C_phase (task phase alone) | ≈ 0.5 | residual phase imbalance; check the signed phase-bias block |
 | C_cmd (command alone) | ≈ 0.5 | the schedule correlates with something it should not |
 | Class step-index distributions | overlapping | phase matching is failing; see `step_index_report.csv` |
 
-> **Use P2r, not P2, as the plumbing gate.** SPEC §5 names P2, but P2 is
-> transform-dependent: at chance for `swap`, near 1.0 for `mirror`/`freeze`.
-> See [The P2 problem](#the-p2-problem).
+`run_probes.py` performs the plumbing check before fitting any probe and exits
+early on failure. P2 and P2r remain reported, transform-dependent baselines;
+neither is used to infer whether the stored rows are internally consistent.
 
 ### S2 — main collection and core probes
 
@@ -234,8 +235,9 @@ it. That much is a theorem, not an empirical claim.
 But it does not follow that P2 sits at chance. Agreement is not the only
 linearly available signal: whenever a transform shifts the *mean* of `Δstates`,
 a linear probe separates the classes on the marginal alone, without ever
-forming a comparison. Measured on the synthetic fixture, with commands that are
-zero-mean i.i.d. versus directed (as real reaching motion is):
+forming a comparison. Measured on the identity-dynamics synthetic fixture,
+with commands that are zero-mean i.i.d. versus directed (as real reaching
+motion is):
 
 | transform | commands | P2 (concat) | P2r (mismatch) | C_dstates alone |
 |---|---|---|---|---|
@@ -265,20 +267,22 @@ Hence both are reported:
 
 - **P2** — the literal concatenation. Kept, because it is the honest *linear*
   oracle and the like-for-like comparison for P3/P4, which are also linear.
-- **P2r** — the same information plus the interaction terms the comparison
-  needs: the chunk-summed command, the state delta, their elementwise products,
-  and per-group norms and cosines (translation and rotation handled separately,
-  since they carry different units). This is the mechanical ceiling, and the
-  gate to check when validating the plumbing.
+- **P2r** — the same information plus explicit endpoint comparison terms: the
+  chunk-summed command, state delta, elementwise products, norms and cosines.
+  It is a useful baseline, not a transform-independent ceiling: a real LIBERO
+  controller scales and clips each action, contacts make the mapping nonlinear,
+  and same-task `swap` donors can produce very similar endpoint motion.
 
-**Use P2r for the S1 gate.** It is near 1.0 in every regime above, so it fails
-only when something is actually broken, whereas P2 is transform-dependent.
+**Use `analysis/plumbing.json` for the S1 plumbing gate.** It reconstructs each
+logged transform, checks every swap donor, and verifies that one row's
+`states_after` equals the next row's `states_before`. These are exact logging
+invariants and do not assume a command-to-state dynamics model.
 
 One caution for the write-up: `P3 > P2` is not by itself evidence of an
 efference copy. It shows the network has already performed a comparison a
 linear probe cannot perform on raw inputs, which is interesting — but the
-efference question is P1 versus P3/P4. A sentence of the form "P3 exceeds the
-mechanical oracle" would be a category error against P2 and false against P2r.
+efference question is P1 versus P3/P4. Do not call either P2 or P2r a universal
+mechanical ceiling; report the transform and observed baseline value.
 
 Two further controls, not in the spec, are run by default:
 
@@ -448,15 +452,16 @@ ffmpeg -framerate 5 -pattern_type glob \
 ## Tests
 
 ```bash
-python -m pytest experiments/efference_probe/tests/test_offline.py -q   # 31 tests
+python -m pytest experiments/efference_probe/tests/test_offline.py -q   # 43 tests
 ```
 
 They cover the hijack schedule (warm-up, clean gap, realised rate, donor
 selection, no mutation of commanded actions), the sequence arithmetic behind
 the pools, probe-sample construction (pairing, phase matching, post-success
-exclusion), probe behaviour against planted ground truth (P0 at chance, C_cmd
-at chance, the mismatch oracle recovering the label, P2 underperforming P2r),
-the storage round-trip, and config validation.
+exclusion), the direct plumbing gate for all three transforms, probe behaviour
+against planted ground truth (P0 at chance, C_cmd at chance, P2r recovering the
+label under the fixture's identity dynamics, P2 underperforming P2r), the
+storage round-trip, and config validation.
 
 `tests/synthetic.py` writes a full fake run directory, so the analysis half can
 be exercised end to end with no GPU:

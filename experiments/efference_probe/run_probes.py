@@ -148,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     run = analysis.load_run(args.run)
     out_dir = Path(args.out) if args.out else Path(args.run) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
+    plumbing = analysis.plumbing_report(run)
+    (out_dir / "plumbing.json").write_text(json.dumps(plumbing, indent=2) + "\n")
+    logging.info("plumbing integrity: %s", json.dumps(plumbing, sort_keys=True))
+    if not plumbing["passed"]:
+        print("plumbing integrity check failed; inspect the reported mismatches")
+        return 1
 
     config = analysis.AnalysisConfig(
         layers=args.layers,
@@ -173,7 +179,10 @@ def main(argv: list[str] | None = None) -> int:
     layer, pool = _best_hidden_config(frame) if not frame.empty else (0, "act_mean")
     logging.info("best hidden config: layer=%s pool=%s", layer, pool)
 
-    extra: dict = {"best_hidden_config": {"layer": layer, "pool": pool}}
+    extra: dict = {
+        "plumbing": plumbing,
+        "best_hidden_config": {"layer": layer, "pool": pool},
+    }
     # Reproducibility: --fast silently disables the nested C selection the
     # methodology advertises, and nothing else in the output records it.
     extra["analysis_config"] = dataclasses.asdict(config)

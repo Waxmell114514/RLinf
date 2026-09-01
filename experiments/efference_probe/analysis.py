@@ -27,6 +27,7 @@ from .datasets import (
     phase_bias_report,
     step_index_report,
 )
+from .hijack import HIJACK, SELF, apply_freeze, apply_mirror
 from .probes import (
     DEFAULT_C_VALUES,
     ProbeResult,
@@ -55,8 +56,9 @@ class ProbeSpec:
 # on `a_cmd` concatenated with `dstates` has no way to form the *agreement*
 # between a command and an outcome, so it lands near chance even when the
 # labels are fully determined by the mechanics.  P2 is kept as the honest
-# "linear oracle" number; P2r supplies the interaction terms and is the real
-# mechanical ceiling -- and the one to check when validating the plumbing.
+# "linear oracle" number; P2r supplies explicit comparison terms, but remains
+# an empirical endpoint-state baseline.  Plumbing is validated directly by
+# plumbing_report(), without assuming any controller dynamics.
 #
 # C_cmd is a leakage check: the commanded chunk is produced *before* the hijack,
 # so on its own it must sit at chance.  If it does not, the schedule or the
@@ -71,7 +73,7 @@ PROBE_SPECS: tuple[ProbeSpec, ...] = (
         "P2r",
         ("mismatch",),
         False,
-        description="mechanical oracle with comparison features",
+        description="endpoint mismatch baseline with comparison features",
     ),
     ProbeSpec(
         "P3", ("a_cmd", "h_cur"), True, description="efference-augmented decodability"
@@ -154,6 +156,114 @@ def make_samples(
         negatives=negatives or config.negatives,
         rng=np.random.default_rng(config.seed),
     )
+
+
+def plumbing_report(run: RunData, atol: float = 1e-6) -> dict[str, Any]:
+    """Check logged labels, executed transforms, donors, and state continuity."""
+    required = {
+        "episode_id",
+        "call_idx",
+        "label",
+        "transform",
+        "donor_episode_id",
+        "a_cmd_env",
+        "a_exec",
+        "states_before",
+        "states_after",
+    }
+    missing = sorted(required - set(run.calls.columns))
+    if missing:
+        raise KeyError(f"calls.parquet is missing plumbing columns: {missing}")
+
+    calls = run.calls.reset_index(drop=True)
+    shape = (int(run.schema["num_action_chunks"]), int(run.schema["action_dim"]))
+    lookup = {
+        (int(row.episode_id), int(row.call_idx)): index
+        for index, row in enumerate(calls.itertuples(index=False))
+    }
+    action_mismatches = 0
+    missing_donors = unknown_labels = effective_hijacks = 0
+    n_self = n_hijack = 0
+    max_action_error = 0.0
+
+    for row in calls.itertuples(index=False):
+        commanded = np.asarray(row.a_cmd_env, dtype=np.float32).reshape(shape)
+        executed = np.asarray(row.a_exec, dtype=np.float32).reshape(shape)
+        if row.label == SELF:
+            n_self += 1
+            expected = commanded
+        elif row.label == HIJACK:
+            n_hijack += 1
+            effective_hijacks += int(
+                not np.allclose(commanded, executed, rtol=0.0, atol=atol)
+            )
+            if row.transform == "mirror":
+                expected = apply_mirror(commanded)
+            elif row.transform == "freeze":
+                expected = apply_freeze(commanded)
+            elif row.transform == "swap":
+                donor = lookup.get((int(row.donor_episode_id), int(row.call_idx)))
+                if donor is None:
+                    missing_donors += 1
+                    action_mismatches += 1
+                    continue
+                expected = np.asarray(
+                    calls.iloc[donor]["a_cmd_env"], dtype=np.float32
+                ).reshape(shape)
+            else:
+                action_mismatches += 1
+                continue
+        else:
+            unknown_labels += 1
+            action_mismatches += 1
+            continue
+
+        error = float(np.max(np.abs(expected - executed)))
+        max_action_error = max(max_action_error, error)
+        action_mismatches += int(error > atol)
+
+    state_links = state_discontinuities = 0
+    max_state_error = 0.0
+    for _episode_id, episode in calls.groupby("episode_id", sort=False):
+        rows = list(episode.sort_values("call_idx").itertuples(index=False))
+        for previous, current in zip(rows, rows[1:]):
+            if int(current.call_idx) != int(previous.call_idx) + 1:
+                continue
+            state_links += 1
+            error = float(
+                np.max(
+                    np.abs(
+                        np.asarray(previous.states_after, dtype=np.float32)
+                        - np.asarray(current.states_before, dtype=np.float32)
+                    )
+                )
+            )
+            max_state_error = max(max_state_error, error)
+            state_discontinuities += int(error > atol)
+
+    passed = bool(
+        len(calls)
+        and n_hijack
+        and not action_mismatches
+        and not state_discontinuities
+        and not missing_donors
+        and not unknown_labels
+    )
+    return {
+        "passed": passed,
+        "n_rows": len(calls),
+        "n_self": n_self,
+        "n_hijack": n_hijack,
+        "n_effective_hijacks": effective_hijacks,
+        "n_action_mismatches": action_mismatches,
+        "n_missing_donors": missing_donors,
+        "n_unknown_labels": unknown_labels,
+        "max_action_abs_error": max_action_error,
+        "n_state_links": state_links,
+        "n_state_discontinuities": state_discontinuities,
+        "max_state_abs_error": max_state_error,
+        "atol": atol,
+    }
 
 
 def run_ladder(
@@ -811,6 +921,7 @@ __all__ = [
     "PROBE_SPECS",
     "load_run",
     "make_samples",
+    "plumbing_report",
     "run_cross_task",
     "run_e1",
     "run_e3",

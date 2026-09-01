@@ -32,7 +32,8 @@ Every number below comes from `run_probes.py`. The run card (T1) is at
 | Gate | Expected | Observed |
 |---|---|---|
 | P0 (shuffled labels) | 0.45–0.55 | |
-| P2r (mismatch oracle) | ≥ 0.9, every transform | |
+| Plumbing integrity (`plumbing.json`) | `passed=true`; mismatch counts 0 | |
+| P2r (endpoint mismatch baseline) | report; no universal threshold | |
 | C_cmd (command alone) | ≈ 0.5 | |
 | C_phase (task phase alone) | ≈ 0.5 | |
 | Step-index overlap | classes overlap | |
@@ -55,7 +56,7 @@ Run card: *(paste `run_card.csv`)*
 | P3 | `a_cmd[m] ⊕ h_{m+1}` | | | |
 | P4 | `h_m ⊕ h_{m+1}` | | | |
 | P2 | `a_cmd[m] ⊕ Δstates` (linear oracle) | | | |
-| P2r | mismatch features (mechanical ceiling) | | | |
+| P2r | endpoint mismatch features (transform-dependent baseline) | | | |
 | C_cmd | `a_cmd[m]` alone (control) | | | |
 | C_dstates | `Δstates` alone (control) | | | |
 | C_phase | `cur_call`, `cur_call²` (control) | | | |
@@ -131,10 +132,11 @@ Two things to keep in view when writing this up:
    P2 is at chance for the mean-preserving transform (`swap`). It is *not* at
    chance for `mirror`/`freeze` on directed motion — there it separates on the
    marginal state delta alone, which `C_dstates` will show. Either way P2 is
-   not a ceiling. Comparing P1/P3/P4 against P2r compares against a ceiling a
-   linear probe cannot reach; comparing against P2 is the like-for-like
-   comparison. Say which is being used, wherever the ladder is shown — and note
-   that `P3 > P2` is not by itself evidence of an efference copy.
+   not a ceiling. P2r supplies nonlinear comparison features, but real
+   controller dynamics and same-task swap similarity make it
+   transform-dependent too. Comparing against P2 is the like-for-like linear
+   comparison; report P2r as a separate endpoint baseline. `P3 > P2` is not by
+   itself evidence of an efference copy.
 2. **Q1's null is the expected outcome.** The setup is memoryless and
    vision-only per call, so anything P1 finds above chance is most likely
    visual atypicality, not agency attribution. That should be stated as the

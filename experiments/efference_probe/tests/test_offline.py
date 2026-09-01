@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from efference_probe.analysis import to_markdown  # noqa: E402
+from efference_probe.analysis import plumbing_report, to_markdown  # noqa: E402
 from efference_probe.config import RunConfig, load_config  # noqa: E402
 from efference_probe.datasets import (  # noqa: E402
     HiddenStore,
@@ -190,6 +190,34 @@ def synthetic_run(tmp_path_factory):
     path = tmp_path_factory.mktemp("synthetic")
     make_synthetic_run(path, hidden_signal=1.2, seed=7)
     return load_run(path)
+
+
+@pytest.mark.parametrize("transform", ["swap", "mirror", "freeze"])
+def test_plumbing_gate_detects_corrupted_execution(tmp_path, transform):
+    run = load_run(make_synthetic_run(tmp_path / transform, transform=transform))
+    report = plumbing_report(run)
+    assert report["passed"]
+    assert report["n_action_mismatches"] == 0
+    assert report["n_state_discontinuities"] == 0
+
+    calls = run.calls.copy()
+    row = calls.index[calls["label"] == "HIJACK"][0]
+    corrupted = np.asarray(calls.at[row, "a_exec"]).copy()
+    corrupted[0] += 1.0
+    calls.at[row, "a_exec"] = corrupted
+    episode = calls[calls["episode_id"] == calls.at[row, "episode_id"]].sort_values(
+        "call_idx"
+    )
+    next_row = episode.index[1]
+    corrupted = np.asarray(calls.at[next_row, "states_before"]).copy()
+    corrupted[0] += 1.0
+    calls.at[next_row, "states_before"] = corrupted
+    broken = RunData(run.run_dir, calls, run.schema, run.config, run.manifest)
+
+    report = plumbing_report(broken)
+    assert not report["passed"]
+    assert report["n_action_mismatches"] == 1
+    assert report["n_state_discontinuities"] == 1
 
 
 def test_samples_are_paired_and_well_formed(synthetic_run):

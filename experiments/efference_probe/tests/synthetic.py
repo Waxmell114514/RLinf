@@ -143,7 +143,11 @@ def make_synthetic_run(
                             if decision.donor_env_index is not None
                             else -1
                         ),
-                        "donor_episode_id": -1,
+                        "donor_episode_id": (
+                            int(episode_ids[decision.donor_env_index])
+                            if decision.donor_env_index is not None
+                            else -1
+                        ),
                         "skipped_reason": decision.skipped_reason or "",
                         "a_cmd_model": commanded[slot].reshape(-1),
                         "a_cmd_env": commanded[slot].reshape(-1),
