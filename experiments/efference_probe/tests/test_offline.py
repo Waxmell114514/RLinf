@@ -762,3 +762,81 @@ def test_parallel_e1_matches_serial_exactly(synthetic_run):
     parallel = run_e1(synthetic_run, AnalysisConfig(**base, n_jobs=2))
 
     pd.testing.assert_frame_equal(serial, parallel)
+
+
+@pytest.mark.parametrize(
+    "n_samples,n_features,n_targets,constant_column",
+    [
+        (200, 40, 5, False),   # n > p: normal equations
+        (40, 200, 5, False),   # n < p: dual/kernel form, as E1 actually runs
+        (200, 40, 5, True),    # zero-variance columns must not divide by ~0
+        (40, 200, 1, True),
+    ],
+)
+def test_shared_ridge_matches_sklearn(
+    n_samples, n_features, n_targets, constant_column
+):
+    """The shared-system ridge must reproduce sklearn, not merely approximate it.
+
+    `ridge_readout` scores seven alphas on identical training data, so the
+    Gram/kernel matrix is built once and reused.  That is only legitimate if
+    each alpha still lands exactly where `Pipeline([StandardScaler(),
+    Ridge(alpha)])` would put it -- E1's R^2 depth profile is a reported
+    result, and a solver that quietly disagreed would be invisible in it.
+    """
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from efference_probe.probes import _SharedRidge
+
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(n_samples, n_features))
+    x_test = rng.normal(size=(31, n_features))
+    if constant_column:
+        x[:, 0] = 3.5
+        x_test[:, 0] = 3.5
+        x[:, 1] = 0.0
+        x_test[:, 1] = 0.0
+    y = x[:, :1] @ rng.normal(size=(1, n_targets)) + rng.normal(
+        size=(n_samples, n_targets), scale=0.3
+    )
+
+    solver = _SharedRidge(x, y)
+    for alpha in (0.1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5):
+        reference = (
+            Pipeline([("scale", StandardScaler()), ("ridge", Ridge(alpha=alpha))])
+            .fit(x, y)
+            .predict(x_test)
+        )
+        got = solver.predict(x_test, alpha)
+        np.testing.assert_allclose(
+            got, reference.reshape(got.shape), rtol=1e-9, atol=1e-9
+        )
+
+
+def test_shared_ridge_survives_a_singular_design():
+    """Duplicate and constant columns must not take the solver down.
+
+    Hidden-state features are not guaranteed full rank -- a dead unit is a
+    zero column, and tied units are duplicates.  The regularised system stays
+    solvable, and the answer must still be sklearn's.
+    """
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from efference_probe.probes import _SharedRidge
+
+    rng = np.random.default_rng(1)
+    base = rng.normal(size=(60, 5))
+    x = np.hstack([base, base, np.zeros((60, 3))])  # rank-deficient by design
+    y = rng.normal(size=(60, 4))
+    solver = _SharedRidge(x, y)
+    for alpha in (0.1, 1e3):
+        reference = (
+            Pipeline([("scale", StandardScaler()), ("ridge", Ridge(alpha=alpha))])
+            .fit(x, y)
+            .predict(x)
+        )
+        np.testing.assert_allclose(solver.predict(x, alpha), reference, rtol=1e-7, atol=1e-7)

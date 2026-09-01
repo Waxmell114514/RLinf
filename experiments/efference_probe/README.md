@@ -342,6 +342,16 @@ Cells are independent fits with fixed seeds, so they parallelise exactly —
 numbers are identical to a serial run; there is no sampling, no shared state,
 and no ordering dependence.
 
+**E1 shares one system across the alpha grid.** `ridge_readout` scores seven
+alphas on the same inner-training split, and alpha only shifts the diagonal, so
+`_SharedRidge` builds the Gram (or kernel, when features outnumber samples)
+matrix once and reuses it. Measured 1.92x on that sweep and 1.25x on the E1
+phase end to end; the remainder is the per-fold fit on the full training split,
+which uses different data each fold and so cannot be shared. It is deliberately
+*not* an SVD: with 4096 features a thin SVD of the design costs more than all
+seven fits it would replace (13.2s against 3.9s measured). Tests pin it against
+`Pipeline([StandardScaler(), Ridge(alpha)])` to 1e-9.
+
 **Threaded BLAS is slower here than one thread per cell.** Measured on one
 real-scale P0 cell (1412 samples x 4096 features, 5-fold with C selection) on a
 4-core machine:
