@@ -342,14 +342,28 @@ Cells are independent fits with fixed seeds, so they parallelise exactly —
 numbers are identical to a serial run; there is no sampling, no shared state,
 and no ordering dependence.
 
-**The trap: BLAS thread oversubscription.** Under a scheduler that hands the
-job a small CPU allocation while OpenMP still sees the whole node, OpenBLAS
-spawns one thread per *node* core onto the few cores you were actually given.
-The fits then thrash instead of computing, and a cell that takes seconds can
-take tens of minutes — with no error, no warning, and unremarkable memory use.
-The parallel path pins `inner_max_num_threads=1`, which is immune. The serial
-path is not, so under SLURM or any cgroup-limited allocation, set the thread
-count to match the allocation before running:
+**Threaded BLAS is slower here than one thread per cell.** Measured on one
+real-scale P0 cell (1412 samples x 4096 features, 5-fold with C selection) on a
+4-core machine:
+
+| `OMP_NUM_THREADS` | cell | BLAS threads used |
+|---|---|---|
+| 1 | 2.87 s | 1 |
+| 4 | 6.48 s | 4 |
+| 16 | 6.45 s | 4 (OpenBLAS caps at core count) |
+| 64 | 6.24 s | 4 (same) |
+
+The fits are many small operations rather than a few large ones, so threading
+them costs more in synchronisation than it recovers. Four single-threaded
+workers therefore beat one four-threaded process by more than 4x, which is why
+`--jobs` is superlinear: the full ladder measured 16.3 min serial against
+2.78 min at `--jobs -1`.
+
+Note the last two rows: OpenBLAS limits itself to the machine's core count, so
+setting a huge thread count does *not* by itself produce runaway
+oversubscription. Pinning threads is still worth doing under a scheduler that
+grants fewer cores than the node has, because an allocation-unaware BLAS would
+size itself to the node:
 
 ```bash
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
@@ -357,8 +371,9 @@ export OPENBLAS_NUM_THREADS=$OMP_NUM_THREADS
 export MKL_NUM_THREADS=$OMP_NUM_THREADS
 ```
 
-`run_probes.py` logs the resolved worker and thread counts at startup, so if a
-run ever crawls again the log says immediately whether this was the cause.
+`run_probes.py` logs the resolved worker and thread counts at startup, so a run
+that ever crawls can be diagnosed from its own log rather than by re-running it.
+
 
 ### Sample construction
 

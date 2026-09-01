@@ -117,13 +117,12 @@ def _permutation_null(
 def _log_compute_environment(n_jobs: int) -> None:
     """Record how many workers and BLAS threads this run actually got.
 
-    A probe cell is a few seconds of linear algebra.  The one way it becomes
-    tens of minutes is thread oversubscription: under a scheduler that gives
-    the job a handful of cores while OpenMP still reports the whole node,
-    OpenBLAS starts a thread per node core on those few cores and they thrash.
-    It fails silently -- no error, ordinary memory use -- so the resolved
-    counts are logged up front to make the next occurrence a one-line
-    diagnosis rather than an autopsy.
+    A probe cell is a few seconds of linear algebra, and how long it actually
+    takes depends on how the cores got divided up -- measured on one real-scale
+    cell, single-threaded BLAS beat 4-threaded by 2.3x, because the fits are
+    many small operations rather than a few large ones.  None of that appears
+    in the results, so the resolved counts are logged up front: a run that
+    turns out slow can then be diagnosed from its own log instead of re-run.
     """
     workers = analysis._resolve_n_jobs(n_jobs)
     cpus = os.cpu_count() or 1
@@ -139,11 +138,19 @@ def _log_compute_environment(n_jobs: int) -> None:
         affinity,
         threads,
     )
-    if workers == 1 and affinity < cpus and all(v == "unset" for v in threads.values()):
+    if workers == 1 and affinity > 1:
         logging.warning(
-            "only %d of %d cores are usable but no BLAS thread limit is set; "
-            "export OMP_NUM_THREADS=%d (and OPENBLAS/MKL) or pass --jobs >1, "
-            "or the fits may oversubscribe and crawl",
+            "running serially on a %d-core allocation; --jobs -1 fits cells in "
+            "separate single-threaded workers and measured ~6x faster on the "
+            "probe ladder",
+            affinity,
+        )
+    if affinity < cpus and all(value == "unset" for value in threads.values()):
+        logging.warning(
+            "only %d of %d cores are usable and no BLAS thread limit is set; "
+            "a BLAS that sizes itself to the node rather than the allocation "
+            "will oversubscribe -- export OMP_NUM_THREADS=%d "
+            "(and OPENBLAS_NUM_THREADS/MKL_NUM_THREADS)",
             affinity,
             cpus,
             affinity,
