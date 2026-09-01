@@ -14,6 +14,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -113,6 +114,42 @@ def _permutation_null(
     }
 
 
+def _log_compute_environment(n_jobs: int) -> None:
+    """Record how many workers and BLAS threads this run actually got.
+
+    A probe cell is a few seconds of linear algebra.  The one way it becomes
+    tens of minutes is thread oversubscription: under a scheduler that gives
+    the job a handful of cores while OpenMP still reports the whole node,
+    OpenBLAS starts a thread per node core on those few cores and they thrash.
+    It fails silently -- no error, ordinary memory use -- so the resolved
+    counts are logged up front to make the next occurrence a one-line
+    diagnosis rather than an autopsy.
+    """
+    workers = analysis._resolve_n_jobs(n_jobs)
+    cpus = os.cpu_count() or 1
+    affinity = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else cpus
+    threads = {
+        name: os.environ.get(name, "unset")
+        for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+    }
+    logging.info(
+        "compute: workers=%d cpu_count=%d usable_cpus=%d threads=%s",
+        workers,
+        cpus,
+        affinity,
+        threads,
+    )
+    if workers == 1 and affinity < cpus and all(v == "unset" for v in threads.values()):
+        logging.warning(
+            "only %d of %d cores are usable but no BLAS thread limit is set; "
+            "export OMP_NUM_THREADS=%d (and OPENBLAS/MKL) or pass --jobs >1, "
+            "or the fits may oversubscribe and crawl",
+            affinity,
+            cpus,
+            affinity,
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True, help="collection run directory")
@@ -158,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
+    _log_compute_environment(args.jobs)
     run = analysis.load_run(args.run)
     out_dir = Path(args.out) if args.out else Path(args.run) / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)

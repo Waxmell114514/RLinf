@@ -28,6 +28,21 @@
 # `all` chains preflight..archive for the swap run only.  Every phase is
 # idempotent and safe to re-run after a disconnect.
 #
+# ON NATIVE WINDOWS (the analysis laptop): run `verify` from Git Bash, which
+# ships with Git for Windows and provides sha256sum + tar.  If that is somehow
+# unavailable, do the same three steps by hand -- the gate logic is in
+# run_probes.py, not in this script:
+#
+#     certutil -hashfile archive.tar SHA256          :: compare to the .sha256
+#     tar -xf archive.tar -C experiments\efference_probe\data
+#     python experiments\efference_probe\run_probes.py --run <run-dir> ^
+#         --stage pilot --probes P0 --no-figures --no-controls
+#
+# then read analysis\plumbing.json (passed, zero n_*mismatch/missing/unknown/
+# discontinuity counts), manifest.json's verification.passed, and the P0 rows
+# of analysis\probe_results.csv (mean balanced accuracy must be in
+# [0.45, 0.55]).
+#
 # Nothing here trains anything: this is inference-only collection (SPEC 0.2).
 
 set -euo pipefail

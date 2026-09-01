@@ -655,3 +655,94 @@ def test_markdown_table_needs_no_tabulate():
     assert lines[0].startswith("| name")
     assert len(lines) == 4
     assert "0.5123" in rendered
+
+
+def test_resolve_n_jobs_maps_negatives_onto_core_count():
+    import os
+
+    from efference_probe.analysis import _resolve_n_jobs
+
+    cores = os.cpu_count() or 1
+    assert _resolve_n_jobs(1) == 1
+    assert _resolve_n_jobs(3) == 3
+    assert _resolve_n_jobs(-1) == cores
+    assert _resolve_n_jobs(-2) == max(1, cores - 1)
+    # Anything degenerate has to collapse to serial rather than to zero
+    # workers, which joblib would reject.
+    assert _resolve_n_jobs(0) == 1
+    assert _resolve_n_jobs(None) == 1
+    assert _resolve_n_jobs(-99) == 1
+
+
+def test_parallel_ladder_matches_serial_exactly(synthetic_run):
+    """Parallelism must be a wall-clock change and nothing else.
+
+    Every cell is an independent fit over fixed seeds and fixed splits, so
+    dispatching cells to worker processes has to reproduce the serial numbers
+    bit for bit.  If this ever drifts, the ladder is picking up state that
+    depends on evaluation order and no reported number can be trusted.
+    """
+    from efference_probe.analysis import AnalysisConfig, make_samples, run_ladder
+
+    base = dict(layers=[0, 4], pools=["ctx_mean"], probes=["P0", "P1", "C_cmd"])
+    config = AnalysisConfig(**base)
+    samples = make_samples(synthetic_run, config)
+
+    serial = run_ladder(synthetic_run, samples, AnalysisConfig(**base, n_jobs=1))
+    parallel = run_ladder(synthetic_run, samples, AnalysisConfig(**base, n_jobs=2))
+
+    assert [r.name for r in serial] == [r.name for r in parallel]
+    assert [(r.layer, r.pool) for r in serial] == [(r.layer, r.pool) for r in parallel]
+    for want, got in zip(serial, parallel):
+        assert want.fold_balanced_acc == got.fold_balanced_acc
+        assert want.fold_auroc == got.fold_auroc
+        assert want.selected_c == got.selected_c
+        assert want.per_c == got.per_c
+
+
+def test_selected_fold_score_comes_from_the_per_c_sweep(synthetic_run):
+    """The reported fold score is the per-C sweep's fit at the selected C.
+
+    `run_probe` used to fit the selected C twice per fold -- once to score the
+    fold, once inside the per-C sweep -- and the duplicate was dropped in
+    favour of reading the sweep's own entry.  That is only sound if the two
+    were the same fit.
+
+    With a single-value C grid the sweep has exactly one entry per fold and
+    `chosen` must be it, so the per-C mean has to equal the mean of the
+    reported fold scores *exactly* -- not approximately.  Any drift means the
+    fold is being scored by something other than the sweep.
+    """
+    samples = build_probe_samples(
+        synthetic_run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+    )
+    features, _ = build_features(
+        synthetic_run,
+        samples,
+        ["h_cur"],
+        layer=4,
+        pool="act_mean",
+        store=HiddenStore(synthetic_run.run_dir / "hidden"),
+    )
+    labels = samples["y"].to_numpy()
+    groups = samples["episode_id"].to_numpy()
+
+    def _fit(**kwargs):
+        return run_probe(
+            features, labels, groups, name="test", blocks=["h_cur"], **kwargs
+        )
+
+    result = _fit(c_values=(0.1,), select_c=False)
+    assert list(result.per_c) == ["C=0.1"]
+    assert result.per_c["C=0.1"]["balanced_acc_mean"] == pytest.approx(
+        float(np.mean(result.fold_balanced_acc)), abs=0.0, rel=0.0
+    )
+    assert set(result.selected_c) == {0.1}
+
+    # And with the real grid, every fold still picks from the advertised
+    # values and lands in the table.
+    swept = _fit(select_c=True)
+    assert len(swept.selected_c) == len(swept.fold_balanced_acc)
+    assert set(swept.selected_c) <= {0.01, 0.1, 1.0}
+    for chosen in swept.selected_c:
+        assert f"C={chosen}" in swept.per_c

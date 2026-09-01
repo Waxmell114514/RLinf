@@ -329,6 +329,37 @@ Two further controls, not in the spec, are run by default:
   folds share training data, so they are not calibrated intervals — do not read
   "P4's bar clears P1's" as a test.
 
+### Runtime, and the one performance trap
+
+The ladder is a grid: every hidden-state probe is fitted at each of
+`9 layers x 3 pools = 27` cells, and each cell is a 5-fold grouped CV with
+per-fold `C` selection. At the real run's scale (~1.3k probe samples, 4096-wide
+features) one cell is a few seconds, so the main stage is dominated purely by
+cell count.
+
+Cells are independent fits with fixed seeds, so they parallelise exactly —
+`--jobs` (default `-1`, all cores) changes wall clock and nothing else. The
+numbers are identical to a serial run; there is no sampling, no shared state,
+and no ordering dependence.
+
+**The trap: BLAS thread oversubscription.** Under a scheduler that hands the
+job a small CPU allocation while OpenMP still sees the whole node, OpenBLAS
+spawns one thread per *node* core onto the few cores you were actually given.
+The fits then thrash instead of computing, and a cell that takes seconds can
+take tens of minutes — with no error, no warning, and unremarkable memory use.
+The parallel path pins `inner_max_num_threads=1`, which is immune. The serial
+path is not, so under SLURM or any cgroup-limited allocation, set the thread
+count to match the allocation before running:
+
+```bash
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export OPENBLAS_NUM_THREADS=$OMP_NUM_THREADS
+export MKL_NUM_THREADS=$OMP_NUM_THREADS
+```
+
+`run_probes.py` logs the resolved worker and thread counts at startup, so if a
+run ever crawls again the log says immediately whether this was the cause.
+
 ### Sample construction
 
 Each probe sample is a pair of consecutive calls `(prev, cur)` with
