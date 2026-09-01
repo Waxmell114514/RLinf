@@ -288,6 +288,17 @@ def _resolve_n_jobs(n_jobs: int) -> int:
     return max(1, n_jobs)
 
 
+def _log_cell(result: ProbeResult) -> None:
+    logger.info(
+        "%s layer=%s pool=%s bacc=%.3f auroc=%.3f",
+        result.name,
+        result.layer,
+        result.pool,
+        result.balanced_acc_mean,
+        result.auroc_mean,
+    )
+
+
 def _run_cell(
     cell: tuple[str, ProbeSpec, Optional[int], Optional[str], np.ndarray, list],
     labels: np.ndarray,
@@ -377,27 +388,26 @@ def run_ladder(
                 yield (name, spec, layer, pool, features, spans)
 
     n_jobs = _resolve_n_jobs(config.n_jobs)
+    results: list[ProbeResult] = []
     if n_jobs == 1:
-        results = [_run_cell(cell, labels, groups, config) for cell in _cells()]
+        for cell in _cells():
+            results.append(_run_cell(cell, labels, groups, config))
+            _log_cell(results[-1])
     else:
         # inner_max_num_threads=1: each worker already owns a core, so letting
         # its BLAS fan out too would oversubscribe and run slower than serial.
+        # return_as="generator" keeps submission order but hands cells back as
+        # they land, so a long sweep still reports progress as it goes rather
+        # than going silent for minutes (SPEC 7's heartbeat rule).
         with parallel_backend("loky", n_jobs=n_jobs, inner_max_num_threads=1):
-            results = Parallel()(
+            stream = Parallel(return_as="generator")(
                 delayed(_run_cell)(cell, labels, groups, config)
                 for cell in _cells()
             )
-
-    for result in results:
-        logger.info(
-            "%s layer=%s pool=%s bacc=%.3f auroc=%.3f",
-            result.name,
-            result.layer,
-            result.pool,
-            result.balanced_acc_mean,
-            result.auroc_mean,
-        )
-    return list(results)
+            for result in stream:
+                results.append(result)
+                _log_cell(result)
+    return results
 
 
 def run_per_transform(
@@ -540,6 +550,40 @@ def run_cross_task(
     return pd.DataFrame(rows)
 
 
+def _run_e1_cell(
+    cell: tuple[int, str, np.ndarray],
+    targets: np.ndarray,
+    groups: np.ndarray,
+    config: AnalysisConfig,
+) -> dict[str, Any]:
+    """Ridge-regress the commanded chunk from one (layer, pool) cell.
+
+    Module level so joblib can ship it to a worker.  E1 is the most expensive
+    block in a full run -- 40 ridge fits per cell on roughly (n_calls x 4096)
+    -- and its cells are as independent as the ladder's.
+    """
+    layer, pool, features = cell
+    readout = ridge_readout(
+        features, targets, groups, n_splits=config.n_splits, seed=config.seed
+    )
+    per_dim = np.asarray(readout["per_dim_r2"])
+    return {
+        "layer": layer,
+        "pool": pool,
+        "r2_mean": readout["r2_mean"],
+        "r2_std": readout["r2_std"],
+        # A single near-constant output dimension (the gripper token often
+        # is) drags the uniform average down, and a boundary-pinned alpha
+        # silently under-fits.  Both are invisible unless reported.
+        "r2_median_per_dim": float(np.median(per_dim)),
+        "r2_min_per_dim": float(per_dim.min()),
+        "selected_alpha": json.dumps(readout["selected_alpha"]),
+        "alpha_at_grid_edge": bool(readout["alpha_at_grid_edge"]),
+        "n_samples": readout["n_samples"],
+        "n_features": readout["n_features"],
+    }
+
+
 def run_e1(
     run: RunData,
     config: AnalysisConfig,
@@ -567,35 +611,36 @@ def run_e1(
 
     layers = config.layers if config.layers is not None else run.layers
     pools = config.pools if config.pools is not None else run.pools
+    def _cells():
+        """Yield one (layer, pool) cell at a time; see run_ladder._cells."""
+        for layer in layers:
+            for pool in pools:
+                yield (
+                    layer,
+                    pool,
+                    store.vectors(pairs, run.layer_index(layer), run.pool_index(pool)),
+                )
+
+    def _log_row(row: dict[str, Any]) -> None:
+        logger.info(
+            "E1 layer=%s pool=%s R2=%.3f", row["layer"], row["pool"], row["r2_mean"]
+        )
+
+    n_jobs = _resolve_n_jobs(config.n_jobs)
     rows: list[dict[str, Any]] = []
-    for layer in layers:
-        for pool in pools:
-            features = store.vectors(
-                pairs, run.layer_index(layer), run.pool_index(pool)
+    if n_jobs == 1:
+        for cell in _cells():
+            rows.append(_run_e1_cell(cell, targets, groups, config))
+            _log_row(rows[-1])
+    else:
+        with parallel_backend("loky", n_jobs=n_jobs, inner_max_num_threads=1):
+            stream = Parallel(return_as="generator")(
+                delayed(_run_e1_cell)(cell, targets, groups, config)
+                for cell in _cells()
             )
-            readout = ridge_readout(
-                features, targets, groups, n_splits=config.n_splits, seed=config.seed
-            )
-            per_dim = np.asarray(readout["per_dim_r2"])
-            rows.append(
-                {
-                    "layer": layer,
-                    "pool": pool,
-                    "r2_mean": readout["r2_mean"],
-                    "r2_std": readout["r2_std"],
-                    # A single near-constant output dimension (the gripper
-                    # token often is) drags the uniform average down, and a
-                    # boundary-pinned alpha silently under-fits.  Both are
-                    # invisible unless reported.
-                    "r2_median_per_dim": float(np.median(per_dim)),
-                    "r2_min_per_dim": float(per_dim.min()),
-                    "selected_alpha": json.dumps(readout["selected_alpha"]),
-                    "alpha_at_grid_edge": bool(readout["alpha_at_grid_edge"]),
-                    "n_samples": readout["n_samples"],
-                    "n_features": readout["n_features"],
-                }
-            )
-            logger.info("E1 layer=%s pool=%s R2=%.3f", layer, pool, readout["r2_mean"])
+            for row in stream:
+                rows.append(row)
+                _log_row(row)
     return pd.DataFrame(rows)
 
 

@@ -746,3 +746,19 @@ def test_selected_fold_score_comes_from_the_per_c_sweep(synthetic_run):
     assert set(swept.selected_c) <= {0.01, 0.1, 1.0}
     for chosen in swept.selected_c:
         assert f"C={chosen}" in swept.per_c
+
+
+def test_parallel_e1_matches_serial_exactly(synthetic_run):
+    """E1's cells parallelise on the same terms as the ladder's.
+
+    E1 is the most expensive block in a full run -- ridge over every recorded
+    call, at every layer and pool -- so it is the one most worth dispatching,
+    and equally the one where a silent difference would be least noticed.
+    """
+    from efference_probe.analysis import AnalysisConfig, run_e1
+
+    base = dict(layers=[0, 4], pools=["ctx_mean"])
+    serial = run_e1(synthetic_run, AnalysisConfig(**base, n_jobs=1))
+    parallel = run_e1(synthetic_run, AnalysisConfig(**base, n_jobs=2))
+
+    pd.testing.assert_frame_equal(serial, parallel)
