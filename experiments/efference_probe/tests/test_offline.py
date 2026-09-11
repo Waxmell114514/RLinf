@@ -840,3 +840,115 @@ def test_shared_ridge_survives_a_singular_design():
             .predict(x)
         )
         np.testing.assert_allclose(solver.predict(x, alpha), reference, rtol=1e-7, atol=1e-7)
+
+
+# --------------------------------------------------------------------------
+# Nonlinear (MLP) probe family
+# --------------------------------------------------------------------------
+
+
+def _xor_dataset(n=400, dim=24, margin=0.3, seed=0):
+    """Labels are the XOR of two coordinate signs: invisible to any linear
+    readout, learnable by one hidden layer.  Points inside ``margin`` of
+    either decision axis are resampled away so the boundary is clean --
+    without the margin even a converged MLP tops out around 0.8 at this n,
+    which would leave no daylight between "family works" and "family is
+    feeble".  The remaining dimensions are pure noise, so the test also
+    checks the MLP is not just memorising."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    while sum(len(r) for r in rows) < n:
+        batch = rng.normal(size=(4 * n, dim)).astype(np.float32)
+        keep = (np.abs(batch[:, 0]) > margin) & (np.abs(batch[:, 1]) > margin)
+        rows.append(batch[keep])
+    x = np.concatenate(rows)[:n]
+    y = ((x[:, 0] > 0) ^ (x[:, 1] > 0)).astype(int)
+    groups = rng.integers(0, 40, size=n)
+    return x, y, groups
+
+
+def test_mlp_probe_reads_xor_where_linear_cannot():
+    """The one property that justifies the MLP rung: strictly more reach.
+
+    If the linear probe scored well here the dataset would be broken; if the
+    MLP scored at chance the family plumbing would be broken.  Both bounds
+    are deliberately loose -- this pins the ordering, not the decimals.
+    """
+    from efference_probe.probes import run_probe
+
+    x, y, groups = _xor_dataset()
+    # Single alpha, no inner selection: this test pins the family's reach,
+    # not the grid machinery (the ladder test covers the threading), and the
+    # full 30-fit sweep costs minutes where these 5 fits cost seconds.
+    linear = run_probe(
+        x, y, groups, name="xor", blocks=["h_cur"], family="linear",
+        c_values=(1.0,), select_c=False,
+    )
+    mlp = run_probe(
+        x, y, groups, name="xor", blocks=["h_cur"], family="mlp",
+        c_values=(0.1,), select_c=False,
+    )
+    assert linear.family == "linear"
+    assert mlp.family == "mlp"
+    assert linear.balanced_acc_mean < 0.62
+    assert mlp.balanced_acc_mean > 0.85
+    assert not np.isnan(mlp.auroc_mean)  # predict_proba path for AUROC
+
+
+def test_mlp_null_floor_stays_at_chance():
+    """A shuffled-label MLP must not buy accuracy from its extra capacity.
+
+    This is the null the MLP ladder is compared against; if it drifted above
+    chance the whole nonlinear extension would flatter itself exactly the way
+    the selection-aware floor exists to prevent.
+    """
+    from efference_probe.probes import run_probe
+
+    x, y, groups = _xor_dataset(seed=1)
+    null = run_probe(
+        x, y, groups, name="P0", blocks=["h_cur"], family="mlp",
+        shuffle_labels=True, c_values=(0.1,), select_c=False,
+    )
+    assert abs(null.balanced_acc_mean - 0.5) < 0.12
+
+
+def test_ladder_threads_family_to_every_cell(synthetic_run):
+    """AnalysisConfig(family=...) must reach every probe in the sweep, P0
+    included -- an MLP ladder floored by a linear P0 would overstate itself.
+
+    A single explicit alpha with no inner selection keeps this to 10 lbfgs
+    fits; the default-grid swap that a bare ``family="mlp"`` triggers is
+    asserted separately below at zero fitting cost."""
+    from efference_probe.analysis import (
+        AnalysisConfig,
+        make_samples,
+        results_to_frame,
+        run_ladder,
+    )
+
+    config = AnalysisConfig(
+        layers=[4],
+        pools=["act_mean"],
+        probes=["P0", "P1"],
+        family="mlp",
+        c_values=(0.1,),
+        select_c=False,
+    )
+    samples = make_samples(synthetic_run, config)
+    results = run_ladder(synthetic_run, samples, config)
+    assert results, "ladder produced no results"
+    assert {result.family for result in results} == {"mlp"}
+    frame = results_to_frame(results)
+    assert "family" in frame.columns
+    assert set(frame["family"]) == {"mlp"}
+
+
+def test_mlp_config_swaps_in_alpha_grid():
+    """A bare ``family="mlp"`` must not inherit the logistic C grid: the
+    entries mean the reverse thing (alpha penalties), so the default grid is
+    swapped -- and an explicit grid is respected."""
+    from efference_probe.analysis import AnalysisConfig
+    from efference_probe.probes import DEFAULT_MLP_ALPHAS
+
+    assert AnalysisConfig(family="mlp").c_values == DEFAULT_MLP_ALPHAS
+    assert AnalysisConfig(family="mlp", c_values=(0.5,)).c_values == (0.5,)

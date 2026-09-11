@@ -32,6 +32,8 @@ from .datasets import (
 from .hijack import HIJACK, SELF, apply_freeze, apply_mirror
 from .probes import (
     DEFAULT_C_VALUES,
+    DEFAULT_MLP_ALPHAS,
+    PROBE_FAMILIES,
     ProbeResult,
     results_to_frame,
     ridge_readout,
@@ -133,6 +135,20 @@ class AnalysisConfig:
     # Defaults to serial so library callers and the test suite stay
     # single-process; the CLI turns it up.
     n_jobs: int = 1
+    # Classifier family for every probe in the sweep, P0 included: the MLP
+    # ladder gets an MLP selection floor, never a linear one.
+    family: str = "linear"
+
+    def __post_init__(self) -> None:
+        if self.family not in PROBE_FAMILIES:
+            raise ValueError(
+                f"unknown probe family {self.family!r}; use {PROBE_FAMILIES}"
+            )
+        # The logistic C grid is meaningless for the MLP (its entries are
+        # alpha penalties, reversed orientation), so swap in the alpha grid
+        # unless the caller set an explicit one.
+        if self.family == "mlp" and tuple(self.c_values) == DEFAULT_C_VALUES:
+            self.c_values = DEFAULT_MLP_ALPHAS
 
 
 def _scheduler_settings(run: RunData) -> tuple[int, int]:
@@ -326,6 +342,7 @@ def _run_cell(
         shuffle_labels=spec.shuffle_labels,
         select_c=config.select_c,
         spans=spans if config.block_scaling == "sqrt_dim" else None,
+        family=config.family,
     )
     result.notes = (result.notes + " " + spec.description).strip()
     return result
@@ -461,6 +478,7 @@ def run_per_transform(
                 seed=config.seed,
                 select_c=config.select_c,
                 spans=spans if config.block_scaling == "sqrt_dim" else None,
+                family=config.family,
             )
             result.notes = f"transform={transform}"
             results.append(result)

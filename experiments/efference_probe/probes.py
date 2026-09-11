@@ -19,19 +19,27 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 import numpy as np
-from scipy import linalg as scipy_linalg
 import pandas as pd
+from scipy import linalg as scipy_linalg
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, r2_score, roc_auc_score
 from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_C_VALUES = (0.01, 0.1, 1.0)
+# For the MLP family the grid entries are the L2 penalty ``alpha`` (larger =
+# stronger), the reverse orientation of logistic ``C``.  The fast path takes
+# ``max()`` of the grid in both families, which for the MLP means the most
+# regularised -- the conservative end, which is the right default for a
+# quick sweep.
+DEFAULT_MLP_ALPHAS = (1e-3, 1e-1, 1e1)
+PROBE_FAMILIES = ("linear", "mlp")
 
 
 @dataclass
@@ -42,6 +50,7 @@ class ProbeResult:
     blocks: list[str]
     layer: Optional[int] = None
     pool: Optional[str] = None
+    family: str = "linear"
     n_samples: int = 0
     n_positive: int = 0
     n_features: int = 0
@@ -98,23 +107,52 @@ class BlockScaler(BaseEstimator, TransformerMixin):
 
 
 def _make_classifier(
-    c_value: float, max_iter: int, spans: Optional[list[tuple[str, int]]] = None
+    c_value: float,
+    max_iter: int,
+    spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
+    seed: int = 0,
 ) -> Pipeline:
+    if family == "linear":
+        # L2 is the solver default; naming it explicitly is deprecated in
+        # scikit-learn >= 1.8.
+        clf = LogisticRegression(
+            C=c_value,
+            solver="lbfgs",
+            max_iter=max_iter,
+            class_weight="balanced",
+        )
+    elif family == "mlp":
+        # ``c_value`` is the L2 penalty ``alpha`` here (see
+        # DEFAULT_MLP_ALPHAS).  MLPClassifier has no ``class_weight``; probe
+        # samples are balanced by construction (one phase-matched negative
+        # per positive), so balanced accuracy needs no reweighting.
+        #
+        # Solver choice is load-bearing: probes live in the small-sample
+        # regime where scikit-learn recommends lbfgs, and the default
+        # adam + early-stopping combination measurably fails here -- on an
+        # XOR benchmark the validation score sits at chance through the
+        # early plateau, early stopping fires around epoch 30, and the fit
+        # never leaves 0.52; without early stopping adam still crawls
+        # (0.72 after 300 epochs) while lbfgs solves the same problem in
+        # seconds.  lbfgs is full-batch and deterministic given the seed,
+        # and 300 iterations bounds a probe-sized fit at a few seconds even
+        # at 4096 input dimensions.
+        clf = MLPClassifier(
+            hidden_layer_sizes=(256,),
+            activation="relu",
+            solver="lbfgs",
+            alpha=c_value,
+            max_iter=min(max_iter, 300),
+            random_state=seed,
+        )
+    else:
+        raise ValueError(f"unknown probe family {family!r}; use {PROBE_FAMILIES}")
     return Pipeline(
         [
             ("scale", StandardScaler()),
             ("blocks", BlockScaler(spans)),
-            (
-                "clf",
-                # L2 is the solver default; naming it explicitly is
-                # deprecated in scikit-learn >= 1.8.
-                LogisticRegression(
-                    C=c_value,
-                    solver="lbfgs",
-                    max_iter=max_iter,
-                    class_weight="balanced",
-                ),
-            ),
+            ("clf", clf),
         ]
     )
 
@@ -135,7 +173,12 @@ def _fit_score(
     if len(np.unique(y_test)) < 2:
         auroc = float("nan")
     else:
-        scores = model.decision_function(x_test)
+        # MLPClassifier has no decision_function; its calibrated-enough
+        # probability for class 1 ranks identically for AUROC purposes.
+        if hasattr(model, "decision_function"):
+            scores = model.decision_function(x_test)
+        else:
+            scores = model.predict_proba(x_test)[:, 1]
         auroc = roc_auc_score(y_test, scores)
     return float(balanced), float(auroc)
 
@@ -169,6 +212,7 @@ def run_probe(
     max_iter: int = 2000,
     select_c: bool = True,
     spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
 ) -> ProbeResult:
     """Fit and score one probe.
 
@@ -178,7 +222,16 @@ def run_probe(
         select_c: choose ``C`` per outer fold on an inner grouped split.  With
             ``False`` the largest value in ``c_values`` is used throughout,
             which is much faster for exploratory sweeps.
+        family: ``"linear"`` (L2 logistic regression) or ``"mlp"`` (one
+            hidden layer of 256 ReLU units with early stopping).  For the MLP
+            the ``c_values`` grid holds ``alpha`` penalties, so pass
+            ``DEFAULT_MLP_ALPHAS`` rather than the logistic ``C`` grid.  The
+            nulls compose: ``shuffle_labels=True`` with ``family="mlp"``
+            gives the MLP its own selection floor -- an MLP ladder compared
+            against a *linear* P0 would flatter itself.
     """
+    if family not in PROBE_FAMILIES:
+        raise ValueError(f"unknown probe family {family!r}; use {PROBE_FAMILIES}")
     x = np.asarray(x, dtype=np.float32)
     y = np.asarray(y, dtype=int)
     groups = np.asarray(groups)
@@ -188,6 +241,7 @@ def run_probe(
         blocks=list(blocks),
         layer=layer,
         pool=pool,
+        family=family,
         n_samples=int(x.shape[0]),
         n_positive=int((y == 1).sum()),
         n_features=int(x.shape[1]) if x.ndim == 2 else 0,
@@ -208,7 +262,14 @@ def run_probe(
 
         if select_c and len(c_values) > 1:
             chosen = _select_c(
-                x_train, y_train, groups_train, c_values, seed, max_iter, spans
+                x_train,
+                y_train,
+                groups_train,
+                c_values,
+                seed,
+                max_iter,
+                spans,
+                family=family,
             )
         else:
             chosen = max(c_values)
@@ -219,14 +280,14 @@ def run_probe(
         # per fold.
         fold_scores: dict[float, tuple[float, float]] = {}
         for c_value in c_values:
-            fold_model = _make_classifier(c_value, max_iter, spans)
+            fold_model = _make_classifier(c_value, max_iter, spans, family, seed)
             fold_scores[c_value] = _fit_score(
                 fold_model, x_train, y_train, x_test, y_test
             )
             per_c_scores[c_value].append(fold_scores[c_value][0])
 
         if chosen not in fold_scores:  # defensive: _select_c returns a listed C
-            model = _make_classifier(chosen, max_iter, spans)
+            model = _make_classifier(chosen, max_iter, spans, family, seed)
             fold_scores[chosen] = _fit_score(model, x_train, y_train, x_test, y_test)
         balanced, auroc = fold_scores[chosen]
         result.fold_balanced_acc.append(balanced)
@@ -255,6 +316,7 @@ def _select_c(
     seed: int,
     max_iter: int,
     spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
 ) -> float:
     """Pick C on a single inner grouped split of the outer-training data."""
     try:
@@ -270,7 +332,7 @@ def _select_c(
     train_index, validation_index = inner[0]
     best_c, best_score = max(c_values), -np.inf
     for c_value in c_values:
-        model = _make_classifier(c_value, max_iter, spans)
+        model = _make_classifier(c_value, max_iter, spans, family, seed)
         score, _ = _fit_score(
             model,
             x[train_index],

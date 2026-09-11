@@ -1,0 +1,55 @@
+# P0 multi-suite arm: the swap protocol on libero_10, so the "one benchmark
+# suite" limitation falls.  Each suite hosts its own selection floor and
+# permutation null (different n => different floors).
+#
+# NOTE the checkpoint is suite-specific: OpenVLA-OFT releases one SFT
+# checkpoint per LIBERO suite, and unnorm_key must match the suite's
+# dataset statistics -- a goal-suite checkpoint on libero_10 would measure
+# checkpoint-task mismatch, not attribution.  Point model_path at the
+# libero_10 OFT-SFT checkpoint you downloaded and keep unnorm_key as below.
+# Decoding mirrors the sampled evaluation protocol used for the goal suite;
+# if this suite's checkpoint is released as greedy-evaluated, flip
+# do_sample and record the choice in results.md (SPEC 3.7 rule).
+# libero_10 (LIBERO-Long) episodes run long: 64 calls x 8 steps = 512 env
+# steps, matching the suite's evaluation horizon; 15 initial states per task
+# keeps the arm inside the GPU/disk budget.
+run_id: suite_long01
+out_root: experiments/efference_probe/data
+notes: "P0 multi-suite swap arm on libero_10"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-10-traj1/
+  unnorm_key: libero_10_no_noops
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_10
+  task_ids: null
+  init_states_per_task: 15
+  num_envs: 20
+  max_calls_per_episode: 64
+  seed: 0
+
+hijack:
+  enabled: true
+  transform: swap
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

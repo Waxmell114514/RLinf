@@ -99,6 +99,7 @@ def _permutation_null(
             block_scaling=config.block_scaling,
             max_cache_gb=config.max_cache_gb,
             n_jobs=config.n_jobs,
+            family=config.family,
         )
         results = analysis.run_ladder(run, samples, permuted, store=store)
         if results:
@@ -171,6 +172,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--n-splits", type=int, default=5)
     parser.add_argument("--block-scaling", choices=["none", "sqrt_dim"], default="none")
     parser.add_argument(
+        "--probe-family",
+        choices=["linear", "mlp"],
+        default="linear",
+        help=(
+            "classifier family for the whole sweep, P0 included -- the MLP "
+            "ladder is floored by a selection-matched MLP null, never by the "
+            "linear one.  MLP output lands in <run>/analysis_mlp by default "
+            "so the linear analysis is not clobbered; expect roughly 5-15x "
+            "the linear runtime, so keep --jobs -1."
+        ),
+    )
+    parser.add_argument(
         "--fast",
         action="store_true",
         help="skip per-fold C selection (uses the largest C); for quick sweeps",
@@ -204,7 +217,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     _log_compute_environment(args.jobs)
     run = analysis.load_run(args.run)
-    out_dir = Path(args.out) if args.out else Path(args.run) / "analysis"
+    default_out = (
+        "analysis" if args.probe_family == "linear" else f"analysis_{args.probe_family}"
+    )
+    out_dir = Path(args.out) if args.out else Path(args.run) / default_out
     out_dir.mkdir(parents=True, exist_ok=True)
     plumbing = analysis.plumbing_report(run)
     (out_dir / "plumbing.json").write_text(
@@ -225,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         block_scaling=args.block_scaling,
         max_cache_gb=args.cache_gb,
         n_jobs=args.jobs,
+        family=args.probe_family,
     )
 
     # One store for the whole run.  Each ladder/control call used to build its
@@ -277,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
                 block_scaling=args.block_scaling,
                 max_cache_gb=args.cache_gb,
                 n_jobs=args.jobs,
+                family=args.probe_family,
             ),
             store=store,
         )
@@ -291,13 +309,25 @@ def main(argv: list[str] | None = None) -> int:
             out_dir / "per_transform_results.csv", index=False
         )
 
-        cross_task = analysis.run_cross_task(
-            run, samples, config, layer, pool, store=store
-        )
-        cross_task.to_csv(out_dir / "cross_task_results.csv", index=False)
+        if args.probe_family == "linear":
+            cross_task = analysis.run_cross_task(
+                run, samples, config, layer, pool, store=store
+            )
+            cross_task.to_csv(out_dir / "cross_task_results.csv", index=False)
 
-        e1 = analysis.run_e1(run, config, store=store)
-        e1.to_csv(out_dir / "e1_readout.csv", index=False)
+            e1 = analysis.run_e1(run, config, store=store)
+            e1.to_csv(out_dir / "e1_readout.csv", index=False)
+        else:
+            # Cross-task transfer and the E1 ridge readout are linear-family
+            # diagnostics; the linear pass already produces them, and
+            # rebuilding them here would only duplicate numbers under a
+            # misleading directory name.
+            logging.info(
+                "probe family %s: skipping cross-task and E1 (linear-only "
+                "diagnostics; see the linear analysis directory)",
+                args.probe_family,
+            )
+            cross_task, e1 = pd.DataFrame(), pd.DataFrame()
 
         extra["undo_alignment"] = analysis.undo_alignment(run, samples)
     else:

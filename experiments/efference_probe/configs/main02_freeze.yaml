@@ -1,0 +1,44 @@
+# P0 control-arm expansion: freeze at 3x the original arm (150 episodes vs 50),
+# to settle the small-arm excursions (hidden probes drifting to ~0.58) and,
+# for mirror, the same-direction E3 log-prob trend.  Task set {2,3,6,8,9} is
+# the pre-registered top-5 relative-action-change rule from the logbook.
+run_id: main02_freeze
+out_root: experiments/efference_probe/data
+notes: "P0 freeze expansion, 5 tasks x 30 states, seed 1, sampled protocol"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [2, 3, 6, 8, 9]
+  init_states_per_task: 30
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 1
+
+hijack:
+  enabled: true
+  transform: freeze
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

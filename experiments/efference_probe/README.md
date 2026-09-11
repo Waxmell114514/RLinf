@@ -149,6 +149,29 @@ python experiments/efference_probe/run_probes.py --run <run> \
     --block-scaling sqrt_dim --out <run>/analysis_sqrtdim
 ```
 
+### P0 — re-collection wave: MLP probes, multi-suite, expanded arms
+
+`P0_RUNBOOK.md` scripts the second collection wave: a fresh-seed replica of
+the main run (`configs/main02.yaml`, the data source for nonlinear probes),
+3x mirror/freeze arms (`configs/main02_{mirror,freeze}.yaml`), and swap arms
+on the other LIBERO suites (`configs/suite_{spatial,object,long}.yaml` —
+each needs that suite's own checkpoint and `unnorm_key`).
+
+The nonlinear rung is a classifier-family switch, not a separate pipeline:
+
+```bash
+python experiments/efference_probe/run_probes.py --run <run> \
+    --stage main --jobs -1 --probe-family mlp
+```
+
+`--probe-family mlp` swaps every probe in the sweep — **P0 included**, so
+the MLP ladder is floored by a selection-matched MLP null rather than the
+linear one — for a one-hidden-layer lbfgs `MLPClassifier` (the adam +
+early-stopping default measurably stalls at probe sample sizes; see
+`probes.py`). Output lands in `<run>/analysis_mlp` so the linear analysis
+is never clobbered; cross-task transfer and E1 are skipped there because
+they are linear-family diagnostics that the linear pass already produced.
+
 ### S4 — stretch
 
 - **P5** (vision/projector features): re-collect with
