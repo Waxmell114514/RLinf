@@ -510,3 +510,71 @@ produced data, so a number in `results.md` can always be traced back to a run.
   on `/workspace` succeeds, and no run has failed twice. Wall-clock cost is a
   number to report, not grounds to narrow the deliverable unilaterally. Full
   scope restored; the file is kept as `SKIP_MLP.rescinded` with the reasoning.
+- `2026-09-12 11:15` **T-CODE (agent). Phase 0-1 — CPU pod, wave-2 inventory.**
+  New RunPod **CPU** container, no GPU (`nvidia-smi` absent), network volume
+  re-mounted at `/workspace`. Gates: `nproc`=16, `/sys/fs/cgroup/cpu.max`=
+  `max 100000` (no quota) so usable_cpus=16; `/sys/fs/cgroup/memory.max`=
+  32 GB (`free` reports the 755 GB host, not the limit); `/workspace` free
+  471 TB. All above the 6-CPU / 16 GB / 10 GB stop thresholds.
+  No live processes inherited: `tmux ls` empty, no `run_probes.py` or queue
+  script running, so the stopped pod left nothing to collide with.
+  **venv reused, not rebuilt.** `/workspace/RLinf/.venv/bin/python` (3.11.14)
+  survived the pod swap intact — `numpy 1.26.4 / pandas / pyarrow /
+  scikit-learn 1.9.1 / scipy / joblib / yaml / matplotlib` all import and
+  `run_probes.py --help` runs, so no torch-free probe venv was needed.
+  Gate `tests/test_offline.py`: **56 passed** in 27.7 s.
+  Git: local `cfc8ea5a` was 1 commit ahead of
+  `origin/claude/rlinf-code-scripts-pi41dg` (`cc5bc289`), no divergence, so no
+  force-push is in play. 485 uncommitted logbook lines from the GPU pod were
+  committed verbatim as `9ce5829a`.
+
+  **Inventory of `data/` (read-only pass).** All 8 run directories report
+  `verification.passed=true` and `stop_reason=completed`, and every
+  `calls.parquet` row count equals its manifest `n_calls`:
+
+  | run | verification | n_calls = parquet rows | episodes | `hidden/ep*.npz` | linear `analysis/` | `analysis_mlp/` |
+  |---|---|---|---|---|---|---|
+  | main02 | pass | 5886 | 200 | 200 | **COMPLETE** (perm 200) | PARTIAL |
+  | main02_mirror | pass | 5314 | 150 | 150 | **COMPLETE** (perm 200) | MISSING |
+  | main02_freeze | pass | 4907 | 150 | 150 | PARTIAL | MISSING |
+  | suite_spatial01 | pass | 2005 | 80 | **90 (mismatch)** | MISSING | MISSING |
+  | suite_spatial02 | pass | 5678 | 200 | 200 | PARTIAL | MISSING |
+  | suite_object01 | pass | 7069 | 200 | 200 | MISSING | MISSING |
+  | suite_long01 | pass | 9329 | 150 | 150 | MISSING | MISSING |
+  | smoke01 | pass | 12 | 2 | 2 | n/a (smoke) | n/a |
+
+  COMPLETE = `probe_results.csv` + `summary.md` + `plumbing.json` with
+  `passed:true`, and for the linear round a `permutation_null` block with
+  `n_permutations: 200` present in `summary.md`. Both COMPLETE linear rounds
+  have it.
+
+  **Split-session residue found.** (a) `suite_spatial01` is the run the
+  duplicate collector touched on 2026-09-12T08:01-08:04Z: its manifest closes
+  at 80 episodes but `hidden/` holds **90** `ep*.npz`, i.e. 10 episode files
+  with no manifest entry. `suite_spatial02` (200/200, matched) is the intended
+  spatial run and is the one carried forward; `suite_spatial01` is **left
+  untouched on the volume**, not probed, not deleted. (b) Three half-written
+  analysis directories were renamed (never deleted), suffix
+  `.partial_20260912T111221Z`: `main02/analysis_mlp` (only
+  `global_negatives_results.csv` + `plumbing.json`),
+  `main02_freeze/analysis` (only `plumbing.json`),
+  `suite_spatial02/analysis` (only `global_negatives_results.csv` +
+  `plumbing.json`).
+
+  **Why the two lost rounds died** (both tracebacks recovered, pasted verbatim
+  in the Phase 4 report). `main02_freeze` linear, rc=1 after 302 s:
+  `joblib.externals.loky.process_executor.TerminatedWorkerError` with worker
+  exit codes `{SIGTERM(-15) x12}` raised inside `_permutation_null` ->
+  `analysis.run_ladder`. SIGTERM on all twelve workers at 10:25:49Z coincides
+  to the second with `qguard`'s
+  `*** DUPLICATE qprobe *** count=3 pids=[52287 55360 55368] mode=enforce`
+  — the guard killed the process group, so this is the split-session artefact,
+  not an OOM or a data fault. `main02` MLP died at the shell, not in Python:
+  `/workspace/probe.sh: line 16: _probes.py: command not found` (the `$P`
+  run-dir variable collided with the script path inside `probe.sh`).
+  Neither failure implicates `calls.parquet` or `hidden/`; both rounds are
+  simply re-run here. Counted as one prior failure each.
+
+  Wave-2 collection is **not** re-attempted from this box under any
+  circumstance — it has no GPU. Remaining work is the 12 probe rounds
+  (6 runs x linear+MLP) minus the 2 already COMPLETE.
