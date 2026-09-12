@@ -668,10 +668,14 @@ def test_resolve_n_jobs_maps_negatives_onto_core_count():
     assert _resolve_n_jobs(-1) == cores
     assert _resolve_n_jobs(-2) == max(1, cores - 1)
     # Anything degenerate has to collapse to serial rather than to zero
-    # workers, which joblib would reject.
+    # workers, which joblib would reject.  "Degenerate" is relative to the
+    # host: -99 asks for all-but-98 cores, which is a real worker count on a
+    # 112-core box, so the request has to be scaled off `cores` rather than
+    # hard-coded or the assertion only holds on small machines.
     assert _resolve_n_jobs(0) == 1
     assert _resolve_n_jobs(None) == 1
-    assert _resolve_n_jobs(-99) == 1
+    assert _resolve_n_jobs(-(cores + 1)) == 1
+    assert _resolve_n_jobs(-(cores + 99)) == 1
 
 
 def test_parallel_ladder_matches_serial_exactly(synthetic_run):
