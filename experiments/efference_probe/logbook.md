@@ -578,3 +578,46 @@ produced data, so a number in `results.md` can always be traced back to a run.
   Wave-2 collection is **not** re-attempted from this box under any
   circumstance — it has no GPU. Remaining work is the 12 probe rounds
   (6 runs x linear+MLP) minus the 2 already COMPLETE.
+- `2026-09-13 01:10` **T-CODE (agent). CPU pod #2 — Phase 0-1 re-inventory.**
+  Second CPU container on the same network volume (`/workspace`, MooseFS).
+  Gates: `nproc`=16, `cpu.max`=`max 100000` → usable_cpus=16;
+  `memory.max`=32 000 000 000 B (32 GB); `/workspace` free 448 TB. No tmux
+  server, no `run_probes.py`, no queue script alive on this box.
+  Venv `/workspace/RLinf/.venv/bin/python` → 3.11.14 still resolves (symlink
+  into `/workspace/uv`), reused. Gate `tests/test_offline.py`: **56 passed**
+  in 43.0 s. Git: HEAD `cf3a45a4` is 3 ahead / 0 behind
+  `origin/claude/rlinf-code-scripts-pi41dg` (`cc5bc289`); no divergence;
+  working tree clean.
+
+  **Residue left by CPU pod #1 (2026-09-12 11:08-~11:30Z).** It committed its
+  Phase 0-1 entry (`cf3a45a4`), renamed three partial dirs at
+  `20260912T111221Z`, then started `main02` MLP at ~11:14Z; that round left
+  only `analysis_mlp/plumbing.json` (root-owned, 11:15Z) and its
+  `/var/log/wave2` log died with the container (`logs/cpupod/queue.log` and
+  `ledger.tsv` are 0 bytes). Renamed (not deleted):
+  `main02/analysis_mlp` → `main02/analysis_mlp.partial_20260913T010847Z`.
+
+  **Re-inventory (read-only, this pod):**
+
+  | run | verification | n_calls = parquet rows | episodes | `hidden/ep*.npz` | linear | MLP |
+  |---|---|---|---|---|---|---|
+  | main02 | pass | 5886 | 200 | 200 | COMPLETE (perm 200) | PARTIAL → renamed |
+  | main02_mirror | pass | 5314 | 150 | 150 | COMPLETE (perm 200) | MISSING |
+  | main02_freeze | pass | 4907 | 150 | 150 | MISSING (`.partial_20260912T111221Z`) | MISSING |
+  | suite_spatial01 | pass | 2005 | 80 | **90 (mismatch)** | SKIPPED | SKIPPED |
+  | suite_spatial02 | pass | 5678 | 200 | 200 | MISSING (`.partial_20260912T111221Z`) | MISSING |
+  | suite_object01 | pass | 7069 | 200 | 200 | MISSING | MISSING |
+  | suite_long01 | pass | 9329 | 150 | 150 | MISSING | MISSING |
+  | smoke01 | pass | 12 | 2 | 2 | n/a | n/a |
+
+  Carried forward: `suite_spatial02` (manifest 200 = hidden 200) for the
+  spatial suite; `suite_spatial01` stays on the volume untouched.
+  Failure accounting: the earlier lost attempts (freeze linear SIGTERM'd by
+  `qguard`; main02 MLP shell error in `probe.sh`; main02 MLP killed by the
+  pod stop) are infrastructure interruptions, not `run_probes.py` errors; the
+  two-strike stop is counted per round on this pod, by
+  `/workspace/cpu2_queue.sh`. Probe wall-clock budget (14 h) is counted from
+  this pod's Phase 0, `2026-09-13T01:08:47Z`.
+  Queue order: main02 MLP → main02_mirror MLP → main02_freeze linear, MLP →
+  suite_spatial02 → suite_object01 → suite_long01 (linear then MLP each),
+  subject to the extrapolation check after main02 MLP.
