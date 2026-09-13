@@ -650,3 +650,15 @@ produced data, so a number in `results.md` can always be traced back to a run.
   03:20Z). Suite linears are all kept. Re-computed after each round with the
   ledger's actual wall clock. Midpoint brief:
   `/workspace/exports/cpupod2_midpoint.md` (numbers only).
+- `2026-09-13 08:00` **T-CODE (agent). CPU pod #2 — budget re-check after the freeze rounds.**
+  Ledger (all rc=0, COMPLETE): main02 mlp 7669 s (1266 samples, 6.06 s/sample);
+  main02_mirror mlp 7566 s (1226, 6.17 s/sample); main02_freeze linear 678 s
+  (1056, 0.64 s/sample); main02_freeze mlp 8347 s (1056, **7.90 s/sample**).
+  MLP wall does not scale with sample count across these three runs.
+  Elapsed at 07:56:24Z: 24 457 s (6.79 h). Worst-rate projection (MLP
+  7.90 s/sample, linear 0.64 s/sample): suite linears 770 + 985 + 1434 s →
+  7.68 h; + suite_spatial02 mlp ~9500 s → 10.3 h; + suite_object01 mlp
+  ~12 170 s → **13.7 h** (< 14 h). Pooled MLP rate 6.65 s/sample gives 12.7 h.
+  Decision: keep `suite_object01:mlp` queued; `suite_long01:mlp` stays cut.
+  Re-checked from suite_spatial02 MLP progress before it ends (the queue
+  starts the next round within ~1 s, so a CUT must be written in advance).
