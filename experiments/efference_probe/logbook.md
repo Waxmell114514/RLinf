@@ -662,3 +662,11 @@ produced data, so a number in `results.md` can always be traced back to a run.
   Decision: keep `suite_object01:mlp` queued; `suite_long01:mlp` stays cut.
   Re-checked from suite_spatial02 MLP progress before it ends (the queue
   starts the next round within ~1 s, so a CUT must be written in advance).
+- `2026-09-13 09:05` **T-CODE (agent). CPU pod #2 — operator budget notice; second tail cut.**
+  At 09:04Z the operator stated the remaining budget is **2 h 04 min**
+  (hard end ~11:06Z), superseding the 14 h probe clock. Rounds done by then:
+  7 COMPLETE (ledger 25 875 s). Running: `suite_spatial02` MLP since 08:23:23Z
+  (est. 7280-9500 s → ends ~10:25-11:01Z). **Cut `suite_object01:mlp`**
+  (`CUT_suite_object01_mlp`); `suite_long01:mlp` was already cut. Deadline for
+  `suite_spatial02` MLP: 10:45Z, else aborted and its directory renamed
+  `.partial_<UTC>` (never deleted), leaving ~20 min for Phase 4 export.
