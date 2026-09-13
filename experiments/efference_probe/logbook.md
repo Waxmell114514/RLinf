@@ -621,3 +621,32 @@ produced data, so a number in `results.md` can always be traced back to a run.
   Queue order: main02 MLP → main02_mirror MLP → main02_freeze linear, MLP →
   suite_spatial02 → suite_object01 → suite_long01 (linear then MLP each),
   subject to the extrapolation check after main02 MLP.
+- `2026-09-13 03:25` **T-CODE (agent). CPU pod #2 — main02 MLP done; budget extrapolation and tail cut.**
+  `main02` MLP (`--stage main --jobs 16 --probe-family mlp`) finished rc=0 at
+  03:19:00Z, **7669 s** wall, COMPLETE (plumbing passed). Probe samples 1266.
+  MLP/linear ratio on main02 = 7669 / 553 = 13.9x. Budget origin 01:08:47Z;
+  elapsed at that point 7813 s (2.17 h) of 50 400 s.
+
+  Extrapolation (linear in probe samples; MLP 6.06 s/sample from main02,
+  linear 0.51 s/sample from main02_mirror at 12 jobs; unprobed runs' samples
+  approximated as 1.84 x HIJACK rows in `calls.parquet`, the observed ratio on
+  the four probed runs):
+
+  | round | samples | est. s |
+  |---|---|---|
+  | main02_mirror mlp | 1226 | 7430 |
+  | main02_freeze linear | 1056 | 540 |
+  | main02_freeze mlp | 1056 | 6400 |
+  | suite_spatial02 linear | 1202 | 610 |
+  | suite_object01 linear | ~1540 (836 hijacks) | 780 |
+  | suite_long01 linear | ~2240 (1220 hijacks) | 1140 |
+  | suite_spatial02 mlp | 1202 | 7280 |
+  | suite_object01 mlp | ~1540 | 9310 |
+  | suite_long01 mlp | ~2240 | 13590 |
+
+  Cumulative through suite_object01 MLP ~41 400 s (11.5 h); adding
+  suite_long01 MLP gives ~55 000 s (15.3 h) > 14 h cap. **Cut from the tail:
+  `suite_long01:mlp`** (`/workspace/logs/cpupod2/CUT_suite_long01_mlp`,
+  03:20Z). Suite linears are all kept. Re-computed after each round with the
+  ledger's actual wall clock. Midpoint brief:
+  `/workspace/exports/cpupod2_midpoint.md` (numbers only).
