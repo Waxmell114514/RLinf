@@ -1,0 +1,45 @@
+# P0 re-collection: fresh-seed replication of main01 with hidden states kept,
+# so the MLP ladder (run_probes.py --probe-family mlp) has data to read.
+# Protocol pins the S1 decision recorded in the logbook: this checkpoint
+# collapses under greedy decoding, so collection mirrors the sampled
+# evaluation protocol (do_sample: true, temperature: 1.6).
+run_id: main02
+out_root: experiments/efference_probe/data
+notes: "P0 replication of main01, seed 1, sampled protocol; MLP-probe source"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: null           # null = every task in the suite
+  init_states_per_task: 20
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 1                  # fresh seed: an independent replication, not a rerun
+
+hijack:
+  enabled: true
+  transform: swap
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

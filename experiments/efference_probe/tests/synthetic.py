@@ -40,6 +40,7 @@ def make_synthetic_run(
     episodes_per_task: int = 8,
     n_calls: int = 20,
     hidden_size: int = 64,
+    layers: Optional[list[int]] = None,
     hidden_signal: float = 0.8,
     p_hijack: float = 0.25,
     transform: str = "swap",
@@ -51,6 +52,9 @@ def make_synthetic_run(
     """Write a run directory that looks like a real collection.
 
     Args:
+        layers: layer indices to synthesise.  Defaults to the small
+            three-layer grid; pass the real nine-layer sweep to reproduce
+            production cost.
         hidden_signal: how strongly the post-transition hidden state encodes
             the hijack.  0 makes P1 a null; large values make it decodable.
         command_mean: per-episode drift added to every commanded delta.  Zero
@@ -62,6 +66,7 @@ def make_synthetic_run(
             the state -- so any "undo alignment" measured here is an artefact.
     """
     out_dir = Path(out_dir)
+    layers = list(LAYERS if layers is None else layers)
     (out_dir / "hidden").mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
 
@@ -116,14 +121,14 @@ def make_synthetic_run(
                     continue
                 episode = int(episode_ids[slot])
                 decision = decisions[slot]
-                hidden = rng.normal(size=(len(LAYERS), len(POOLS), hidden_size)).astype(
+                hidden = rng.normal(size=(len(layers), len(POOLS), hidden_size)).astype(
                     np.float32
                 )
                 # Deeper layers carry more of the planted signal, mimicking the
                 # depth profile a real probe would sweep for.
                 if was_hijacked[slot]:
-                    for layer_index in range(len(LAYERS)):
-                        weight = hidden_signal * (layer_index / max(len(LAYERS) - 1, 1))
+                    for layer_index in range(len(layers)):
+                        weight = hidden_signal * (layer_index / max(len(layers) - 1, 1))
                         hidden[layer_index, :, :4] += weight
                 hidden_buffer[episode].append(hidden.astype(np.float16))
                 hidden_calls[episode].append(call_idx)
@@ -225,11 +230,11 @@ def make_synthetic_run(
             "action_dim": ACTION_DIM,
             "n_act": N_ACT,
             "state_dim": STATE_DIM,
-            "layers": LAYERS,
+            "layers": layers,
             "pools": POOLS,
         },
     }
-    with open(out_dir / "run_config.yaml", "w") as handle:
+    with open(out_dir / "run_config.yaml", "w", encoding="utf-8") as handle:
         yaml.safe_dump(config, handle, sort_keys=False)
     return out_dir
 

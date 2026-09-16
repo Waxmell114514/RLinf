@@ -20,17 +20,26 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+from scipy import linalg as scipy_linalg
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, r2_score, roc_auc_score
 from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_C_VALUES = (0.01, 0.1, 1.0)
+# For the MLP family the grid entries are the L2 penalty ``alpha`` (larger =
+# stronger), the reverse orientation of logistic ``C``.  The fast path takes
+# ``max()`` of the grid in both families, which for the MLP means the most
+# regularised -- the conservative end, which is the right default for a
+# quick sweep.
+DEFAULT_MLP_ALPHAS = (1e-3, 1e-1, 1e1)
+PROBE_FAMILIES = ("linear", "mlp")
 
 
 @dataclass
@@ -41,6 +50,7 @@ class ProbeResult:
     blocks: list[str]
     layer: Optional[int] = None
     pool: Optional[str] = None
+    family: str = "linear"
     n_samples: int = 0
     n_positive: int = 0
     n_features: int = 0
@@ -97,23 +107,52 @@ class BlockScaler(BaseEstimator, TransformerMixin):
 
 
 def _make_classifier(
-    c_value: float, max_iter: int, spans: Optional[list[tuple[str, int]]] = None
+    c_value: float,
+    max_iter: int,
+    spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
+    seed: int = 0,
 ) -> Pipeline:
+    if family == "linear":
+        # L2 is the solver default; naming it explicitly is deprecated in
+        # scikit-learn >= 1.8.
+        clf = LogisticRegression(
+            C=c_value,
+            solver="lbfgs",
+            max_iter=max_iter,
+            class_weight="balanced",
+        )
+    elif family == "mlp":
+        # ``c_value`` is the L2 penalty ``alpha`` here (see
+        # DEFAULT_MLP_ALPHAS).  MLPClassifier has no ``class_weight``; probe
+        # samples are balanced by construction (one phase-matched negative
+        # per positive), so balanced accuracy needs no reweighting.
+        #
+        # Solver choice is load-bearing: probes live in the small-sample
+        # regime where scikit-learn recommends lbfgs, and the default
+        # adam + early-stopping combination measurably fails here -- on an
+        # XOR benchmark the validation score sits at chance through the
+        # early plateau, early stopping fires around epoch 30, and the fit
+        # never leaves 0.52; without early stopping adam still crawls
+        # (0.72 after 300 epochs) while lbfgs solves the same problem in
+        # seconds.  lbfgs is full-batch and deterministic given the seed,
+        # and 300 iterations bounds a probe-sized fit at a few seconds even
+        # at 4096 input dimensions.
+        clf = MLPClassifier(
+            hidden_layer_sizes=(256,),
+            activation="relu",
+            solver="lbfgs",
+            alpha=c_value,
+            max_iter=min(max_iter, 300),
+            random_state=seed,
+        )
+    else:
+        raise ValueError(f"unknown probe family {family!r}; use {PROBE_FAMILIES}")
     return Pipeline(
         [
             ("scale", StandardScaler()),
             ("blocks", BlockScaler(spans)),
-            (
-                "clf",
-                # L2 is the solver default; naming it explicitly is
-                # deprecated in scikit-learn >= 1.8.
-                LogisticRegression(
-                    C=c_value,
-                    solver="lbfgs",
-                    max_iter=max_iter,
-                    class_weight="balanced",
-                ),
-            ),
+            ("clf", clf),
         ]
     )
 
@@ -134,7 +173,12 @@ def _fit_score(
     if len(np.unique(y_test)) < 2:
         auroc = float("nan")
     else:
-        scores = model.decision_function(x_test)
+        # MLPClassifier has no decision_function; its calibrated-enough
+        # probability for class 1 ranks identically for AUROC purposes.
+        if hasattr(model, "decision_function"):
+            scores = model.decision_function(x_test)
+        else:
+            scores = model.predict_proba(x_test)[:, 1]
         auroc = roc_auc_score(y_test, scores)
     return float(balanced), float(auroc)
 
@@ -168,6 +212,7 @@ def run_probe(
     max_iter: int = 2000,
     select_c: bool = True,
     spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
 ) -> ProbeResult:
     """Fit and score one probe.
 
@@ -177,7 +222,16 @@ def run_probe(
         select_c: choose ``C`` per outer fold on an inner grouped split.  With
             ``False`` the largest value in ``c_values`` is used throughout,
             which is much faster for exploratory sweeps.
+        family: ``"linear"`` (L2 logistic regression) or ``"mlp"`` (one
+            hidden layer of 256 ReLU units with early stopping).  For the MLP
+            the ``c_values`` grid holds ``alpha`` penalties, so pass
+            ``DEFAULT_MLP_ALPHAS`` rather than the logistic ``C`` grid.  The
+            nulls compose: ``shuffle_labels=True`` with ``family="mlp"``
+            gives the MLP its own selection floor -- an MLP ladder compared
+            against a *linear* P0 would flatter itself.
     """
+    if family not in PROBE_FAMILIES:
+        raise ValueError(f"unknown probe family {family!r}; use {PROBE_FAMILIES}")
     x = np.asarray(x, dtype=np.float32)
     y = np.asarray(y, dtype=int)
     groups = np.asarray(groups)
@@ -187,6 +241,7 @@ def run_probe(
         blocks=list(blocks),
         layer=layer,
         pool=pool,
+        family=family,
         n_samples=int(x.shape[0]),
         n_positive=int((y == 1).sum()),
         n_features=int(x.shape[1]) if x.ndim == 2 else 0,
@@ -207,20 +262,37 @@ def run_probe(
 
         if select_c and len(c_values) > 1:
             chosen = _select_c(
-                x_train, y_train, groups_train, c_values, seed, max_iter, spans
+                x_train,
+                y_train,
+                groups_train,
+                c_values,
+                seed,
+                max_iter,
+                spans,
+                family=family,
             )
         else:
             chosen = max(c_values)
-        model = _make_classifier(chosen, max_iter, spans)
-        balanced, auroc = _fit_score(model, x_train, y_train, x_test, y_test)
+        # The per-C sweep refits this fold at every candidate C, and `chosen`
+        # is always one of them, so scoring the selected model separately
+        # would repeat a fit that is already being done.  Sweep first, then
+        # read the fold's score back out: identical numbers, one fewer fit
+        # per fold.
+        fold_scores: dict[float, tuple[float, float]] = {}
+        for c_value in c_values:
+            fold_model = _make_classifier(c_value, max_iter, spans, family, seed)
+            fold_scores[c_value] = _fit_score(
+                fold_model, x_train, y_train, x_test, y_test
+            )
+            per_c_scores[c_value].append(fold_scores[c_value][0])
+
+        if chosen not in fold_scores:  # defensive: _select_c returns a listed C
+            model = _make_classifier(chosen, max_iter, spans, family, seed)
+            fold_scores[chosen] = _fit_score(model, x_train, y_train, x_test, y_test)
+        balanced, auroc = fold_scores[chosen]
         result.fold_balanced_acc.append(balanced)
         result.fold_auroc.append(auroc)
         result.selected_c.append(float(chosen))
-
-        for c_value in c_values:
-            fold_model = _make_classifier(c_value, max_iter, spans)
-            fold_balanced, _ = _fit_score(fold_model, x_train, y_train, x_test, y_test)
-            per_c_scores[c_value].append(fold_balanced)
 
     result.balanced_acc_mean = float(np.mean(result.fold_balanced_acc))
     result.balanced_acc_std = float(np.std(result.fold_balanced_acc, ddof=1))
@@ -244,6 +316,7 @@ def _select_c(
     seed: int,
     max_iter: int,
     spans: Optional[list[tuple[str, int]]] = None,
+    family: str = "linear",
 ) -> float:
     """Pick C on a single inner grouped split of the outer-training data."""
     try:
@@ -259,7 +332,7 @@ def _select_c(
     train_index, validation_index = inner[0]
     best_c, best_score = max(c_values), -np.inf
     for c_value in c_values:
-        model = _make_classifier(c_value, max_iter, spans)
+        model = _make_classifier(c_value, max_iter, spans, family, seed)
         score, _ = _fit_score(
             model,
             x[train_index],
@@ -270,6 +343,74 @@ def _select_c(
         if score > best_score:
             best_c, best_score = c_value, score
     return best_c
+
+
+class _SharedRidge:
+    """Ridge at many alphas from one factorisation of the training data.
+
+    ``ridge_readout`` scores every candidate alpha on the *same* inner-training
+    split, and scikit-learn rebuilds the entire normal-equation system for each
+    one.  Alpha only shifts the diagonal, so the expensive part -- the Gram
+    matrix, or the kernel matrix when features outnumber samples -- is built
+    once here and reused.  That is where E1's time goes: E1 is 40 ridge fits
+    per cell over roughly (n_calls x 4096), and 35 of those 40 differ from a
+    neighbour by nothing but a scalar.
+
+    This mirrors ``Pipeline([StandardScaler(), Ridge(alpha)])`` exactly rather
+    than approximating it: standardise by the population standard deviation
+    with constant columns left at scale 1, centre X and y, solve the centred
+    system without penalising the intercept, and fold the intercept back in as
+    ``y_mean - x_mean @ w``.  It also switches to the dual form below
+    ``n_samples < n_features`` for the same reason scikit-learn does -- the
+    system is then n x n instead of p x p.
+
+    Not an SVD: for this shape a thin SVD of the 4096-column design costs more
+    than all seven of the fits it would replace (measured 13.2s against 3.9s).
+    """
+
+    def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
+        x = np.asarray(x)
+        y = np.asarray(y)
+        self.mean_ = x.mean(axis=0)
+        scale = x.std(axis=0)
+        # scikit-learn's _handle_zeros_in_scale: a constant column would
+        # otherwise divide by ~0, so its scale is pinned to 1.
+        scale = np.where(scale < 10 * np.finfo(scale.dtype).eps, 1.0, scale)
+        self.scale_ = scale
+        scaled = (x - self.mean_) / self.scale_
+
+        # Ridge centres its inputs and recovers the intercept afterwards, so
+        # the penalty never touches it.  `scaled` is already centred to within
+        # rounding; centring again reproduces sklearn's arithmetic exactly.
+        self.x_offset_ = scaled.mean(axis=0)
+        self.y_offset_ = y.mean(axis=0)
+        self._x = scaled - self.x_offset_
+        self._y = y - self.y_offset_
+
+        n_samples, n_features = self._x.shape
+        self._dual = n_samples < n_features
+        if self._dual:
+            self._gram = self._x @ self._x.T
+        else:
+            self._gram = self._x.T @ self._x
+            self._xty = self._x.T @ self._y
+
+    def coef(self, alpha: float) -> np.ndarray:
+        """Coefficients for one alpha, reusing the stored factorisable system."""
+        system = self._gram.copy()
+        system.flat[:: system.shape[0] + 1] += alpha
+        target = self._y if self._dual else self._xty
+        try:
+            solution = scipy_linalg.solve(system, target, assume_a="pos")
+        except (scipy_linalg.LinAlgError, ValueError):
+            # A Cholesky-hostile system is possible at tiny alpha; the general
+            # solver is slower but does not change the answer.
+            solution = np.linalg.solve(system, target)
+        return self._x.T @ solution if self._dual else solution
+
+    def predict(self, x_new: np.ndarray, alpha: float) -> np.ndarray:
+        scaled = (np.asarray(x_new) - self.mean_) / self.scale_
+        return (scaled - self.x_offset_) @ self.coef(alpha) + self.y_offset_
 
 
 def ridge_readout(
@@ -302,24 +443,22 @@ def ridge_readout(
             )
         )
         inner_train, inner_validation = inner[0]
+        # One system for the whole alpha sweep; see _SharedRidge.
+        inner_solver = _SharedRidge(
+            x[train_index][inner_train], y[train_index][inner_train]
+        )
         for alpha in alphas:
-            model = Pipeline(
-                [("scale", StandardScaler()), ("ridge", Ridge(alpha=alpha))]
-            )
-            model.fit(x[train_index][inner_train], y[train_index][inner_train])
             score = r2_score(
                 y[train_index][inner_validation],
-                model.predict(x[train_index][inner_validation]),
+                inner_solver.predict(x[train_index][inner_validation], alpha),
                 multioutput="uniform_average",
             )
             if score > best_score:
                 best_alpha, best_score = alpha, score
 
-        model = Pipeline(
-            [("scale", StandardScaler()), ("ridge", Ridge(alpha=best_alpha))]
+        predicted = _SharedRidge(x[train_index], y[train_index]).predict(
+            x[test_index], best_alpha
         )
-        model.fit(x[train_index], y[train_index])
-        predicted = model.predict(x[test_index])
         fold_r2.append(
             float(r2_score(y[test_index], predicted, multioutput="uniform_average"))
         )

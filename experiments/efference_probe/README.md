@@ -149,6 +149,29 @@ python experiments/efference_probe/run_probes.py --run <run> \
     --block-scaling sqrt_dim --out <run>/analysis_sqrtdim
 ```
 
+### P0 — re-collection wave: MLP probes, multi-suite, expanded arms
+
+`P0_RUNBOOK.md` scripts the second collection wave: a fresh-seed replica of
+the main run (`configs/main02.yaml`, the data source for nonlinear probes),
+3x mirror/freeze arms (`configs/main02_{mirror,freeze}.yaml`), and swap arms
+on the other LIBERO suites (`configs/suite_{spatial,object,long}.yaml` —
+each needs that suite's own checkpoint and `unnorm_key`).
+
+The nonlinear rung is a classifier-family switch, not a separate pipeline:
+
+```bash
+python experiments/efference_probe/run_probes.py --run <run> \
+    --stage main --jobs -1 --probe-family mlp
+```
+
+`--probe-family mlp` swaps every probe in the sweep — **P0 included**, so
+the MLP ladder is floored by a selection-matched MLP null rather than the
+linear one — for a one-hidden-layer lbfgs `MLPClassifier` (the adam +
+early-stopping default measurably stalls at probe sample sizes; see
+`probes.py`). Output lands in `<run>/analysis_mlp` so the linear analysis
+is never clobbered; cross-task transfer and E1 are skipped there because
+they are linear-family diagnostics that the linear pass already produced.
+
 ### S4 — stretch
 
 - **P5** (vision/projector features): re-collect with
@@ -328,6 +351,62 @@ Two further controls, not in the spec, are run by default:
   error bars in F1/F2/F3 are cross-validation fold standard deviations, and
   folds share training data, so they are not calibrated intervals — do not read
   "P4's bar clears P1's" as a test.
+
+### Runtime, and the one performance trap
+
+The ladder is a grid: every hidden-state probe is fitted at each of
+`9 layers x 3 pools = 27` cells, and each cell is a 5-fold grouped CV with
+per-fold `C` selection. At the real run's scale (~1.3k probe samples, 4096-wide
+features) one cell is a few seconds, so the main stage is dominated purely by
+cell count.
+
+Cells are independent fits with fixed seeds, so they parallelise exactly —
+`--jobs` (default `-1`, all cores) changes wall clock and nothing else. The
+numbers are identical to a serial run; there is no sampling, no shared state,
+and no ordering dependence.
+
+**E1 shares one system across the alpha grid.** `ridge_readout` scores seven
+alphas on the same inner-training split, and alpha only shifts the diagonal, so
+`_SharedRidge` builds the Gram (or kernel, when features outnumber samples)
+matrix once and reuses it. Measured 1.92x on that sweep and 1.25x on the E1
+phase end to end; the remainder is the per-fold fit on the full training split,
+which uses different data each fold and so cannot be shared. It is deliberately
+*not* an SVD: with 4096 features a thin SVD of the design costs more than all
+seven fits it would replace (13.2s against 3.9s measured). Tests pin it against
+`Pipeline([StandardScaler(), Ridge(alpha)])` to 1e-9.
+
+**Threaded BLAS is slower here than one thread per cell.** Measured on one
+real-scale P0 cell (1412 samples x 4096 features, 5-fold with C selection) on a
+4-core machine:
+
+| `OMP_NUM_THREADS` | cell | BLAS threads used |
+|---|---|---|
+| 1 | 2.87 s | 1 |
+| 4 | 6.48 s | 4 |
+| 16 | 6.45 s | 4 (OpenBLAS caps at core count) |
+| 64 | 6.24 s | 4 (same) |
+
+The fits are many small operations rather than a few large ones, so threading
+them costs more in synchronisation than it recovers. Four single-threaded
+workers therefore beat one four-threaded process by more than 4x, which is why
+`--jobs` is superlinear: the full ladder measured 16.3 min serial against
+2.78 min at `--jobs -1`.
+
+Note the last two rows: OpenBLAS limits itself to the machine's core count, so
+setting a huge thread count does *not* by itself produce runaway
+oversubscription. Pinning threads is still worth doing under a scheduler that
+grants fewer cores than the node has, because an allocation-unaware BLAS would
+size itself to the node:
+
+```bash
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export OPENBLAS_NUM_THREADS=$OMP_NUM_THREADS
+export MKL_NUM_THREADS=$OMP_NUM_THREADS
+```
+
+`run_probes.py` logs the resolved worker and thread counts at startup, so a run
+that ever crawls can be diagnosed from its own log rather than by re-running it.
+
 
 ### Sample construction
 

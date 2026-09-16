@@ -14,6 +14,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -82,7 +83,9 @@ def _selection_floor(results: pd.DataFrame) -> dict:
     }
 
 
-def _permutation_null(run, samples, config, layer: str, pool: str, n_permutations: int):
+def _permutation_null(
+    run, samples, config, layer: str, pool: str, n_permutations: int, store=None
+):
     """Permutation null at the selected cell: balanced accuracy under shuffled labels."""
     scores = []
     for index in range(n_permutations):
@@ -95,8 +98,10 @@ def _permutation_null(run, samples, config, layer: str, pool: str, n_permutation
             select_c=False,
             block_scaling=config.block_scaling,
             max_cache_gb=config.max_cache_gb,
+            n_jobs=config.n_jobs,
+            family=config.family,
         )
-        results = analysis.run_ladder(run, samples, permuted)
+        results = analysis.run_ladder(run, samples, permuted, store=store)
         if results:
             scores.append(results[0].balanced_acc_mean)
     if not scores:
@@ -108,6 +113,49 @@ def _permutation_null(run, samples, config, layer: str, pool: str, n_permutation
         "p95": float(np.quantile(array, 0.95)),
         "max": float(array.max()),
     }
+
+
+def _log_compute_environment(n_jobs: int) -> None:
+    """Record how many workers and BLAS threads this run actually got.
+
+    A probe cell is a few seconds of linear algebra, and how long it actually
+    takes depends on how the cores got divided up -- measured on one real-scale
+    cell, single-threaded BLAS beat 4-threaded by 2.3x, because the fits are
+    many small operations rather than a few large ones.  None of that appears
+    in the results, so the resolved counts are logged up front: a run that
+    turns out slow can then be diagnosed from its own log instead of re-run.
+    """
+    workers = analysis._resolve_n_jobs(n_jobs)
+    cpus = os.cpu_count() or 1
+    affinity = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else cpus
+    threads = {
+        name: os.environ.get(name, "unset")
+        for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+    }
+    logging.info(
+        "compute: workers=%d cpu_count=%d usable_cpus=%d threads=%s",
+        workers,
+        cpus,
+        affinity,
+        threads,
+    )
+    if workers == 1 and affinity > 1:
+        logging.warning(
+            "running serially on a %d-core allocation; --jobs -1 fits cells in "
+            "separate single-threaded workers and measured ~6x faster on the "
+            "probe ladder",
+            affinity,
+        )
+    if affinity < cpus and all(value == "unset" for value in threads.values()):
+        logging.warning(
+            "only %d of %d cores are usable and no BLAS thread limit is set; "
+            "a BLAS that sizes itself to the node rather than the allocation "
+            "will oversubscribe -- export OMP_NUM_THREADS=%d "
+            "(and OPENBLAS_NUM_THREADS/MKL_NUM_THREADS)",
+            affinity,
+            cpus,
+            affinity,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,6 +171,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n-splits", type=int, default=5)
     parser.add_argument("--block-scaling", choices=["none", "sqrt_dim"], default="none")
+    parser.add_argument(
+        "--probe-family",
+        choices=["linear", "mlp"],
+        default="linear",
+        help=(
+            "classifier family for the whole sweep, P0 included -- the MLP "
+            "ladder is floored by a selection-matched MLP null, never by the "
+            "linear one.  MLP output lands in <run>/analysis_mlp by default "
+            "so the linear analysis is not clobbered; expect roughly 5-15x "
+            "the linear runtime, so keep --jobs -1."
+        ),
+    )
     parser.add_argument(
         "--fast",
         action="store_true",
@@ -140,16 +200,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-figures", action="store_true")
     parser.add_argument("--no-controls", action="store_true")
     parser.add_argument("--cache-gb", type=float, default=8.0)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=-1,
+        help=(
+            "parallel worker processes for probe cells (-1 = all cores). "
+            "Cells are independent fits with fixed seeds, so this changes "
+            "wall clock only, never the numbers."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
+    _log_compute_environment(args.jobs)
     run = analysis.load_run(args.run)
-    out_dir = Path(args.out) if args.out else Path(args.run) / "analysis"
+    default_out = (
+        "analysis" if args.probe_family == "linear" else f"analysis_{args.probe_family}"
+    )
+    out_dir = Path(args.out) if args.out else Path(args.run) / default_out
     out_dir.mkdir(parents=True, exist_ok=True)
     plumbing = analysis.plumbing_report(run)
-    (out_dir / "plumbing.json").write_text(json.dumps(plumbing, indent=2) + "\n")
+    (out_dir / "plumbing.json").write_text(
+        json.dumps(plumbing, indent=2) + "\n", encoding="utf-8"
+    )
     logging.info("plumbing integrity: %s", json.dumps(plumbing, sort_keys=True))
     if not plumbing["passed"]:
         print("plumbing integrity check failed; inspect the reported mismatches")
@@ -164,7 +240,14 @@ def main(argv: list[str] | None = None) -> int:
         select_c=not args.fast,
         block_scaling=args.block_scaling,
         max_cache_gb=args.cache_gb,
+        n_jobs=args.jobs,
+        family=args.probe_family,
     )
+
+    # One store for the whole run.  Each ladder/control call used to build its
+    # own, re-reading and re-decompressing every hidden archive from scratch --
+    # which is cheap on a local SSD and brutal over NFS.
+    store = analysis.HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
 
     samples = analysis.make_samples(run, config)
     if samples.empty:
@@ -174,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         "probe samples: %d (%d positive)", len(samples), int((samples["y"] == 1).sum())
     )
 
-    results = analysis.run_ladder(run, samples, config)
+    results = analysis.run_ladder(run, samples, config, store=store)
     frame = analysis.results_to_frame(results) if results else pd.DataFrame()
     layer, pool = _best_hidden_config(frame) if not frame.empty else (0, "act_mean")
     logging.info("best hidden config: layer=%s pool=%s", layer, pool)
@@ -190,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     extra["e3"] = analysis.run_e3(run, samples)
     if args.permutations:
         extra["permutation_null"] = _permutation_null(
-            run, samples, config, layer, pool, args.permutations
+            run, samples, config, layer, pool, args.permutations, store=store
         )
 
     if not args.no_controls:
@@ -210,22 +293,41 @@ def main(argv: list[str] | None = None) -> int:
                 select_c=not args.fast,
                 block_scaling=args.block_scaling,
                 max_cache_gb=args.cache_gb,
+                n_jobs=args.jobs,
+                family=args.probe_family,
             ),
+            store=store,
         )
         analysis.results_to_frame(global_results).to_csv(
             out_dir / "global_negatives_results.csv", index=False
         )
 
-        per_transform = analysis.run_per_transform(run, samples, config, layer, pool)
+        per_transform = analysis.run_per_transform(
+            run, samples, config, layer, pool, store=store
+        )
         analysis.results_to_frame(per_transform).to_csv(
             out_dir / "per_transform_results.csv", index=False
         )
 
-        cross_task = analysis.run_cross_task(run, samples, config, layer, pool)
-        cross_task.to_csv(out_dir / "cross_task_results.csv", index=False)
+        if args.probe_family == "linear":
+            cross_task = analysis.run_cross_task(
+                run, samples, config, layer, pool, store=store
+            )
+            cross_task.to_csv(out_dir / "cross_task_results.csv", index=False)
 
-        e1 = analysis.run_e1(run, config)
-        e1.to_csv(out_dir / "e1_readout.csv", index=False)
+            e1 = analysis.run_e1(run, config, store=store)
+            e1.to_csv(out_dir / "e1_readout.csv", index=False)
+        else:
+            # Cross-task transfer and the E1 ridge readout are linear-family
+            # diagnostics; the linear pass already produces them, and
+            # rebuilding them here would only duplicate numbers under a
+            # misleading directory name.
+            logging.info(
+                "probe family %s: skipping cross-task and E1 (linear-only "
+                "diagnostics; see the linear analysis directory)",
+                args.probe_family,
+            )
+            cross_task, e1 = pd.DataFrame(), pd.DataFrame()
 
         extra["undo_alignment"] = analysis.undo_alignment(run, samples)
     else:

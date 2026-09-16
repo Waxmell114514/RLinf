@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed, parallel_backend
 from sklearn.model_selection import GroupKFold
 
 from .datasets import (
@@ -30,6 +32,8 @@ from .datasets import (
 from .hijack import HIJACK, SELF, apply_freeze, apply_mirror
 from .probes import (
     DEFAULT_C_VALUES,
+    DEFAULT_MLP_ALPHAS,
+    PROBE_FAMILIES,
     ProbeResult,
     results_to_frame,
     ridge_readout,
@@ -126,6 +130,25 @@ class AnalysisConfig:
     negatives: str = "phase_matched"
     max_cache_gb: float = 8.0
     cross_task_splits: int = 4
+    # Cells (probe x layer x pool) are independent fits, so they parallelise
+    # exactly: same seeds, same splits, same numbers, N times less wall clock.
+    # Defaults to serial so library callers and the test suite stay
+    # single-process; the CLI turns it up.
+    n_jobs: int = 1
+    # Classifier family for every probe in the sweep, P0 included: the MLP
+    # ladder gets an MLP selection floor, never a linear one.
+    family: str = "linear"
+
+    def __post_init__(self) -> None:
+        if self.family not in PROBE_FAMILIES:
+            raise ValueError(
+                f"unknown probe family {self.family!r}; use {PROBE_FAMILIES}"
+            )
+        # The logistic C grid is meaningless for the MLP (its entries are
+        # alpha penalties, reversed orientation), so swap in the alpha grid
+        # unless the caller set an explicit one.
+        if self.family == "mlp" and tuple(self.c_values) == DEFAULT_C_VALUES:
+            self.c_values = DEFAULT_MLP_ALPHAS
 
 
 def _scheduler_settings(run: RunData) -> tuple[int, int]:
@@ -266,6 +289,65 @@ def plumbing_report(run: RunData, atol: float = 1e-6) -> dict[str, Any]:
     }
 
 
+def _resolve_n_jobs(n_jobs: int) -> int:
+    """Turn a joblib-style ``n_jobs`` into a concrete worker count.
+
+    ``-1`` means every core, ``-2`` all but one, and anything that resolves
+    below 2 runs serially in-process -- which keeps the default path free of
+    process spawning, and so identical on Windows, in pytest, and in CI.
+    """
+    if n_jobs is None:
+        return 1
+    if n_jobs < 0:
+        available = os.cpu_count() or 1
+        return max(1, available + 1 + n_jobs)
+    return max(1, n_jobs)
+
+
+def _log_cell(result: ProbeResult) -> None:
+    logger.info(
+        "%s layer=%s pool=%s bacc=%.3f auroc=%.3f",
+        result.name,
+        result.layer,
+        result.pool,
+        result.balanced_acc_mean,
+        result.auroc_mean,
+    )
+
+
+def _run_cell(
+    cell: tuple[str, ProbeSpec, Optional[int], Optional[str], np.ndarray, list],
+    labels: np.ndarray,
+    groups: np.ndarray,
+    config: AnalysisConfig,
+) -> ProbeResult:
+    """Fit one (probe, layer, pool) cell.
+
+    Module level and free of the run/store, so joblib can ship it to a worker
+    process.  Everything that decides the numbers -- splits, seeds, C grid --
+    comes from ``config``, so a cell scores identically wherever it runs.
+    """
+    name, spec, layer, pool, features, spans = cell
+    result = run_probe(
+        features,
+        labels,
+        groups,
+        name=name,
+        blocks=list(spec.blocks),
+        layer=layer,
+        pool=pool,
+        c_values=config.c_values,
+        n_splits=config.n_splits,
+        seed=config.seed,
+        shuffle_labels=spec.shuffle_labels,
+        select_c=config.select_c,
+        spans=spans if config.block_scaling == "sqrt_dim" else None,
+        family=config.family,
+    )
+    result.notes = (result.notes + " " + spec.description).strip()
+    return result
+
+
 def run_ladder(
     run: RunData,
     samples: pd.DataFrame,
@@ -285,70 +367,80 @@ def run_ladder(
 
     groups = samples["episode_id"].to_numpy()
     labels = samples["y"].to_numpy()
-    results: list[ProbeResult] = []
 
-    for name in names:
-        spec = PROBE_BY_NAME.get(name)
-        if spec is None:
-            raise ValueError(f"unknown probe {name!r}; have {sorted(PROBE_BY_NAME)}")
-        combos = (
-            [(layer, pool) for layer in layers for pool in pools]
-            if spec.needs_hidden
-            else [(None, None)]
-        )
-        for layer, pool in combos:
-            try:
-                features, spans = build_features(
-                    run,
-                    samples,
-                    list(spec.blocks),
-                    layer=layer,
-                    pool=pool,
-                    store=store,
-                    a_cmd_column=config.a_cmd_column,
+    def _cells():
+        """Yield one ready-to-fit cell at a time.
+
+        A generator on purpose: the hidden blocks are tens of megabytes each,
+        and joblib pulls lazily, so only the cells actually in flight are
+        held in memory rather than all of them at once.
+        """
+        for name in names:
+            spec = PROBE_BY_NAME.get(name)
+            if spec is None:
+                raise ValueError(
+                    f"unknown probe {name!r}; have {sorted(PROBE_BY_NAME)}"
                 )
-            except (KeyError, FileNotFoundError) as error:
-                logger.warning(
-                    "skipping %s (layer=%s pool=%s): %s", name, layer, pool, error
-                )
-                continue
-            result = run_probe(
-                features,
-                labels,
-                groups,
-                name=name,
-                blocks=list(spec.blocks),
-                layer=layer,
-                pool=pool,
-                c_values=config.c_values,
-                n_splits=config.n_splits,
-                seed=config.seed,
-                shuffle_labels=spec.shuffle_labels,
-                select_c=config.select_c,
-                spans=spans if config.block_scaling == "sqrt_dim" else None,
+            combos = (
+                [(layer, pool) for layer in layers for pool in pools]
+                if spec.needs_hidden
+                else [(None, None)]
             )
-            result.notes = (result.notes + " " + spec.description).strip()
-            results.append(result)
-            logger.info(
-                "%s layer=%s pool=%s bacc=%.3f auroc=%.3f",
-                name,
-                layer,
-                pool,
-                result.balanced_acc_mean,
-                result.auroc_mean,
+            for layer, pool in combos:
+                try:
+                    features, spans = build_features(
+                        run,
+                        samples,
+                        list(spec.blocks),
+                        layer=layer,
+                        pool=pool,
+                        store=store,
+                        a_cmd_column=config.a_cmd_column,
+                    )
+                except (KeyError, FileNotFoundError) as error:
+                    logger.warning(
+                        "skipping %s (layer=%s pool=%s): %s", name, layer, pool, error
+                    )
+                    continue
+                yield (name, spec, layer, pool, features, spans)
+
+    n_jobs = _resolve_n_jobs(config.n_jobs)
+    results: list[ProbeResult] = []
+    if n_jobs == 1:
+        for cell in _cells():
+            results.append(_run_cell(cell, labels, groups, config))
+            _log_cell(results[-1])
+    else:
+        # inner_max_num_threads=1: each worker already owns a core, so letting
+        # its BLAS fan out too would oversubscribe and run slower than serial.
+        # return_as="generator" keeps submission order but hands cells back as
+        # they land, so a long sweep still reports progress as it goes rather
+        # than going silent for minutes (SPEC 7's heartbeat rule).
+        with parallel_backend("loky", n_jobs=n_jobs, inner_max_num_threads=1):
+            stream = Parallel(return_as="generator")(
+                delayed(_run_cell)(cell, labels, groups, config)
+                for cell in _cells()
             )
+            for result in stream:
+                results.append(result)
+                _log_cell(result)
     return results
 
 
 def run_per_transform(
-    run: RunData, samples: pd.DataFrame, config: AnalysisConfig, layer: int, pool: str
+    run: RunData,
+    samples: pd.DataFrame,
+    config: AnalysisConfig,
+    layer: int,
+    pool: str,
+    store: Optional[HiddenStore] = None,
 ) -> list[ProbeResult]:
     """Split the ladder by hijack transform (SPEC 3.3a).
 
     Each positive keeps its matched negative, so a per-transform subset stays
     phase-balanced.
     """
-    store = HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
+    store = store or HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
     results: list[ProbeResult] = []
     transforms = sorted(
         t for t in samples.loc[samples["y"] == 1, "transform"].unique() if t
@@ -386,6 +478,7 @@ def run_per_transform(
                 seed=config.seed,
                 select_c=config.select_c,
                 spans=spans if config.block_scaling == "sqrt_dim" else None,
+                family=config.family,
             )
             result.notes = f"transform={transform}"
             results.append(result)
@@ -393,7 +486,12 @@ def run_per_transform(
 
 
 def run_cross_task(
-    run: RunData, samples: pd.DataFrame, config: AnalysisConfig, layer: int, pool: str
+    run: RunData,
+    samples: pd.DataFrame,
+    config: AnalysisConfig,
+    layer: int,
+    pool: str,
+    store: Optional[HiddenStore] = None,
 ) -> pd.DataFrame:
     """Train on some tasks, test on held-out tasks (SPEC 3.3b, figure F3)."""
     from sklearn.linear_model import LogisticRegression
@@ -401,7 +499,7 @@ def run_cross_task(
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
-    store = HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
+    store = store or HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
     task_ids = samples["task_id"].to_numpy()
     n_tasks = len(np.unique(task_ids))
     n_splits = min(config.cross_task_splits, n_tasks)
@@ -470,15 +568,52 @@ def run_cross_task(
     return pd.DataFrame(rows)
 
 
+def _run_e1_cell(
+    cell: tuple[int, str, np.ndarray],
+    targets: np.ndarray,
+    groups: np.ndarray,
+    config: AnalysisConfig,
+) -> dict[str, Any]:
+    """Ridge-regress the commanded chunk from one (layer, pool) cell.
+
+    Module level so joblib can ship it to a worker.  E1 is the most expensive
+    block in a full run -- 40 ridge fits per cell on roughly (n_calls x 4096)
+    -- and its cells are as independent as the ladder's.
+    """
+    layer, pool, features = cell
+    readout = ridge_readout(
+        features, targets, groups, n_splits=config.n_splits, seed=config.seed
+    )
+    per_dim = np.asarray(readout["per_dim_r2"])
+    return {
+        "layer": layer,
+        "pool": pool,
+        "r2_mean": readout["r2_mean"],
+        "r2_std": readout["r2_std"],
+        # A single near-constant output dimension (the gripper token often
+        # is) drags the uniform average down, and a boundary-pinned alpha
+        # silently under-fits.  Both are invisible unless reported.
+        "r2_median_per_dim": float(np.median(per_dim)),
+        "r2_min_per_dim": float(per_dim.min()),
+        "selected_alpha": json.dumps(readout["selected_alpha"]),
+        "alpha_at_grid_edge": bool(readout["alpha_at_grid_edge"]),
+        "n_samples": readout["n_samples"],
+        "n_features": readout["n_features"],
+    }
+
+
 def run_e1(
-    run: RunData, config: AnalysisConfig, max_samples: int = 6000
+    run: RunData,
+    config: AnalysisConfig,
+    max_samples: int = 6000,
+    store: Optional[HiddenStore] = None,
 ) -> pd.DataFrame:
     """E1: ridge-regress the commanded chunk from the hidden state (figure F4).
 
     Uses every recorded call, not just probe samples: the question is where the
     motor plan lives, which has nothing to do with the hijack labels.
     """
-    store = HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
+    store = store or HiddenStore(run.run_dir / "hidden", config.max_cache_gb)
     calls = run.calls
     if "post_success" in calls.columns:
         calls = calls[~calls["post_success"].astype(bool)]
@@ -494,35 +629,36 @@ def run_e1(
 
     layers = config.layers if config.layers is not None else run.layers
     pools = config.pools if config.pools is not None else run.pools
+    def _cells():
+        """Yield one (layer, pool) cell at a time; see run_ladder._cells."""
+        for layer in layers:
+            for pool in pools:
+                yield (
+                    layer,
+                    pool,
+                    store.vectors(pairs, run.layer_index(layer), run.pool_index(pool)),
+                )
+
+    def _log_row(row: dict[str, Any]) -> None:
+        logger.info(
+            "E1 layer=%s pool=%s R2=%.3f", row["layer"], row["pool"], row["r2_mean"]
+        )
+
+    n_jobs = _resolve_n_jobs(config.n_jobs)
     rows: list[dict[str, Any]] = []
-    for layer in layers:
-        for pool in pools:
-            features = store.vectors(
-                pairs, run.layer_index(layer), run.pool_index(pool)
+    if n_jobs == 1:
+        for cell in _cells():
+            rows.append(_run_e1_cell(cell, targets, groups, config))
+            _log_row(rows[-1])
+    else:
+        with parallel_backend("loky", n_jobs=n_jobs, inner_max_num_threads=1):
+            stream = Parallel(return_as="generator")(
+                delayed(_run_e1_cell)(cell, targets, groups, config)
+                for cell in _cells()
             )
-            readout = ridge_readout(
-                features, targets, groups, n_splits=config.n_splits, seed=config.seed
-            )
-            per_dim = np.asarray(readout["per_dim_r2"])
-            rows.append(
-                {
-                    "layer": layer,
-                    "pool": pool,
-                    "r2_mean": readout["r2_mean"],
-                    "r2_std": readout["r2_std"],
-                    # A single near-constant output dimension (the gripper
-                    # token often is) drags the uniform average down, and a
-                    # boundary-pinned alpha silently under-fits.  Both are
-                    # invisible unless reported.
-                    "r2_median_per_dim": float(np.median(per_dim)),
-                    "r2_min_per_dim": float(per_dim.min()),
-                    "selected_alpha": json.dumps(readout["selected_alpha"]),
-                    "alpha_at_grid_edge": bool(readout["alpha_at_grid_edge"]),
-                    "n_samples": readout["n_samples"],
-                    "n_features": readout["n_features"],
-                }
-            )
-            logger.info("E1 layer=%s pool=%s R2=%.3f", layer, pool, readout["r2_mean"])
+            for row in stream:
+                rows.append(row)
+                _log_row(row)
     return pd.DataFrame(rows)
 
 
@@ -912,7 +1048,7 @@ def summarize(
         ]
 
     path = out_dir / "summary.md"
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 

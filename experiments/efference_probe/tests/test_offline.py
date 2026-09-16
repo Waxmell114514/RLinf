@@ -655,3 +655,304 @@ def test_markdown_table_needs_no_tabulate():
     assert lines[0].startswith("| name")
     assert len(lines) == 4
     assert "0.5123" in rendered
+
+
+def test_resolve_n_jobs_maps_negatives_onto_core_count():
+    import os
+
+    from efference_probe.analysis import _resolve_n_jobs
+
+    cores = os.cpu_count() or 1
+    assert _resolve_n_jobs(1) == 1
+    assert _resolve_n_jobs(3) == 3
+    assert _resolve_n_jobs(-1) == cores
+    assert _resolve_n_jobs(-2) == max(1, cores - 1)
+    # Anything degenerate has to collapse to serial rather than to zero
+    # workers, which joblib would reject.  "Degenerate" is relative to the
+    # host: -99 asks for all-but-98 cores, which is a real worker count on a
+    # 112-core box, so the request has to be scaled off `cores` rather than
+    # hard-coded or the assertion only holds on small machines.
+    assert _resolve_n_jobs(0) == 1
+    assert _resolve_n_jobs(None) == 1
+    assert _resolve_n_jobs(-(cores + 1)) == 1
+    assert _resolve_n_jobs(-(cores + 99)) == 1
+
+
+def test_parallel_ladder_matches_serial_exactly(synthetic_run):
+    """Parallelism must be a wall-clock change and nothing else.
+
+    Every cell is an independent fit over fixed seeds and fixed splits, so
+    dispatching cells to worker processes has to reproduce the serial numbers
+    bit for bit.  If this ever drifts, the ladder is picking up state that
+    depends on evaluation order and no reported number can be trusted.
+    """
+    from efference_probe.analysis import AnalysisConfig, make_samples, run_ladder
+
+    base = dict(layers=[0, 4], pools=["ctx_mean"], probes=["P0", "P1", "C_cmd"])
+    config = AnalysisConfig(**base)
+    samples = make_samples(synthetic_run, config)
+
+    serial = run_ladder(synthetic_run, samples, AnalysisConfig(**base, n_jobs=1))
+    parallel = run_ladder(synthetic_run, samples, AnalysisConfig(**base, n_jobs=2))
+
+    assert [r.name for r in serial] == [r.name for r in parallel]
+    assert [(r.layer, r.pool) for r in serial] == [(r.layer, r.pool) for r in parallel]
+    for want, got in zip(serial, parallel):
+        assert want.fold_balanced_acc == got.fold_balanced_acc
+        assert want.fold_auroc == got.fold_auroc
+        assert want.selected_c == got.selected_c
+        assert want.per_c == got.per_c
+
+
+def test_selected_fold_score_comes_from_the_per_c_sweep(synthetic_run):
+    """The reported fold score is the per-C sweep's fit at the selected C.
+
+    `run_probe` used to fit the selected C twice per fold -- once to score the
+    fold, once inside the per-C sweep -- and the duplicate was dropped in
+    favour of reading the sweep's own entry.  That is only sound if the two
+    were the same fit.
+
+    With a single-value C grid the sweep has exactly one entry per fold and
+    `chosen` must be it, so the per-C mean has to equal the mean of the
+    reported fold scores *exactly* -- not approximately.  Any drift means the
+    fold is being scored by something other than the sweep.
+    """
+    samples = build_probe_samples(
+        synthetic_run.calls, warmup_calls=4, rng=np.random.default_rng(0)
+    )
+    features, _ = build_features(
+        synthetic_run,
+        samples,
+        ["h_cur"],
+        layer=4,
+        pool="act_mean",
+        store=HiddenStore(synthetic_run.run_dir / "hidden"),
+    )
+    labels = samples["y"].to_numpy()
+    groups = samples["episode_id"].to_numpy()
+
+    def _fit(**kwargs):
+        return run_probe(
+            features, labels, groups, name="test", blocks=["h_cur"], **kwargs
+        )
+
+    result = _fit(c_values=(0.1,), select_c=False)
+    assert list(result.per_c) == ["C=0.1"]
+    assert result.per_c["C=0.1"]["balanced_acc_mean"] == pytest.approx(
+        float(np.mean(result.fold_balanced_acc)), abs=0.0, rel=0.0
+    )
+    assert set(result.selected_c) == {0.1}
+
+    # And with the real grid, every fold still picks from the advertised
+    # values and lands in the table.
+    swept = _fit(select_c=True)
+    assert len(swept.selected_c) == len(swept.fold_balanced_acc)
+    assert set(swept.selected_c) <= {0.01, 0.1, 1.0}
+    for chosen in swept.selected_c:
+        assert f"C={chosen}" in swept.per_c
+
+
+def test_parallel_e1_matches_serial_exactly(synthetic_run):
+    """E1's cells parallelise on the same terms as the ladder's.
+
+    E1 is the most expensive block in a full run -- ridge over every recorded
+    call, at every layer and pool -- so it is the one most worth dispatching,
+    and equally the one where a silent difference would be least noticed.
+    """
+    from efference_probe.analysis import AnalysisConfig, run_e1
+
+    base = dict(layers=[0, 4], pools=["ctx_mean"])
+    serial = run_e1(synthetic_run, AnalysisConfig(**base, n_jobs=1))
+    parallel = run_e1(synthetic_run, AnalysisConfig(**base, n_jobs=2))
+
+    pd.testing.assert_frame_equal(serial, parallel)
+
+
+@pytest.mark.parametrize(
+    "n_samples,n_features,n_targets,constant_column",
+    [
+        (200, 40, 5, False),   # n > p: normal equations
+        (40, 200, 5, False),   # n < p: dual/kernel form, as E1 actually runs
+        (200, 40, 5, True),    # zero-variance columns must not divide by ~0
+        (40, 200, 1, True),
+    ],
+)
+def test_shared_ridge_matches_sklearn(
+    n_samples, n_features, n_targets, constant_column
+):
+    """The shared-system ridge must reproduce sklearn, not merely approximate it.
+
+    `ridge_readout` scores seven alphas on identical training data, so the
+    Gram/kernel matrix is built once and reused.  That is only legitimate if
+    each alpha still lands exactly where `Pipeline([StandardScaler(),
+    Ridge(alpha)])` would put it -- E1's R^2 depth profile is a reported
+    result, and a solver that quietly disagreed would be invisible in it.
+    """
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from efference_probe.probes import _SharedRidge
+
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(n_samples, n_features))
+    x_test = rng.normal(size=(31, n_features))
+    if constant_column:
+        x[:, 0] = 3.5
+        x_test[:, 0] = 3.5
+        x[:, 1] = 0.0
+        x_test[:, 1] = 0.0
+    y = x[:, :1] @ rng.normal(size=(1, n_targets)) + rng.normal(
+        size=(n_samples, n_targets), scale=0.3
+    )
+
+    solver = _SharedRidge(x, y)
+    for alpha in (0.1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5):
+        reference = (
+            Pipeline([("scale", StandardScaler()), ("ridge", Ridge(alpha=alpha))])
+            .fit(x, y)
+            .predict(x_test)
+        )
+        got = solver.predict(x_test, alpha)
+        np.testing.assert_allclose(
+            got, reference.reshape(got.shape), rtol=1e-9, atol=1e-9
+        )
+
+
+def test_shared_ridge_survives_a_singular_design():
+    """Duplicate and constant columns must not take the solver down.
+
+    Hidden-state features are not guaranteed full rank -- a dead unit is a
+    zero column, and tied units are duplicates.  The regularised system stays
+    solvable, and the answer must still be sklearn's.
+    """
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    from efference_probe.probes import _SharedRidge
+
+    rng = np.random.default_rng(1)
+    base = rng.normal(size=(60, 5))
+    x = np.hstack([base, base, np.zeros((60, 3))])  # rank-deficient by design
+    y = rng.normal(size=(60, 4))
+    solver = _SharedRidge(x, y)
+    for alpha in (0.1, 1e3):
+        reference = (
+            Pipeline([("scale", StandardScaler()), ("ridge", Ridge(alpha=alpha))])
+            .fit(x, y)
+            .predict(x)
+        )
+        np.testing.assert_allclose(solver.predict(x, alpha), reference, rtol=1e-7, atol=1e-7)
+
+
+# --------------------------------------------------------------------------
+# Nonlinear (MLP) probe family
+# --------------------------------------------------------------------------
+
+
+def _xor_dataset(n=400, dim=24, margin=0.3, seed=0):
+    """Labels are the XOR of two coordinate signs: invisible to any linear
+    readout, learnable by one hidden layer.  Points inside ``margin`` of
+    either decision axis are resampled away so the boundary is clean --
+    without the margin even a converged MLP tops out around 0.8 at this n,
+    which would leave no daylight between "family works" and "family is
+    feeble".  The remaining dimensions are pure noise, so the test also
+    checks the MLP is not just memorising."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    while sum(len(r) for r in rows) < n:
+        batch = rng.normal(size=(4 * n, dim)).astype(np.float32)
+        keep = (np.abs(batch[:, 0]) > margin) & (np.abs(batch[:, 1]) > margin)
+        rows.append(batch[keep])
+    x = np.concatenate(rows)[:n]
+    y = ((x[:, 0] > 0) ^ (x[:, 1] > 0)).astype(int)
+    groups = rng.integers(0, 40, size=n)
+    return x, y, groups
+
+
+def test_mlp_probe_reads_xor_where_linear_cannot():
+    """The one property that justifies the MLP rung: strictly more reach.
+
+    If the linear probe scored well here the dataset would be broken; if the
+    MLP scored at chance the family plumbing would be broken.  Both bounds
+    are deliberately loose -- this pins the ordering, not the decimals.
+    """
+    from efference_probe.probes import run_probe
+
+    x, y, groups = _xor_dataset()
+    # Single alpha, no inner selection: this test pins the family's reach,
+    # not the grid machinery (the ladder test covers the threading), and the
+    # full 30-fit sweep costs minutes where these 5 fits cost seconds.
+    linear = run_probe(
+        x, y, groups, name="xor", blocks=["h_cur"], family="linear",
+        c_values=(1.0,), select_c=False,
+    )
+    mlp = run_probe(
+        x, y, groups, name="xor", blocks=["h_cur"], family="mlp",
+        c_values=(0.1,), select_c=False,
+    )
+    assert linear.family == "linear"
+    assert mlp.family == "mlp"
+    assert linear.balanced_acc_mean < 0.62
+    assert mlp.balanced_acc_mean > 0.85
+    assert not np.isnan(mlp.auroc_mean)  # predict_proba path for AUROC
+
+
+def test_mlp_null_floor_stays_at_chance():
+    """A shuffled-label MLP must not buy accuracy from its extra capacity.
+
+    This is the null the MLP ladder is compared against; if it drifted above
+    chance the whole nonlinear extension would flatter itself exactly the way
+    the selection-aware floor exists to prevent.
+    """
+    from efference_probe.probes import run_probe
+
+    x, y, groups = _xor_dataset(seed=1)
+    null = run_probe(
+        x, y, groups, name="P0", blocks=["h_cur"], family="mlp",
+        shuffle_labels=True, c_values=(0.1,), select_c=False,
+    )
+    assert abs(null.balanced_acc_mean - 0.5) < 0.12
+
+
+def test_ladder_threads_family_to_every_cell(synthetic_run):
+    """AnalysisConfig(family=...) must reach every probe in the sweep, P0
+    included -- an MLP ladder floored by a linear P0 would overstate itself.
+
+    A single explicit alpha with no inner selection keeps this to 10 lbfgs
+    fits; the default-grid swap that a bare ``family="mlp"`` triggers is
+    asserted separately below at zero fitting cost."""
+    from efference_probe.analysis import (
+        AnalysisConfig,
+        make_samples,
+        results_to_frame,
+        run_ladder,
+    )
+
+    config = AnalysisConfig(
+        layers=[4],
+        pools=["act_mean"],
+        probes=["P0", "P1"],
+        family="mlp",
+        c_values=(0.1,),
+        select_c=False,
+    )
+    samples = make_samples(synthetic_run, config)
+    results = run_ladder(synthetic_run, samples, config)
+    assert results, "ladder produced no results"
+    assert {result.family for result in results} == {"mlp"}
+    frame = results_to_frame(results)
+    assert "family" in frame.columns
+    assert set(frame["family"]) == {"mlp"}
+
+
+def test_mlp_config_swaps_in_alpha_grid():
+    """A bare ``family="mlp"`` must not inherit the logistic C grid: the
+    entries mean the reverse thing (alpha penalties), so the default grid is
+    swapped -- and an explicit grid is respected."""
+    from efference_probe.analysis import AnalysisConfig
+    from efference_probe.probes import DEFAULT_MLP_ALPHAS
+
+    assert AnalysisConfig(family="mlp").c_values == DEFAULT_MLP_ALPHAS
+    assert AnalysisConfig(family="mlp", c_values=(0.5,)).c_values == (0.5,)

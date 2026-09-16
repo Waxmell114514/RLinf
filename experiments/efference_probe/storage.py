@@ -186,7 +186,7 @@ class RunWriter:
 
     def write_run_config(self, payload: dict[str, Any]) -> None:
         path = self.out_dir / "run_config.yaml"
-        with open(path, "w") as handle:
+        with open(path, "w", encoding="utf-8") as handle:
             yaml.safe_dump(payload, handle, sort_keys=False, default_flow_style=False)
 
     def checkpoint(self, manifest_extra: Optional[dict[str, Any]] = None) -> None:
@@ -220,7 +220,7 @@ class RunWriter:
         }
         if manifest_extra:
             manifest.update(manifest_extra)
-        with open(self.out_dir / "manifest.json", "w") as handle:
+        with open(self.out_dir / "manifest.json", "w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2, default=_json_default)
         # Budget accounting reads the directory rather than accumulating
         # per-write sizes, so repeated checkpoints do not double-count.
@@ -250,18 +250,18 @@ def git_sha(repo_root: str | Path) -> str:
     """Best-effort ``git rev-parse HEAD`` without shelling out to git."""
     head = Path(repo_root) / ".git" / "HEAD"
     try:
-        content = head.read_text().strip()
+        content = head.read_text(encoding="utf-8").strip()
     except OSError:
         return "unknown"
     if content.startswith("ref:"):
         ref = content.split(" ", 1)[1].strip()
         ref_path = Path(repo_root) / ".git" / ref
         try:
-            return ref_path.read_text().strip()
+            return ref_path.read_text(encoding="utf-8").strip()
         except OSError:
             packed = Path(repo_root) / ".git" / "packed-refs"
             try:
-                for line in packed.read_text().splitlines():
+                for line in packed.read_text(encoding="utf-8").splitlines():
                     if line.endswith(f" {ref}"):
                         return line.split(" ", 1)[0]
             except OSError:
