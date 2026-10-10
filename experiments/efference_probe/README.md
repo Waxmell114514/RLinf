@@ -172,6 +172,24 @@ early-stopping default measurably stalls at probe sample sizes; see
 is never clobbered; cross-task transfer and E1 are skipped there because
 they are linear-family diagnostics that the linear pass already produced.
 
+### Wave 3 — what makes attribution readable?
+
+`PREREG_wave3.md` fixes the readouts (written before any wave-3 data);
+`WAVE3_RUNBOOK.md` has the commands in order. In short:
+
+- **E1** (CPU) — the GRU of Ye (2026) under the same hijacks:
+  `experiments/gru_mismatch/run_gru.py`.
+- **E2** — the same battery on the RLinf GRPO sibling of traj1
+  (`configs/e2_*.yaml`), compared with `compare_runs.py`, which keeps
+  attribution (each run against its own floor) and compensation (randomised
+  hijack cost, E3, undo alignment) in separate tables.
+- **E3/E4** — the Wan world model as an external comparator:
+  `configs/e4_wm_*.yaml` collect every substep frame (`frames.substeps`),
+  `run_wm.py sensitivity` is the line-B gate, `run_wm.py comparator` scores
+  hijacks against a matched novelty baseline.
+- **E5 step 1** — `vram_probe.py`: does LoRA with the previous command chunk
+  in the prompt fit on 24 GB?
+
 ### S4 — stretch
 
 - **P5** (vision/projector features): re-collect with
@@ -196,6 +214,12 @@ analysis.py   the ladder, controls, E1, E3, markdown summary
 figures.py    F1-F5 and the T1 run card
 run_collect.py / run_probes.py    CLI entry points
 tests/        synthetic run generator + 31 offline tests
+
+compare.py    cross-checkpoint attribution/compensation tables  [wave 3]
+wm_data.py    world-model queries from a run dir                [pure numpy]
+wm_scores.py  E3 sensitivity and E4 comparator scores           [pure numpy]
+wm_model.py   Wan pipeline wrapper (+ a numpy toy for tests)    [torch + diffsynth]
+compare_runs.py / run_wm.py / vram_probe.py   wave-3 entry points
 ```
 
 The split is deliberate: everything from `datasets.py` rightwards runs without
