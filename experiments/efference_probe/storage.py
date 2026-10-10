@@ -40,6 +40,16 @@ ARRAY_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 
+def call_frame_name(call_idx: int, camera: str = "main") -> str:
+    """The observation a model call saw (written by ``save_frames``)."""
+    return f"call{call_idx:04d}_{camera}.jpg"
+
+
+def substep_frame_name(call_idx: int, substep: int) -> str:
+    """Main frame after one substep of a call's chunk (``save_substep_frames``)."""
+    return f"call{call_idx:04d}_s{substep}_main.jpg"
+
+
 def flatten(array: np.ndarray) -> np.ndarray:
     return np.asarray(array, dtype=np.float32).reshape(-1)
 
@@ -176,7 +186,31 @@ class RunWriter:
         if wrist_image is not None:
             images["wrist"] = wrist_image
         for name, array in images.items():
-            path = directory / f"call{call_idx:04d}_{name}.jpg"
+            path = directory / call_frame_name(call_idx, name)
+            Image.fromarray(np.asarray(array, dtype=np.uint8)).save(
+                path, quality=quality
+            )
+            self.budget.add_bytes(path.stat().st_size)
+
+    def save_substep_frames(
+        self,
+        episode_id: int,
+        call_idx: int,
+        main_images: list[np.ndarray],
+        quality: int = 95,
+    ) -> None:
+        """Main-camera frame after each substep of the chunk executed at a call.
+
+        ``call0003_s0_main.jpg`` is the frame after the first of call 3's
+        substeps; ``_s7`` (the last) is the same scene as call 4's own
+        ``call0004_main.jpg``.
+        """
+        from PIL import Image
+
+        directory = self.frames_dir / f"ep{episode_id:05d}"
+        directory.mkdir(parents=True, exist_ok=True)
+        for substep, array in enumerate(main_images):
+            path = directory / substep_frame_name(call_idx, substep)
             Image.fromarray(np.asarray(array, dtype=np.uint8)).save(
                 path, quality=quality
             )

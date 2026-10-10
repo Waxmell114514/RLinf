@@ -1046,6 +1046,11 @@ def summarize(
             json.dumps(extra, indent=2, default=str),
             "```",
         ]
+        # Machine-readable copy, so cross-run comparisons need not parse
+        # markdown (compare_runs.py still falls back to that for older runs).
+        (out_dir / "extra.json").write_text(
+            json.dumps(extra, indent=2, default=str) + "\n", encoding="utf-8"
+        )
 
     path = out_dir / "summary.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

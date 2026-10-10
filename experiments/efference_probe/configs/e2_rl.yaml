@@ -1,0 +1,54 @@
+# Wave 3, E2 (line A): the RL control.  The same battery as main02, run
+# unchanged on RLinf-OpenVLAOFT-GRPO-LIBERO-goal, whose model card names
+# Haozhan72/Openvla-oft-SFT-libero-goal-traj1 -- the checkpoint main02 probed --
+# as its base.  GRPO trains on the consequences of the policy's own actions,
+# so this asks whether that objective builds the attribution substrate SFT
+# lacks (PREREG_wave3.md, E2).
+#
+# Only two things differ from main02, both for sample size, not protocol:
+# the checkpoint, and 50 initial states per task instead of 20.  The GRPO
+# policy succeeds on ~94-98% of LIBERO-Goal episodes, so its episodes end
+# earlier and carry fewer hijacks; 50 states (LIBERO-Goal's full set) keeps the
+# positive count near main02's.  The first 20 states of each task, and batch
+# 0's hijack RNG, are the ones main02 used (same seed, same ordered reset ids).
+# Sampling follows the model card: temperature 1.6, top_p 1.0.
+run_id: e2_rl
+out_root: experiments/efference_probe/data
+notes: "Wave 3 E2: GRPO sibling of traj1, swap, 10 tasks x 50 states, seed 1"
+
+model:
+  model_path: /path/to/model/RLinf-OpenVLAOFT-GRPO-LIBERO-goal/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: null
+  init_states_per_task: 50
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 1
+
+hijack:
+  enabled: true
+  transform: swap
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false
+  verify_indexing: true
+
+frames:
+  mode: episodes
+  max_episodes: 5
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

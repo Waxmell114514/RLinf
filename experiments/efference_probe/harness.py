@@ -339,6 +339,9 @@ class EfferenceHarness:
                 next_obs[-1] if isinstance(next_obs, (list, tuple)) else next_obs
             )
             states_after = _as_numpy(obs_after["states"])
+            substep_images = (
+                _substep_main_images(next_obs) if self.cfg.frames.substeps else None
+            )
 
             terminated = terminations.cpu().numpy().astype(bool)
             truncated = truncations.cpu().numpy().astype(bool)
@@ -415,6 +418,13 @@ class EfferenceHarness:
                         ),
                         quality=self.cfg.frames.jpeg_quality,
                     )
+                    if substep_images is not None:
+                        self.writer.save_substep_frames(
+                            episode_id,
+                            call_idx,
+                            [frames[slot] for frames in substep_images],
+                            quality=self.cfg.frames.jpeg_quality,
+                        )
 
                 if terminated[slot].any():
                     first_success_call[episode_id] = call_idx
@@ -566,6 +576,26 @@ class EfferenceHarness:
                 "pools": list(self.cfg.capture.pools),
             },
         }
+
+
+def _substep_main_images(next_obs: Any) -> list[np.ndarray]:
+    """``[n_substeps]`` arrays of ``[num_envs, H, W, 3]`` from ``chunk_step``.
+
+    ``LiberoEnv.chunk_step`` returns one wrapped observation per substep when
+    intermediate renders are on, and ``None`` for the skipped ones otherwise;
+    config validation rules the latter out, and this guards it at runtime.
+    """
+    if not isinstance(next_obs, (list, tuple)):
+        raise RuntimeError("frames.substeps expects chunk_step to return a list")
+    images = []
+    for substep, obs in enumerate(next_obs):
+        if obs is None or obs.get("main_images") is None:
+            raise RuntimeError(
+                f"substep {substep} has no rendered observation; set "
+                "env.skip_intermediate_renders: false"
+            )
+        images.append(_as_numpy(obs["main_images"]))
+    return images
 
 
 def _as_numpy(value: Any) -> Optional[np.ndarray]:

@@ -110,6 +110,12 @@ class FramesConfig:
     max_episodes: int = 20
     jpeg_quality: int = 85
     save_wrist: bool = True
+    # Also save the main-camera frame after *every* substep of each executed
+    # chunk (``call0003_s0_main.jpg`` .. ``_s7``), for the world-model
+    # comparator (wave 3, E3/E4): the Wan WM conditions on the last 4
+    # per-step frames and predicts the next 8, so one frame per call is not
+    # enough.  Requires ``env.skip_intermediate_renders: false``.
+    substeps: bool = False
 
 
 @dataclass
@@ -178,6 +184,13 @@ class RunConfig:
             raise ValueError("capture.layers contains duplicates")
         if self.frames.mode not in ("none", "episodes", "all"):
             raise ValueError(f"unknown frames.mode: {self.frames.mode!r}")
+        if self.frames.substeps and self.env.skip_intermediate_renders:
+            raise ValueError(
+                "frames.substeps needs env.skip_intermediate_renders: false -- "
+                "with it on, LIBERO renders only the last substep of each chunk"
+            )
+        if self.frames.substeps and self.frames.mode == "none":
+            raise ValueError("frames.substeps has no effect with frames.mode: none")
         if self.env.max_calls_per_episode <= self.hijack.warmup_calls + 1:
             raise ValueError(
                 "env.max_calls_per_episode leaves no eligible calls after warm-up"

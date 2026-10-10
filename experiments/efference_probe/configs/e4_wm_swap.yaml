@@ -1,0 +1,55 @@
+# Wave 3, E3/E4 (line B): collection for the world-model comparator, swap arm.
+# Same protocol as main02 except what the world model needs: every substep of
+# every executed chunk is rendered and saved (frames.substeps), for every
+# episode, at JPEG quality 95.  The Wan WM conditions on the episode's first
+# frame plus the last 4 per-step frames and predicts the next 8, so the
+# one-frame-per-call data of waves 1-2 cannot feed it faithfully.
+#
+# All three arms use the pre-registered task set {2,3,6,8,9} (the top-5
+# relative-action-change rule from the logbook), so FREEZE -- the decisive
+# condition for E4 -- is compared with swap and mirror on the same tasks.
+# Seed 2: fresh episodes, independent of every run the paper reports.
+run_id: e4_wm_swap
+out_root: experiments/efference_probe/data
+notes: "Wave 3 E3/E4: WM comparator data, SFT traj1, swap, tasks {2,3,6,8,9} x 20 states, seed 2, substep frames"
+
+model:
+  model_path: /path/to/model/Openvla-oft-SFT-libero-goal-traj1/
+  unnorm_key: libero_goal_no_noops
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [2, 3, 6, 8, 9]
+  init_states_per_task: 20
+  num_envs: 20
+  max_calls_per_episode: 40
+  seed: 2
+  # Intermediate substeps must be rendered for frames.substeps.
+  skip_intermediate_renders: false
+
+hijack:
+  enabled: true
+  transform: swap
+  p_hijack: 0.25
+  warmup_calls: 4
+  min_clean_gap: 2
+  probe_episode_fraction: 0.8
+
+capture:
+  layers: [0, 4, 8, 12, 16, 20, 24, 28, 32]
+  pools: [ctx_mean, ctx_last, act_mean]
+  capture_vision: false
+  verify_indexing: true
+
+frames:
+  mode: all
+  jpeg_quality: 95
+  save_wrist: false
+  substeps: true
+
+budget:
+  max_gpu_hours: 6.0
+  max_disk_gb: 30.0
