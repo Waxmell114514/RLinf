@@ -1,0 +1,91 @@
+{
+  "protocol": {
+    "interface": "none",
+    "seed": 44,
+    "scale": 1,
+    "train_steps": 100000,
+    "phase2_steps": 80000,
+    "lr_p1": 0.001,
+    "lr_p2": 0.0001,
+    "aux_lr": 0.0005,
+    "probe_lr": 0.0005,
+    "gamma": 2.0,
+    "action_range": 2.0,
+    "trace_beta": 0.95,
+    "aux_weight": 0.1,
+    "trailing_class_weight": 5.0,
+    "trailing_steps": 50,
+    "burst_mean": 400,
+    "burst_min": 100,
+    "burst_max": 1000,
+    "hidden_dim": 192,
+    "n_scales": 4,
+    "obs_dim": 4,
+    "log_every": 20000
+  },
+  "mismatch": {
+    "steps": 40000,
+    "p_hijack": 0.25,
+    "warmup": 4,
+    "min_clean_gap": 2,
+    "seed_offset": 7919
+  },
+  "trailing_recall_pct": 23.19298245614035,
+  "trailing_correct": 1322,
+  "trailing_total": 5700,
+  "train_seconds": 392.9845325946808,
+  "arms": {
+    "swap": {
+      "transform": "swap",
+      "n_samples": 5798,
+      "n_positive": 2899,
+      "n_groups": 50,
+      "selection_floor": 0.5033241094860901,
+      "best_hidden": 0.49912875574368754,
+      "best_hidden_any": 0.5074525795853911,
+      "margin": -0.004195353742402541,
+      "permutation_null_h": {
+        "n_permutations": 50,
+        "mean": 0.4999635764743949,
+        "p95": 0.5156085114821767,
+        "max": 0.5195891239928867
+      },
+      "n_hijacks": 2905
+    },
+    "mirror": {
+      "transform": "mirror",
+      "n_samples": 5798,
+      "n_positive": 2899,
+      "n_groups": 50,
+      "selection_floor": 0.5091526338429321,
+      "best_hidden": 0.5066669419020146,
+      "best_hidden_any": 0.5066669419020146,
+      "margin": -0.0024856919409175227,
+      "permutation_null_h": {
+        "n_permutations": 50,
+        "mean": 0.5000798201862331,
+        "p95": 0.5109480802091809,
+        "max": 0.5145507984152224
+      },
+      "n_hijacks": 2905
+    },
+    "freeze": {
+      "transform": "freeze",
+      "n_samples": 5798,
+      "n_positive": 2899,
+      "n_groups": 50,
+      "selection_floor": 0.5011228787533915,
+      "best_hidden": 0.7942190968624196,
+      "best_hidden_any": 0.7942190968624196,
+      "margin": 0.2930962181090282,
+      "permutation_null_h": {
+        "n_permutations": 50,
+        "mean": 0.49858837863964134,
+        "p95": 0.5092166091371351,
+        "max": 0.5146057201380287
+      },
+      "n_hijacks": 2905
+    }
+  },
+  "total_seconds": 1047.219566822052
+}

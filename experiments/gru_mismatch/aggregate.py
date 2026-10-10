@@ -83,7 +83,13 @@ def _verdict(group: pd.DataFrame, probe_means: dict[str, float]) -> dict[str, An
     if not np.isfinite(control) or control < POSITIVE_CONTROL_MIN:
         verdict = "uninformative (positive control failed)"
     elif int(readable.sum()) >= quorum:
-        verdict = "readable"
+        # PREREG E1: a readable arm counts as attribution only if the state
+        # beats the outcome-only control; otherwise it is outcome novelty.
+        outcome_only = probe_means.get("C_out", np.nan)
+        if np.isfinite(outcome_only) and group["best_hidden"].mean() <= outcome_only:
+            verdict = "readable, but not beyond outcome-only C_out (novelty)"
+        else:
+            verdict = "readable"
     elif int((~readable).sum()) >= quorum:
         verdict = "not readable"
     else:
