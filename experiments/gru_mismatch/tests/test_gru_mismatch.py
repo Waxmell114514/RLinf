@@ -62,8 +62,19 @@ def test_interface_widths():
     assert GRUAgent("none").gru.input_size == 4
     for interface in ("trace_abs", "trace_signed", "command"):
         assert GRUAgent(interface).gru.input_size == 5
+    assert GRUAgent("both").gru.input_size == 6
     with pytest.raises(ValueError):
         ProtocolConfig(interface="telepathy")
+
+
+def test_both_interface_feeds_abs_trace_and_signed_command():
+    agent = GRUAgent("both")
+    agent.observe_command(-1.0)
+    x = agent._gru_input(torch.zeros(4))
+    assert x.shape == (1, 6)
+    assert x[0, 4].item() == pytest.approx(0.05)  # |a| trace, as in exp4
+    assert x[0, 5].item() == pytest.approx(-1.0)  # signed instantaneous command
+    assert agent.efference_value == pytest.approx(-1.0)
 
 
 def test_trace_sign_handling():

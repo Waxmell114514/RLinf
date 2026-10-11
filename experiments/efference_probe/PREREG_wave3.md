@@ -172,4 +172,33 @@ E2 and E5 together fill the interface (command input or not) × objective
 
 ## Amendments
 
-*(none yet)*
+### Amendment 1 — 2026-10-11 — E1b: both channels at once
+
+Written after the E1 results (logbook, 2026-10-10) and **before any `both`
+run**. Exploratory extension of E1; the E1 readout above is unchanged.
+
+*Why.* E1 found a format dissociation. The exp4 |a| trace carries the self
+(trailing recall 53.6 ± 3.9%) but no mismatch (swap −0.001, mirror −0.002);
+the signed instantaneous command carries the mismatch (swap +0.135, mirror
++0.368) but trailing recall drops to 15.1 ± 13.7% (6–14% in four seeds).
+Question: given both channels, does one state carry both readouts?
+
+*Design.* Interface `both` = observation + the exp4 |a| trace + the signed
+command a_t (GRU input 6-d). Everything else as E1: seeds 42–46, source
+training protocol, 40k frozen phase-3 steps, swap / mirror / freeze, linear
+probes, 50 permutations. Output: `experiments/gru_mismatch/results/e1b_both/`
+(E1's directory is not touched).
+
+*Readout.*
+- Self intact: 5-seed mean trailing recall ≥ 40% (exp4's lowest seed is
+  49.1%; every interface without the |a| trace averaged ≤ 15.1%).
+- Mismatch readable: the E1 rule on swap and on mirror (≥ 4/5 seeds with
+  margin ≥ 0.04 and above the permutation p95); freeze counts only beyond
+  outcome-only C_out.
+- **One state carries both** iff self intact and swap readable.
+  **Interference** iff either fails although it held with that channel alone
+  (trailing under `trace_abs`, swap under `command`).
+
+*Prediction.* Both carried: the two channels enter as separate inputs, and
+the trailing supervision can use the trace as in exp4. The swap margin may be
+smaller than `command`'s +0.135.

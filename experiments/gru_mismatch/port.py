@@ -27,6 +27,9 @@ Efference interfaces (``interface``):
 ``trace_abs``     exp4: observation + ``tau <- beta*tau + (1-beta)*|a|``.
 ``trace_signed``  as exp4 but the trace keeps the sign of the command.
 ``command``       observation + the instantaneous signed command ``a_t``.
+``both``          observation + the exp4 |a| trace + the signed command ``a_t``
+                  (PREREG_wave3.md, amendment 1: can one state carry both
+                  the self and the mismatch?).
 """
 
 from __future__ import annotations
@@ -44,7 +47,9 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
-INTERFACES = ("none", "trace_abs", "trace_signed", "command")
+INTERFACES = ("none", "trace_abs", "trace_signed", "command", "both")
+# Extra GRU input columns each interface feeds next to the observation.
+EXTRA_INPUTS = {"none": 0, "trace_abs": 1, "trace_signed": 1, "command": 1, "both": 2}
 
 CLASS_ACTIVE = 0
 CLASS_TRAILING = 1
@@ -187,8 +192,7 @@ class GRUAgent(nn.Module):
         self.interface = interface
         self.hidden_dim = hidden_dim
         self.trace_beta = trace_beta
-        extra = 0 if interface == "none" else 1
-        self.gru = nn.GRUCell(obs_dim + extra, hidden_dim)
+        self.gru = nn.GRUCell(obs_dim + EXTRA_INPUTS[interface], hidden_dim)
         self.pred = nn.Linear(hidden_dim, obs_dim)
         alphas = torch.logspace(math.log10(0.02), math.log10(0.80), n_scales)
         per_group = hidden_dim // n_scales
@@ -215,14 +219,20 @@ class GRUAgent(nn.Module):
 
     @property
     def efference_value(self) -> float:
-        if self.interface == "command":
+        """The command-side input; for ``both``, its command half (the trace
+        half is logged separately as ``trace``)."""
+        if self.interface in ("command", "both"):
             return self.command
         return self.trace
 
     def _gru_input(self, obs: torch.Tensor) -> torch.Tensor:
         if self.interface == "none":
             return obs.unsqueeze(0)
-        extra = torch.tensor([[self.efference_value]], dtype=torch.float32)
+        if self.interface == "both":
+            values = [[self.trace, self.command]]
+        else:
+            values = [[self.efference_value]]
+        extra = torch.tensor(values, dtype=torch.float32)
         return torch.cat([obs.unsqueeze(0), extra], dim=1)
 
     # -- stepping (verbatim semantics) -----------------------------------

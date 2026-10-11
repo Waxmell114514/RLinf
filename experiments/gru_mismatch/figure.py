@@ -27,18 +27,20 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 from gru_mismatch.aggregate import MIN_EFFECT, _load  # noqa: E402
 
 BLUE, ORANGE = "#2a78d6", "#eb6834"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 GRID, BASE, SURFACE = "#e1e0d9", "#c3c2b7", "#ffffff"
-INTERFACES = ("none", "trace_abs", "trace_signed", "command")
+INTERFACES = ("none", "trace_abs", "trace_signed", "command", "both")
 LABELS = {
     "none": "none\n(exp3)",
     "trace_abs": "|a| trace\n(exp4)",
     "trace_signed": "signed\ntrace",
     "command": "command\na_t",
+    "both": "|a| trace\n+ command",
 }
 TRANSFORMS = ("swap", "mirror", "freeze")
 
@@ -71,17 +73,21 @@ plt.rcParams.update(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("results", help="run_gru.py --out directory")
+    parser.add_argument(
+        "results", nargs="+", help="one or more run_gru.py --out directories"
+    )
     parser.add_argument("--out", default=None, help="figure path stem")
     args = parser.parse_args(argv)
-    root = Path(args.results)
-    arms, probes = _load(root)
+    roots = [Path(r) for r in args.results]
+    loaded = [_load(root) for root in roots]
+    arms = pd.concat([a for a, _ in loaded], ignore_index=True)
+    probes = pd.concat([p for _, p in loaded if not p.empty], ignore_index=True)
     arms = arms[arms["transform"] != ""]
     if arms.empty:
-        raise SystemExit(f"no phase-3 arms under {root}")
+        raise SystemExit(f"no phase-3 arms under {roots}")
     interfaces = [i for i in INTERFACES if i in set(arms["interface"])]
 
-    fig, axes = plt.subplots(1, len(TRANSFORMS), figsize=(7.0, 2.5), sharey=True)
+    fig, axes = plt.subplots(1, len(TRANSFORMS), figsize=(8.4, 2.6), sharey=True)
     rng = np.random.default_rng(0)
     for ax, transform in zip(axes, TRANSFORMS):
         for x, interface in enumerate(interfaces):
@@ -175,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         color=INK2,
     )
     fig.tight_layout(rect=(0, 0.02, 1, 0.93))
-    stem = Path(args.out) if args.out else root / "fig_e1_gru"
+    stem = Path(args.out) if args.out else roots[0] / "fig_e1_gru"
     for suffix in (".png", ".pdf"):
         fig.savefig(stem.with_suffix(suffix), dpi=200, bbox_inches="tight")
     print(f"wrote {stem.with_suffix('.png')} and .pdf")
