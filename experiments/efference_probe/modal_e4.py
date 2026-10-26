@@ -163,19 +163,20 @@ def _todo() -> dict:
 
 
 # 12 physical cores = 24 vCPU, the wave-2 GPU box's 23.8-core quota; RAM sized
-# for num_envs=10 (~40 GB measured), limit above it so a spike is not an OOM.
-@app.function(
-    gpu=GPU, cpu=(8.0, 12.0), memory=(49152, 65536), timeout=4 * 3600, **COMMON
-)
+# for num_envs=10 (~40 GB measured).  On Modal the pilots' tree RSS reached
+# 61-62.5 GB and grew with call count, so the limit sits well above it; the
+# request (what is billed when unused) is unchanged.
+GPU_MEMORY = (49152, 98304)
+
+
+@app.function(gpu=GPU, cpu=(8.0, 12.0), memory=GPU_MEMORY, timeout=4 * 3600, **COMMON)
 def gpu_stage(args: list[str], mujoco_gl: str = "egl") -> int:
     return _driver(
         args, f"gpu_{args[0]}", {"MUJOCO_GL": mujoco_gl, "PYOPENGL_PLATFORM": mujoco_gl}
     )
 
 
-@app.function(
-    gpu=GPU, cpu=(8.0, 12.0), memory=(49152, 65536), timeout=14 * 3600, **COMMON
-)
+@app.function(gpu=GPU, cpu=(8.0, 12.0), memory=GPU_MEMORY, timeout=14 * 3600, **COMMON)
 def gpu_lane() -> list[dict]:
     """S2: every pending collection, one at a time, committed after each.
 

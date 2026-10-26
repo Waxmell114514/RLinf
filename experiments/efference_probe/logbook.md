@@ -1165,3 +1165,17 @@ produced data, so a number in `results.md` can always be traced back to a run.
   every row reports its n.
   **(E) Unchanged.** R1-R12, decoding, num_envs, rendering backend, seeds,
   every SFT arm, and MLP probing on the goal suite only.
+- `2026-10-26 06:55` **S1b + sizing (agent, E4 Modal session).** Operator answer verified in the parent transcript (06:07, "修订并按样本量对齐 (Recommended)"); pulled 8f770fd, offline suite 91 passed. `s1b` rc=0, both gates **PASSED** under Amendment 1 (values from the gate JSONs):
+  | check | sft `e4_sft_pilot2` | grpo `e4_grpo_pilot2` |
+  |---|---|---|
+  | collection (wall / expected 900 s) | ok, 6.5 min, 1958 calls, peak tree RSS 62.51 GB | ok, 4.7 min, 1291 calls, 61.22 GB |
+  | plumbing, zero mismatches | pass (218 hijacks, 0 action / state errors) | pass (131, 0) |
+  | P0 mean over 27 cells in [0.45, 0.55] | pass, 0.510 (max 0.538 L32/ctx_last) | pass, 0.451 (max 0.500 sd 0.000, L0/ctx_last) |
+  | C_cmd within 2 sd of 0.5 (strict band) | pass, 0.492 sd 0.049 (in band) | pass, 0.480 sd 0.034 (in band) |
+  | C_phase within 2 sd of 0.5 (strict band) | pass, 0.492 sd 0.039 (in band) | pass, 0.479 sd 0.039 (in band) |
+  | >= 40 probe samples per class | pass, 191 / 191 | pass, 97 / 97 |
+  | step-index overlap (median, class 0 / 1) | pass (18 / 16) | pass (9 / 10) |
+  | P2r / C_dstates | 0.772 / 0.479 | 0.613 / 0.494 |
+  | success overall / probe / clean (80 ep) | 0.588 / 0.578 / 0.625 | 0.925 / 0.922 / 0.938 |
+  | flagged tasks (R12) | [7] (strength 0.581, motion 0.0103) | [5] (strength 0.226) |
+  `size` rc=0: positives/episode sft 2.3875, grpo 1.2125, r = 1.97; GRPO S2 init_states_per_task goal_swap_s1/s2 40, goal mirror/freeze s1/s2 50 (cap; uncapped 59), spatial 40, object 40, long 30. GPU ledger 0.37 / 12.0 h [TO VERIFY: 0.26 h before grpo pilot2 + its 4.7 min]. **Infra:** the GPU containers' memory limit is raised from 64 GiB to 96 GiB (`GPU_MEMORY`, request unchanged at 48 GiB; test `test_modal_gpu_limit_clears_the_measured_pilot_rss`), because pilot tree RSS grew with call count (61.0 -> 62.5 GB) toward the old limit and S2 runs are several times longer. Collection is unchanged. Offline suite **92 passed**. Next: `modal run --detach modal_e4.py::wave`.

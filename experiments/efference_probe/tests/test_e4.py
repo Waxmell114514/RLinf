@@ -762,3 +762,13 @@ def test_modal_image_pin_survives_the_build_shell():
     quoted = " ".join(map(shlex.quote, modal_e4.ANALYSIS_PINS))
     assert shlex.split(quoted) == list(modal_e4.ANALYSIS_PINS)
     assert "'pyarrow<20'" in quoted
+
+
+def test_modal_gpu_limit_clears_the_measured_pilot_rss():
+    # e4_*_pilot2 peaked at 62.51 GB tree RSS; the old 64 GiB limit left ~6 GB.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    request_mib, limit_mib = modal_e4.GPU_MEMORY
+    assert request_mib == 49152
+    assert limit_mib * 2**20 >= 1.4 * 62.51e9
