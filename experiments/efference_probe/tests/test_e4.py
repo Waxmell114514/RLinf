@@ -650,7 +650,16 @@ def test_modal_launcher_imports_inside_the_container():
     pytest.importorskip("modal")
     from efference_probe import modal_e4
 
-    assert modal_e4._repo_local("/root/modal_e4.py", local=False) == Path(
-        modal_e4.REPO
-    )
+    assert modal_e4._repo_local("/root/modal_e4.py", local=False) == Path(modal_e4.REPO)
     assert modal_e4.REPO_LOCAL == Path(__file__).resolve().parents[2].parent
+
+
+def test_modal_image_pins_a_pyarrow_that_imports_under_numpy_1():
+    # The image's numpy is 1.26.4; pyarrow >= 20 refuses to import under it.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    assert "pyarrow<20" in modal_e4.ANALYSIS_PINS
+    assert not any(
+        p.startswith("pyarrow") and p != "pyarrow<20" for p in modal_e4.ANALYSIS_PINS
+    )

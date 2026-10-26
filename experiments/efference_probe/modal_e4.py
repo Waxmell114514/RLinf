@@ -46,6 +46,19 @@ def _repo_local(module_file: str, local: bool) -> Path:
 
 
 REPO_LOCAL = _repo_local(__file__, modal.is_local())
+
+# The install leaves numpy 1.26.4 and an unpinned pyarrow (26.x), which
+# refuses to import under numpy < 2; every parquet write then fails.
+ANALYSIS_PINS = (
+    "scikit-learn==1.9.1",
+    "pandas==2.3.3",
+    "joblib==1.6.0",
+    "pyarrow<20",
+    "matplotlib",
+    "pytest",
+    "huggingface_hub",
+    "pyyaml",
+)
 VOL = "/vol"
 DATA = f"{VOL}/data"
 INSTALL = "/opt/rlinf"
@@ -97,8 +110,7 @@ image = (
         "python -m pip install --upgrade uv",
         f"cd {INSTALL} && bash requirements/install.sh embodied --model openvla-oft --env libero",
         # Analysis extras at the wave-2 versions.
-        f"uv pip install --python {PYTHON} scikit-learn==1.9.1 pandas==2.3.3 joblib==1.6.0 "
-        "pyarrow matplotlib pytest huggingface_hub pyyaml",
+        f"uv pip install --python {PYTHON} {' '.join(ANALYSIS_PINS)}",
     )
     .add_local_dir(
         REPO_LOCAL,
