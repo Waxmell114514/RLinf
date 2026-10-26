@@ -184,6 +184,23 @@ def test_completion_is_the_marker_not_the_manifest(tmp_path):
     assert common.completed_attempt(tmp_path, "e4_sft_smoke") == "e4_sft_smoke"
 
 
+def test_status_says_incomplete_not_fail_for_a_run_without_a_marker(tmp_path):
+    wave = wave_mod.Wave(tmp_path, tmp_path / "logbook.md", PLAN)
+    (tmp_path / "e4_sft_goal_swap_s1").mkdir()  # collecting, or cut off
+    row = lambda: (
+        wave_mod.status_table(wave)
+        .set_index("run_id")
+        .loc[  # noqa: E731
+            "e4_sft_goal_swap_s1", "collect"
+        ]
+    )
+    assert row() == "incomplete"
+    common.write_json_atomic(
+        common.status_path(tmp_path, "e4_sft_goal_swap_s1", "collect"), {"ok": False}
+    )
+    assert row() == "FAIL"
+
+
 def _driver(tmp_path, *argv) -> tuple[int, str]:
     result = subprocess.run(
         [

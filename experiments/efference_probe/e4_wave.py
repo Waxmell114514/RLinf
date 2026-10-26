@@ -1336,6 +1336,15 @@ def cmd_merge_logbook(wave: Wave, args) -> int:
     return 0
 
 
+def _attempt_label(wave: Wave, attempts: list[str]) -> str:
+    """FAIL only for an attempt the driver judged; a run with no marker yet is
+    either still collecting or was cut off, and reads "incomplete"."""
+    if not attempts:
+        return ""
+    status = common.job_status(wave.data_root, attempts[-1], "collect")
+    return "FAIL" if status is not None else "incomplete"
+
+
 def status_table(wave: Wave) -> pd.DataFrame:
     rows = []
     for stage in ("s0", "s1", "s1b", "s2"):
@@ -1348,7 +1357,7 @@ def status_table(wave: Wave) -> pd.DataFrame:
                 "key": run.key,
                 "attempts": len(attempts),
                 "run_id": done or (attempts[-1] if attempts else ""),
-                "collect": "ok" if done else ("FAIL" if attempts else ""),
+                "collect": "ok" if done else _attempt_label(wave, attempts),
             }
             for kind in ("probe-pilot", "probe-linear", "probe-mlp"):
                 status = done and common.job_status(wave.data_root, done, kind)
