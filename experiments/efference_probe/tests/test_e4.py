@@ -772,3 +772,30 @@ def test_modal_gpu_limit_clears_the_measured_pilot_rss():
     request_mib, limit_mib = modal_e4.GPU_MEMORY
     assert request_mib == 49152
     assert limit_mib * 2**20 >= 1.4 * 62.51e9
+
+
+def test_modal_orchestrator_does_not_read_a_running_call_as_finished():
+    # modal 1.6 raises the builtin TimeoutError from get(timeout=0) while a
+    # call runs; the first live wave exited at once because of it.
+    pytest.importorskip("modal")
+    import modal
+
+    from efference_probe import modal_e4
+
+    class Call:
+        def __init__(self, error=None):
+            self.error = error
+
+        def get(self, timeout=None):
+            if self.error is not None:
+                raise self.error
+            return 0
+
+    assert modal_e4._finished(Call(TimeoutError())) is False
+    assert modal_e4._finished(Call(modal.exception.TimeoutError())) is False
+    assert modal_e4._finished(Call()) is True
+    assert modal_e4._finished(Call(modal.exception.OutputExpiredError())) is True
+    assert modal_e4._finished(Call(RuntimeError("container died"))) is True
+    assert modal_e4._lane_done({"halted": False, "collect": [["sft", "x"]]}) is False
+    assert modal_e4._lane_done({"halted": False, "collect": []}) is True
+    assert modal_e4._lane_done({"halted": True, "collect": [["sft", "x"]]}) is True

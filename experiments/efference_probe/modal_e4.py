@@ -203,20 +203,38 @@ def cpu_stage(args: list[str]) -> int:
     return _driver(args, "cpu_" + "_".join(a.lstrip("-") for a in args[:3]))
 
 
-@app.function(cpu=0.25, memory=1024, timeout=24 * 3600, **COMMON)
-def orchestrate(poll_s: int = 120) -> dict:
-    """Start the GPU lane, then probe each run as soon as it lands."""
-    lane = gpu_lane.spawn()
-    calls: dict[tuple[str, str], modal.FunctionCall] = {}
+def _finished(call) -> bool:
+    """True once a spawned call has returned, failed or expired.
 
-    def finished(call: modal.FunctionCall) -> bool:
-        try:
-            call.get(timeout=0)
-            return True
-        except modal.exception.TimeoutError:
-            return False
-        except Exception:  # noqa: BLE001 - a failed call is finished; its marker says how
-            return True
+    modal 1.6 raises the *builtin* ``TimeoutError`` for a call still running
+    under ``get(timeout=0)``, not ``modal.exception.TimeoutError``; catching
+    only the latter read a running GPU lane as finished on the first poll.
+    """
+    try:
+        call.get(timeout=0)
+        return True
+    except modal.exception.OutputExpiredError:
+        return True
+    except (TimeoutError, modal.exception.TimeoutError):
+        return False
+    except Exception:  # noqa: BLE001 - a failed call is finished; its marker says how
+        return True
+
+
+def _lane_done(todo: dict) -> bool:
+    """Without a lane handle: the driver has nothing left to collect, or halted."""
+    return bool(todo["halted"]) or not todo["collect"]
+
+
+@app.function(cpu=0.25, memory=1024, timeout=24 * 3600, **COMMON)
+def orchestrate(poll_s: int = 120, start_lane: bool = True) -> dict:
+    """Start the GPU lane, then probe each run as soon as it lands.
+
+    ``start_lane=False`` only probes, for a lane that is already running (one
+    GPU collection at a time); the lane counts as done from ``todo``.
+    """
+    lane = gpu_lane.spawn() if start_lane else None
+    calls: dict[tuple[str, str], modal.FunctionCall] = {}
 
     while True:
         todo = _todo()
@@ -230,8 +248,8 @@ def orchestrate(poll_s: int = 120) -> dict:
         # offered after its call finished died before writing a marker (e.g.
         # OOM); it is not respawned -- a human decides.
         if (
-            finished(lane)
-            and all(finished(c) for c in calls.values())
+            (_finished(lane) if lane is not None else _lane_done(todo))
+            and all(_finished(c) for c in calls.values())
             and all((r, f) in calls for f in ("linear", "mlp") for r in todo[f])
         ):
             break
@@ -256,8 +274,9 @@ def stage(cmd: str, mujoco_gl: str = "egl"):
 
 
 @app.local_entrypoint()
-def wave():
-    print(json.dumps(orchestrate.remote(), indent=2))
+def wave(lane: bool = True):
+    """``--no-lane`` probes behind a GPU lane that is already running."""
+    print(json.dumps(orchestrate.remote(start_lane=lane), indent=2))
 
 
 @app.local_entrypoint()
