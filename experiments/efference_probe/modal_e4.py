@@ -226,31 +226,44 @@ def _lane_done(todo: dict) -> bool:
     return bool(todo["halted"]) or not todo["collect"]
 
 
+def _offered(todo: dict, taken) -> list[tuple[str, str]]:
+    """Probe rounds ``todo`` offers that nobody has started yet."""
+    return [
+        (run_id, family)
+        for family in ("linear", "mlp")
+        for run_id in todo[family]
+        if (run_id, family) not in taken
+    ]
+
+
 @app.function(cpu=0.25, memory=1024, timeout=24 * 3600, **COMMON)
-def orchestrate(poll_s: int = 120, start_lane: bool = True) -> dict:
+def orchestrate(
+    poll_s: int = 120, start_lane: bool = True, skip: tuple[str, ...] = ()
+) -> dict:
     """Start the GPU lane, then probe each run as soon as it lands.
 
     ``start_lane=False`` only probes, for a lane that is already running (one
     GPU collection at a time); the lane counts as done from ``todo``.
+    ``skip`` lists ``run_id:family`` rounds already running elsewhere: a
+    second ``probe`` on the same run would rename the live analysis dir.
     """
     lane = gpu_lane.spawn() if start_lane else None
     calls: dict[tuple[str, str], modal.FunctionCall] = {}
+    external = {tuple(item.split(":", 1)) for item in skip}
 
     while True:
         todo = _todo()
-        for family in ("linear", "mlp"):
-            for run_id in todo[family]:
-                if (run_id, family) not in calls:
-                    calls[(run_id, family)] = cpu_stage.spawn(
-                        ["probe", "--run-id", run_id, "--family", family]
-                    )
+        for run_id, family in _offered(todo, calls.keys() | external):
+            calls[(run_id, family)] = cpu_stage.spawn(
+                ["probe", "--run-id", run_id, "--family", family]
+            )
         # Done when nothing runs and nothing new is on offer.  A job still
         # offered after its call finished died before writing a marker (e.g.
         # OOM); it is not respawned -- a human decides.
         if (
             (_finished(lane) if lane is not None else _lane_done(todo))
             and all(_finished(c) for c in calls.values())
-            and all((r, f) in calls for f in ("linear", "mlp") for r in todo[f])
+            and not _offered(todo, calls.keys() | external)
         ):
             break
         time.sleep(poll_s)
@@ -274,9 +287,17 @@ def stage(cmd: str, mujoco_gl: str = "egl"):
 
 
 @app.local_entrypoint()
-def wave(lane: bool = True):
-    """``--no-lane`` probes behind a GPU lane that is already running."""
-    print(json.dumps(orchestrate.remote(start_lane=lane), indent=2))
+def wave(lane: bool = True, skip: str = ""):
+    """Spawn the orchestrator and return; run it with ``modal run --detach``.
+
+    Spawned, not ``.remote()``: a detached ``.remote()`` input is cancelled when
+    the local client dies.  ``--no-lane`` probes behind a GPU lane that is
+    already running; ``--skip run_id:family,...`` names rounds in flight.
+    """
+    call = orchestrate.spawn(
+        start_lane=lane, skip=tuple(item for item in skip.split(",") if item)
+    )
+    print(f"orchestrate spawned: {call.object_id}")
 
 
 @app.local_entrypoint()

@@ -799,3 +799,20 @@ def test_modal_orchestrator_does_not_read_a_running_call_as_finished():
     assert modal_e4._lane_done({"halted": False, "collect": [["sft", "x"]]}) is False
     assert modal_e4._lane_done({"halted": False, "collect": []}) is True
     assert modal_e4._lane_done({"halted": True, "collect": [["sft", "x"]]}) is True
+
+
+def test_modal_orchestrator_never_offers_a_round_already_in_flight():
+    # A second probe on a run renames its live analysis dir to .partial_*.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    todo = {"linear": ["a", "b"], "mlp": ["a"]}
+    assert modal_e4._offered(todo, set()) == [
+        ("a", "linear"),
+        ("b", "linear"),
+        ("a", "mlp"),
+    ]
+    assert modal_e4._offered(todo, {("a", "mlp"), ("a", "linear")}) == [("b", "linear")]
+    assert (
+        modal_e4._offered(todo, {("a", "linear"), ("b", "linear"), ("a", "mlp")}) == []
+    )
