@@ -663,3 +663,15 @@ def test_modal_image_pins_a_pyarrow_that_imports_under_numpy_1():
     assert not any(
         p.startswith("pyarrow") and p != "pyarrow<20" for p in modal_e4.ANALYSIS_PINS
     )
+
+
+def test_modal_image_pin_survives_the_build_shell():
+    # run_commands goes through /bin/sh, where a bare `pyarrow<20` is a redirect.
+    pytest.importorskip("modal")
+    import shlex
+
+    from efference_probe import modal_e4
+
+    quoted = " ".join(map(shlex.quote, modal_e4.ANALYSIS_PINS))
+    assert shlex.split(quoted) == list(modal_e4.ANALYSIS_PINS)
+    assert "'pyarrow<20'" in quoted

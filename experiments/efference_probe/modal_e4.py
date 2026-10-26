@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -110,7 +111,7 @@ image = (
         "python -m pip install --upgrade uv",
         f"cd {INSTALL} && bash requirements/install.sh embodied --model openvla-oft --env libero",
         # Analysis extras at the wave-2 versions.
-        f"uv pip install --python {PYTHON} {' '.join(ANALYSIS_PINS)}",
+        f"uv pip install --python {PYTHON} {' '.join(map(shlex.quote, ANALYSIS_PINS))}",
     )
     .add_local_dir(
         REPO_LOCAL,
