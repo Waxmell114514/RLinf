@@ -13,6 +13,8 @@ decides which container a driver command runs in.  From the repo root::
     modal run $M::stage --cmd "s0-envs20"             # optional, GPU with 96 GiB RAM
     modal run $M::stage --cmd "lock --num-envs 10 --speed-factor 1.0"
     modal run $M::stage --cmd "s1"                    # GPU
+    modal run $M::stage --cmd "s1b"                   # GPU; Amendment 1 pilot2 + gate
+    modal run $M::stage --cmd "size"                  # CPU; freezes GRPO's S2 sizing
     modal run --detach $M::wave                       # S2 + linear + S3 MLP, unattended
     modal run $M::stage --cmd "status"
     modal run $M::pull                                # analysis dirs + logbook parts, no hidden/
@@ -236,7 +238,7 @@ def orchestrate(poll_s: int = 120) -> dict:
     return {"probes": sorted(f"{r}:{f}" for r, f in calls), "todo_at_exit": todo}
 
 
-GPU_COMMANDS = {"s0", "s0-envs20", "s1", "collect"}
+GPU_COMMANDS = {"s0", "s0-envs20", "s1", "s1b", "collect"}
 
 
 @app.local_entrypoint()

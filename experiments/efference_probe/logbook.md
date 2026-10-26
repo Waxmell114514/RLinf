@@ -1127,3 +1127,41 @@ produced data, so a number in `results.md` can always be traced back to a run.
   | success (task 0, 20 ep): overall / probe / clean | 0.55 / 0.50 / 0.625 | 0.95 / 0.917 / 1.00 |
   | flagged tasks | none | none |
   The sft failure is C_phase only, 0.002 above the band edge with a fold sd of 0.119. The grpo pilot has 28 probe samples (GRPO succeeds in a median ~8-9 calls), so every grpo control sits far from 0.5 with fold sds of 0.14-0.19 and below-chance values, which reads as small n rather than a leak [interpretation, not a gate result]. Whether the pilot needs more episodes for GRPO is a protocol question for the operator. GPU ledger 0.15 / 12.0 h. No efference-e4 app left running.
+- `2026-10-26 06:13` **E4 PRE-REGISTRATION AMENDMENT 1 (operator-approved; adopted after S1 failed, before any S2 data exists).**
+  Trigger: the S1 gates of 04:45. sft failed only C_phase, 0.552 against the
+  band edge 0.55 with a fold sd of 0.119. grpo had 14 probe samples per class:
+  GRPO finishes task 0 in a median ~8-9 calls, and under warmup 4 / clean gap 2
+  a short episode offers about one hijack, so every grpo control sat far from
+  0.5 with fold sds of 0.14-0.19. Stated plainly: these rules are chosen after
+  seeing S1. The 2-sd rule was proposed to the operator before S1 ran (the
+  strict band had misjudged synthetic pilots at C_cmd 0.570 and 0.430), but it
+  was never in this logbook, so it counts as post-S1. The amendment touches
+  only the pilot QA gate and the GRPO episode count. **R1-R12 are unchanged.**
+  **(A) Pilot gate, S1b only.** Unchanged: P0 mean over its 27 cells in
+  [0.45, 0.55], plumbing with zero mismatches, step-index overlap. Changed:
+  C_cmd and C_phase pass iff |bacc - 0.5| <= 2 x their fold sd, and the gate
+  counts only with >= 40 probe samples per class. The strict band is still
+  reported. S1's gate files and verdicts stay as recorded (both FAILED).
+  **(B) pilot2 (stage s1b).** pilot.yaml (swap, T=1.6, the locked num_envs=10
+  and EGL) over all 10 libero_goal tasks x 8 initial states = 80 episodes, for
+  both checkpoints, under new ids `e4_<ckpt>_pilot2`. It serves as the gate
+  and as a like-for-like yield measurement on the same tasks.
+  **(C) Sizing: GRPO matched to SFT on probe samples, not on episodes.**
+  r = (SFT kept positives per finished pilot2 episode) / (the same for GRPO).
+  For each GRPO S2 entry, k = min(50, max(k_base, ceil(k_base x r))), where
+  k_base is the wave-2 config's own init_states_per_task (goal swap 20,
+  mirror/freeze 30, spatial/object 20, long 15). SFT arms are never resized,
+  GRPO is never sized below k_base, and 50 is LIBERO's number of initial
+  states per task, so no initial state repeats and parity may not be
+  reachable. Task-0 yields from S1 (sft 43/20 = 2.15, grpo 14/20 = 0.70,
+  r ~ 3.1) would put every GRPO arm at the cap of 50 except long (47); pilot2
+  decides. `e4_wave.py size` freezes k before any S2 run and refuses
+  afterwards; S2 refuses to start without it. The watchdog expectation of a
+  sized arm scales by k / k_base. Assumption, flagged: r is measured on goal
+  and applied unchanged to the spatial / object / long suites.
+  **(D) Reading consequences.** GRPO arms carry more episodes than SFT arms
+  (up to 2.5x on goal swap), so E3 episode counts and success-rate precision
+  differ by checkpoint. Floors stay per run, R11 still labels n < 600, and
+  every row reports its n.
+  **(E) Unchanged.** R1-R12, decoding, num_envs, rendering backend, seeds,
+  every SFT arm, and MLP probing on the goal suite only.

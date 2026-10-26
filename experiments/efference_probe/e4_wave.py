@@ -47,6 +47,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from efference_probe import e4_common as common  # noqa: E402
+from efference_probe.config import load_config  # noqa: E402
 from efference_probe.e4_ckpt_check import verify_local  # noqa: E402
 
 GATE_BAND = (0.45, 0.55)
@@ -54,6 +55,11 @@ MAX_LOGPROB_DIFF = 1e-3
 S0_HIDDEN_TAIL = (3, 3, 4096)  # smoke.yaml: layers [0, 16, 32] x 3 pools x hidden
 ENVS20_MEMORY_FRACTION = 0.85
 ENVS20_VRAM_FRACTION = 0.90
+# Amendment 1 (pilot2 gate only): a single-cell control passes when it is
+# within this many fold sds of chance, and the gate counts only with at least
+# this many probe samples per class.  The strict band above stays reported.
+PILOT_CONTROL_SDS = 2.0
+PILOT_MIN_PER_CLASS = 40
 MAX_FAILED_ATTEMPTS = 2  # S2 only: a run that fails twice halts the GPU lane
 COLLECTOR_CPU_RESERVE = 4  # probe workers leave this many CPUs to env stepping
 
@@ -470,12 +476,15 @@ def collect_overrides(
     data_root: Path,
     num_envs: Optional[int],
     budget_s: float,
+    init_states: Optional[int] = None,
 ) -> list[str]:
     """``--set`` overrides on top of the unchanged wave-2 config.
 
     This list *is* the difference between an E4 run and its wave-2 sibling;
     ``tests/test_e4.py`` resolves every planned run through ``load_config``
-    and fails if any other field moved.
+    and fails if any other field moved.  ``init_states`` is Amendment 1's
+    sample-matched episode count, passed only for the sized checkpoint's S2
+    arms.
     """
     overrides = [
         f"model.model_path={ckpt_path}",
@@ -489,10 +498,36 @@ def collect_overrides(
         overrides.append(f"env.num_envs={num_envs}")
     if run.seed is not None:
         overrides.append(f"env.seed={run.seed}")
+    if init_states is not None:
+        overrides.append(f"env.init_states_per_task={init_states}")
     if run.decoding:
         overrides.extend(plan["decoding_overrides"])
     overrides.extend(run.overrides)  # entry-specific last, e.g. smoke20's num_envs
     return overrides
+
+
+def base_states(run: common.PlannedRun) -> int:
+    """``init_states_per_task`` of the run's own wave-2 config."""
+    return int(
+        load_config(str(common.CONFIG_DIR / run.config)).env.init_states_per_task
+    )
+
+
+def sized_states(wave: Wave, run: common.PlannedRun) -> Optional[int]:
+    """Amendment 1's episode count for this run, or None if it is not sized.
+
+    Only the sized checkpoint's S2 arms are; their collection refuses to start
+    until ``e4_wave.py size`` has frozen the numbers.
+    """
+    sizing_plan = wave.plan.get("sizing")
+    if run.stage != "s2" or not sizing_plan or run.ckpt != sizing_plan["sized_ckpt"]:
+        return None
+    sizing = wave.state.get("sizing")
+    if not sizing:
+        raise StageError(
+            f"`{run.run_id}` is sized by Amendment 1; run `e4_wave.py size` first"
+        )
+    return int(sizing["states_per_task"][run.key])
 
 
 def collect(
@@ -517,7 +552,7 @@ def collect(
         )
 
     plan_budget = wave.plan["budget"]
-    if run.stage in ("s1", "s2"):
+    if run.stage in ("s1", "s1b", "s2"):
         lock = wave.lock
         num_envs, speed = int(lock["num_envs"]), float(lock["speed_factor"])
         mujoco_gl = lock["mujoco_gl"]
@@ -525,6 +560,12 @@ def collect(
         num_envs, speed = None, 1.0
         mujoco_gl = mujoco_gl or os.environ.get("MUJOCO_GL", "egl")
     expected_s = run.expected_s * speed
+    init_states = sized_states(wave, run)
+    if init_states is not None:
+        # More episodes than the wave-2 config: scale the expectation with the
+        # episode count.  An upper bound, since the sized checkpoint is the one
+        # whose episodes end early.
+        expected_s *= init_states / base_states(run)
     remaining_s = (
         plan_budget["wave_gpu_hours"] * 3600 - common.gpu_hours_used(data_root) * 3600
     )
@@ -545,7 +586,14 @@ def collect(
         raise StageError(f"disk headroom: {why}")
 
     overrides = collect_overrides(
-        wave.plan, run, run_id, wave.ckpt_path(run.ckpt), data_root, num_envs, budget_s
+        wave.plan,
+        run,
+        run_id,
+        wave.ckpt_path(run.ckpt),
+        data_root,
+        num_envs,
+        budget_s,
+        init_states=init_states,
     )
     cmd = [
         sys.executable,
@@ -796,8 +844,20 @@ def step_index_overlap(path: Path) -> dict[str, Any]:
 
 
 def gate_s1(
-    run_dir: Path, collected: dict, probed: dict, competence: pd.DataFrame
+    run_dir: Path,
+    collected: dict,
+    probed: dict,
+    competence: pd.DataFrame,
+    rule: str = "strict",
+    stage: str = "s1",
 ) -> dict:
+    """The README's S1 gate.
+
+    ``rule="strict"`` is the gate as registered on 2026-10-26 03:10 (C_cmd and
+    C_phase inside [0.45, 0.55]).  ``rule="amended"`` is Amendment 1, used for
+    pilot2: those two controls pass within ``PILOT_CONTROL_SDS`` fold sds of
+    0.5, and the gate needs ``PILOT_MIN_PER_CLASS`` samples per class to count.
+    """
     out = common.analysis_dir(run_dir, "pilot")
     checks: dict[str, Any] = {
         "collection_ok": bool(collected.get("ok")),
@@ -825,14 +885,36 @@ def gate_s1(
         checks["P0_mean_over_cells_in_band"] = (
             p0 is not None and GATE_BAND[0] <= p0["mean_over_cells"] <= GATE_BAND[1]
         )
+        extra = common.summary_extra(out)
+        e3 = extra.get("e3", {})
         for name in ("C_cmd", "C_phase"):
             cell = common.best_cell(frame, name)
-            checks[f"{name}_in_band"] = (
-                cell is not None and GATE_BAND[0] <= cell["bacc"] <= GATE_BAND[1]
-            )
+            in_band = cell is not None and GATE_BAND[0] <= cell["bacc"] <= GATE_BAND[1]
+            if rule == "strict":
+                checks[f"{name}_in_band"] = in_band
+            else:
+                checks[f"{name}_within_2sd_of_chance"] = (
+                    cell is not None
+                    and abs(cell["bacc"] - 0.5) <= PILOT_CONTROL_SDS * cell["sd"]
+                )
+                report[f"{name}_in_strict_band"] = in_band
             report[name] = cell
+        n_pos, n_neg = int(e3.get("n_positive", 0)), int(e3.get("n_negative", 0))
+        if rule != "strict":
+            checks["min_samples_per_class"] = min(n_pos, n_neg) >= PILOT_MIN_PER_CLASS
+        manifest = common.read_json(run_dir / "manifest.json") or {}
+        episodes = [
+            e for e in manifest.get("episodes", []) if not e.get("censored", False)
+        ]
         overlap = step_index_overlap(out)
         checks["step_index_overlap"] = overlap["overlap"]
+        report.update(
+            n_positive=n_pos,
+            n_negative=n_neg,
+            n_episodes=len(episodes),
+            # Amendment 1's sizing input: kept positives per finished episode.
+            positives_per_episode=(n_pos / len(episodes)) if episodes else None,
+        )
         report.update(
             P0=p0,
             P1=common.best_cell(frame, "P1"),
@@ -841,7 +923,7 @@ def gate_s1(
             C_dstates=common.best_cell(frame, "C_dstates"),
             step_index=overlap,
             plumbing=plumbing,
-            e3_success=common.summary_extra(out).get("e3", {}).get("success_rate"),
+            e3_success=e3.get("success_rate"),
         )
     report["competence"] = (
         competence.to_dict(orient="records") if not competence.empty else []
@@ -852,7 +934,8 @@ def gate_s1(
         else []
     )
     return {
-        "stage": "s1",
+        "stage": stage,
+        "rule": rule,
         "run_id": run_dir.name,
         "passed": all(bool(v) for v in checks.values()),
         "checks": checks,
@@ -940,8 +1023,8 @@ def cmd_lock(wave: Wave, args) -> int:
         raise StageError("both S0 gates must pass before the wave constants are locked")
     started = [
         p.name
-        for run in common.planned_runs(wave.plan, "s1")
-        + common.planned_runs(wave.plan, "s2")
+        for stage in ("s1", "s1b", "s2")
+        for run in common.planned_runs(wave.plan, stage)
         for p in wave.data_root.glob(f"{run.run_id}*")
     ]
     if wave.state.get("lock") and started:
@@ -976,10 +1059,15 @@ def cmd_lock(wave: Wave, args) -> int:
     return 0
 
 
-def cmd_s1(wave: Wave, args) -> int:
+def cmd_s1(wave: Wave, args, stage: str = "s1") -> int:
+    """S1 (the registered pilot) or S1b (Amendment 1's pilot2) and its gate.
+
+    Each stage writes its own gate files, so the S1 record stays as it was.
+    """
     wave.lock  # noqa: B018 - raises if not locked
+    rule = "strict" if stage == "s1" else "amended"
     passed = True
-    for run in common.planned_runs(wave.plan, "s1"):
+    for run in common.planned_runs(wave.plan, stage):
         if args.ckpt and run.ckpt not in args.ckpt:
             continue
         collected = collect(wave, run)
@@ -989,31 +1077,97 @@ def cmd_s1(wave: Wave, args) -> int:
         if collected["ok"]:
             probed = probe(wave, run_id, "pilot", resolve_jobs(args.jobs))
             competence = write_competence(wave, run_id)
-        gate = gate_s1(wave.data_root / run_id, collected, probed, competence)
-        _save_gate(wave, "s1", run.ckpt, gate)
+        gate = gate_s1(
+            wave.data_root / run_id, collected, probed, competence, rule, stage
+        )
+        _save_gate(wave, stage, run.ckpt, gate)
         print(json.dumps(gate, indent=2, default=str))
         passed &= gate["passed"]
     return 0 if passed else 1
 
 
-def _prereg_present() -> bool:
+def _missing_markers() -> list[str]:
+    """Registration entries S2 depends on that the canonical logbook lacks."""
     logbook = common.PROBE_DIR / "logbook.md"
-    return logbook.is_file() and common.PREREG_MARKER in logbook.read_text(
-        encoding="utf-8"
+    text = logbook.read_text(encoding="utf-8") if logbook.is_file() else ""
+    return [
+        m for m in (common.PREREG_MARKER, *common.AMENDMENT_MARKERS) if m not in text
+    ]
+
+
+def require_s2_ready(wave: Wave) -> None:
+    """S2 starts only after the S1b gates, the sizing, and their registration."""
+    for ckpt in common.CKPTS:
+        gate = wave.gate("s1b", ckpt)
+        if not (gate and gate["passed"]):
+            raise StageError(
+                f"S1b (pilot2) gate for {ckpt} has not passed; S2 does not start"
+            )
+    if wave.plan.get("sizing") and not wave.state.get("sizing"):
+        raise StageError("GRPO arms are not sized yet; run `e4_wave.py size`")
+    missing = _missing_markers()
+    if missing:
+        raise StageError(
+            f"logbook.md lacks {missing}: every rule S2 depends on must be "
+            "registered before any S2 data exists"
+        )
+
+
+def cmd_size(wave: Wave, args) -> int:
+    """Freeze Amendment 1's GRPO episode counts from the pilot2 yields.
+
+    k = min(cap, max(k_base, ceil(k_base * r))) with r the reference
+    checkpoint's kept positives per episode over the sized one's.  Refused
+    once any S2 run exists: the sizing is fixed before S2 data, like the lock.
+    """
+    import math
+
+    spec = wave.plan["sizing"]
+    gates = {ckpt: wave.gate(spec["yield_stage"], ckpt) for ckpt in common.CKPTS}
+    if not all(g and g["passed"] for g in gates.values()):
+        raise StageError("both S1b gates must pass before sizing")
+    started = [
+        p.name
+        for run in common.planned_runs(wave.plan, "s2")
+        for p in wave.data_root.glob(f"{run.run_id}*")
+    ]
+    if started:
+        raise StageError(f"S2 runs exist ({started[:3]}...); the sizing is frozen")
+    yields = {
+        ckpt: gates[ckpt]["report"].get("positives_per_episode")
+        for ckpt in common.CKPTS
+    }
+    sized, reference = spec["sized_ckpt"], spec["reference_ckpt"]
+    if not yields[sized] or yields[reference] is None:
+        raise StageError(f"no usable pilot2 yields: {yields}")
+    ratio = yields[reference] / yields[sized]
+    cap = int(spec["max_states_per_task"])
+    states = {}
+    for run in common.planned_runs(wave.plan, "s2"):
+        if run.ckpt == sized:
+            k_base = base_states(run)
+            states[run.key] = min(cap, max(k_base, math.ceil(k_base * ratio)))
+    sizing = {
+        "ratio": ratio,
+        "positives_per_episode": yields,
+        "yield_runs": {c: g["run_id"] for c, g in gates.items()},
+        "states_per_task": states,
+        "cap": cap,
+        "sized_utc": common.utc_now(),
+    }
+    wave.update_state(sizing=sizing)
+    wave.log(
+        f"Amendment 1 sizing frozen: positives/episode {reference}="
+        f"{yields[reference]:.3f}, {sized}={yields[sized]:.3f}, r={ratio:.2f}; "
+        f"{sized} S2 init_states_per_task {states} (cap {cap})"
     )
+    print(json.dumps(sizing, indent=2))
+    return 0
 
 
 def cmd_s2(wave: Wave, args) -> int:
     wave.require_not_halted()
-    for ckpt in common.CKPTS:
-        gate = wave.gate("s1", ckpt)
-        if not (gate and gate["passed"]):
-            raise StageError(f"S1 gate for {ckpt} has not passed; S2 does not start")
-    if not _prereg_present():
-        raise StageError(
-            f"no `{common.PREREG_MARKER}` entry in logbook.md: the readout must be "
-            "registered before any S2 data exists"
-        )
+    require_s2_ready(wave)
     probe_jobs = resolve_jobs(args.probe_jobs, reserve=COLLECTOR_CPU_RESERVE)
     background: Optional[threading.Thread] = None
     for run in common.planned_runs(wave.plan, "s2"):
@@ -1066,12 +1220,7 @@ def cmd_collect(wave: Wave, args) -> int:
     wave.require_not_halted()
     run = common.find_planned(wave.plan, args.ckpt, args.key)
     if run.stage == "s2":
-        for ckpt in common.CKPTS:
-            gate = wave.gate("s1", ckpt)
-            if not (gate and gate["passed"]):
-                raise StageError(f"S1 gate for {ckpt} has not passed")
-        if not _prereg_present():
-            raise StageError(f"no `{common.PREREG_MARKER}` entry in logbook.md")
+        require_s2_ready(wave)
     status = collect(wave, run)
     if status["ok"] and run.stage == "s2":
         write_competence(wave, status["run_id"])
@@ -1189,7 +1338,7 @@ def cmd_merge_logbook(wave: Wave, args) -> int:
 
 def status_table(wave: Wave) -> pd.DataFrame:
     rows = []
-    for stage in ("s0", "s1", "s2"):
+    for stage in ("s0", "s1", "s1b", "s2"):
         for run in common.planned_runs(wave.plan, stage):
             attempts = common.attempt_ids(wave.data_root, run.run_id)
             done = common.completed_attempt(wave.data_root, run.run_id)
@@ -1214,7 +1363,7 @@ def cmd_status(wave: Wave, args) -> int:
     print(
         f"\nGPU (collection) hours: {used:.2f} / {wave.plan['budget']['wave_gpu_hours']}"
     )
-    for stage in ("s0", "s0_envs20", "s1"):
+    for stage in ("s0", "s0_envs20", "s1", "s1b"):
         for ckpt in common.CKPTS:
             gate = wave.gate(stage, ckpt)
             if gate:
@@ -1222,6 +1371,7 @@ def cmd_status(wave: Wave, args) -> int:
                     f"gate {stage:9s} {ckpt:4s}: {'PASSED' if gate['passed'] else 'FAILED'}"
                 )
     print(f"lock: {wave.state.get('lock')}")
+    print(f"sizing: {wave.state.get('sizing')}")
     if wave.halt_path.exists():
         print(f"HALTED: {wave.halt_path.read_text().strip()}")
     return 0
@@ -1263,9 +1413,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="this box's collection wall clock relative to the wave-2 card",
     )
 
-    p = sub.add_parser("s1", help="pilot collection + pilot probes + gates")
-    p.add_argument("--ckpt", nargs="*", choices=common.CKPTS)
-    p.add_argument("--jobs", type=int, default=None)
+    for name, text in (
+        ("s1", "pilot collection + pilot probes + gates (registered gate)"),
+        ("s1b", "Amendment 1 pilot2 on all goal tasks + amended gate"),
+    ):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--ckpt", nargs="*", choices=common.CKPTS)
+        p.add_argument("--jobs", type=int, default=None)
+
+    sub.add_parser("size", help="freeze Amendment 1's GRPO episode counts")
 
     p = sub.add_parser("s2", help="main collections, linear probes behind them")
     p.add_argument("--ckpt", nargs="*", choices=common.CKPTS)
@@ -1311,6 +1467,8 @@ COMMANDS = {
     "s0-envs20": lambda wave, args: cmd_s0(wave, args, stage="s0_envs20"),
     "lock": cmd_lock,
     "s1": cmd_s1,
+    "s1b": lambda wave, args: cmd_s1(wave, args, stage="s1b"),
+    "size": cmd_size,
     "s2": cmd_s2,
     "s3": cmd_s3,
     "collect": cmd_collect,

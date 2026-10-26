@@ -76,6 +76,16 @@ stages:
     # pilot.yaml predates wave 1's switch to sampled decoding; the pilot must
     # run the protocol S2 will run, so decoding_overrides apply here too.
     - {key: pilot, config: pilot.yaml, expected_s: 600}
+  # Amendment 1 (logbook, "E4 PRE-REGISTRATION AMENDMENT 1"): on task 0 alone
+  # GRPO finished in ~8-9 calls and left 14 probe samples per class, too few
+  # for any gate and no basis for sizing S2.  pilot2 is the same pilot over all
+  # 10 goal tasks x 8 states for both checkpoints: the amended S1 gate, and the
+  # like-for-like yield measurement `e4_wave.py size` reads.
+  s1b:
+    - key: pilot2
+      config: pilot.yaml
+      expected_s: 900
+      overrides: [env.task_ids=null, env.init_states_per_task=8]
   # Listed in run order: the primary contrast (goal swap, both checkpoints)
   # first, so a budget stop cuts from the tail.
   s2:
@@ -90,6 +100,18 @@ stages:
     # suite_long.yaml collects 15 states x 10 tasks = 150 episodes, not 200;
     # kept unchanged so it stays comparable with suite_long01.
     - {key: long_swap_s0, suite: long, transform: swap, seed: 0, config: suite_long.yaml, expected_s: 1848}
+
+# Amendment 1: GRPO's S2 arms are matched to the SFT arms on probe-sample
+# count, not episode count.  `e4_wave.py size` sets, per entry,
+#   k = min(max_states_per_task, max(k_base, ceil(k_base * r))),
+#   r = (SFT positives per episode) / (GRPO positives per episode) on pilot2,
+# where k_base is the wave-2 config's own init_states_per_task.  SFT arms are
+# never resized, and GRPO is never sized below k_base.
+sizing:
+  sized_ckpt: grpo
+  reference_ckpt: sft
+  yield_stage: s1b
+  max_states_per_task: 50   # LIBERO ships 50 initial states per task
 
 # Probe rounds.  expected_s from the wave-2 CPU-pod ledger at 16 CPUs.
 probes:

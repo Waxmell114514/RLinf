@@ -200,7 +200,13 @@ third point and are not re-collected.
   stops at each gate; `e4_report.py` writes `reports/e4_report.md` and applies
   the readout pre-registered in `logbook.md` (`E4 PRE-REGISTERED READOUT`).
 - `modal_e4.py` runs the same commands on Modal (one GPU lane, parallel CPU
-  probe lanes, one Volume); it is untested against a live account.
+  probe lanes, one Volume).
+- **Amendment 1** (logbook, `E4 PRE-REGISTRATION AMENDMENT 1`): GRPO finishes
+  episodes in a handful of calls, so the registered one-task pilot left it 14
+  samples per class. `s1b` reruns the pilot over all goal tasks with a
+  noise-aware control gate, and `size` matches GRPO's S2 arms to SFT's on
+  probe-sample count (capped at LIBERO's 50 initial states per task) before
+  S2 starts. R1-R12 are unchanged.
 
 ---
 

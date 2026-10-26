@@ -29,8 +29,10 @@ CONFIG_DIR = PROBE_DIR / "configs"
 PLAN_PATH = PROBE_DIR / "e4_plan.yaml"
 CKPTS = ("sft", "grpo")
 
-# The pre-registered readout must be in the canonical logbook before S2 runs.
+# The pre-registered readout must be in the canonical logbook before S2 runs,
+# and so must every amendment the S2 code paths depend on.
 PREREG_MARKER = "E4 PRE-REGISTERED READOUT"
+AMENDMENT_MARKERS = ("E4 PRE-REGISTRATION AMENDMENT 1",)
 
 
 def utc_now() -> str:

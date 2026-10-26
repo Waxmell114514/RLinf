@@ -54,13 +54,24 @@ ALLOWED = {
     "s0": {"model.unnorm_key"},
     "s0_envs20": {"model.unnorm_key", "env.num_envs", "env.init_states_per_task"},
     "s1": {"model.unnorm_key", "env.num_envs", "model.do_sample"},
+    # Amendment 1's pilot2: the same pilot over all goal tasks x 8 states.
+    "s1b": {
+        "model.unnorm_key",
+        "env.num_envs",
+        "model.do_sample",
+        "env.task_ids",
+        "env.init_states_per_task",
+    },
     "s2": {"model.unnorm_key", "env.num_envs", "env.seed"},
 }
+# Amendment 1: only the sized checkpoint's S2 arms may change episode count.
+SIZED = {"env.init_states_per_task"}
 
 
 @pytest.mark.parametrize("stage", sorted(ALLOWED))
 def test_every_planned_run_is_its_wave2_config_plus_listed_overrides(stage):
     for run in common.planned_runs(PLAN, stage):
+        sized = stage == "s2" and run.ckpt == PLAN["sizing"]["sized_ckpt"]
         overrides = wave_mod.collect_overrides(
             PLAN,
             run,
@@ -69,15 +80,20 @@ def test_every_planned_run_is_its_wave2_config_plus_listed_overrides(stage):
             Path("/data"),
             None if stage.startswith("s0") else 10,
             2 * run.expected_s,
+            init_states=50 if sized else None,
         )
         resolved = _flat(
             load_config(str(common.CONFIG_DIR / run.config), overrides).to_dict()
         )
         base = _flat(load_config(str(common.CONFIG_DIR / run.config)).to_dict())
         changed = {k for k in resolved if resolved[k] != base[k]} - BOOKKEEPING
-        assert changed <= ALLOWED[stage], (run.run_id, changed - ALLOWED[stage])
+        allowed = ALLOWED[stage] | (SIZED if sized else set())
+        assert changed <= allowed, (run.run_id, changed - allowed)
+        if stage == "s2" and not sized:
+            # The reference checkpoint's arms keep the wave-2 episode count.
+            assert "env.init_states_per_task" not in changed, run.run_id
         assert resolved["model.unnorm_key"] == "libero_130_no_noops_trajall"
-        if stage in ("s1", "s2"):
+        if stage in ("s1", "s1b", "s2"):
             # Decoding is held at wave 2's sampled protocol for every arm.
             assert resolved["model.do_sample"] is True
             assert resolved["model.temperature"] == pytest.approx(1.6)
@@ -213,9 +229,47 @@ def test_todo_offers_each_job_once_and_never_retries_a_failure(tmp_path):
 
 def test_s2_refuses_before_its_gates(tmp_path):
     rc, out = _driver(tmp_path, "s2")
-    assert rc == 2 and "S1 gate" in out
+    assert rc == 2 and "S1b (pilot2) gate" in out
     rc, out = _driver(tmp_path, "collect", "--ckpt", "grpo", "--key", "goal_swap_s1")
-    assert rc == 2 and "S1 gate" in out
+    assert rc == 2 and "S1b (pilot2) gate" in out
+
+
+def _s1b_gates(data: Path, yields: dict) -> None:
+    for ckpt, y in yields.items():
+        common.write_json_atomic(
+            data / "e4_gates" / f"s1b_{ckpt}.json",
+            {
+                "stage": "s1b",
+                "run_id": f"e4_{ckpt}_pilot2",
+                "passed": True,
+                "checks": {},
+                "report": {"positives_per_episode": y},
+            },
+        )
+
+
+def test_size_matches_samples_with_cap_and_floor(tmp_path):
+    _s1b_gates(tmp_path, {"sft": 2.15, "grpo": 0.70})  # r = 3.07
+    rc, out = _driver(tmp_path, "size")
+    assert rc == 0, out
+    sizing = common.read_json(tmp_path / "e4_state.json")["sizing"]
+    assert sizing["ratio"] == pytest.approx(2.15 / 0.70)
+    states = sizing["states_per_task"]
+    assert set(states) == {r.key for r in common.planned_runs(PLAN, "s2")}
+    assert states["goal_swap_s1"] == 50  # ceil(20 x 3.07) = 62, capped
+    assert states["goal_mirror_s1"] == 50  # ceil(30 x 3.07) = 93, capped
+    assert states["long_swap_s0"] == 47  # ceil(15 x 3.07) = 47
+    # Frozen once S2 data exists.
+    (tmp_path / "e4_sft_goal_swap_s1").mkdir()
+    rc, out = _driver(tmp_path, "size")
+    assert rc == 2 and "frozen" in out
+
+
+def test_size_never_shrinks_the_sized_arms(tmp_path):
+    _s1b_gates(tmp_path, {"sft": 0.5, "grpo": 2.0})  # r = 0.25
+    assert _driver(tmp_path, "size")[0] == 0
+    states = common.read_json(tmp_path / "e4_state.json")["sizing"]["states_per_task"]
+    assert states["goal_swap_s1"] == 20 and states["long_swap_s0"] == 15
 
 
 def test_logbook_merge_is_ordered_and_idempotent(tmp_path):
@@ -391,6 +445,28 @@ def test_s1_gate_reads_real_run_probes_output(pilot_analysed):
     assert gate["report"]["P2r"]["bacc"] > 0.5
 
 
+def test_amended_pilot_gate_judges_controls_against_their_own_noise(pilot_analysed):
+    """Same pilot, both rules: the strict band reads noise as failure."""
+    competence = common.competence_report(pilot_analysed)
+    strict = wave_mod.gate_s1(pilot_analysed, {"ok": True}, {"ok": True}, competence)
+    amended = wave_mod.gate_s1(
+        pilot_analysed, {"ok": True}, {"ok": True}, competence, "amended", "s1b"
+    )
+    assert amended["stage"] == "s1b" and amended["rule"] == "amended"
+    for name in ("C_cmd", "C_phase"):
+        cell = amended["report"][name]
+        expected = abs(cell["bacc"] - 0.5) <= 2 * cell["sd"]
+        assert amended["checks"][f"{name}_within_2sd_of_chance"] == expected
+        assert f"{name}_in_band" in strict["checks"]
+    report_ = amended["report"]
+    assert amended["checks"]["min_samples_per_class"] == (
+        min(report_["n_positive"], report_["n_negative"]) >= 40
+    )
+    assert report_["positives_per_episode"] == pytest.approx(
+        report_["n_positive"] / report_["n_episodes"]
+    )
+
+
 def test_report_reads_a_real_analysis_directory(pilot_analysed):
     row = report.read_run(pilot_analysed, "Base-Lora", "goal", "swap", 1)
     assert row.source == "analysis"
@@ -417,7 +493,7 @@ def _fake_checkpoint(path: Path, ckpt: str) -> str:
 
 
 def test_stage_flow_end_to_end_with_a_fake_collector(tmp_path, monkeypatch):
-    """init -> s0 -> lock -> s1 -> s2 -> s3 -> report, then the failure paths.
+    """init -> s0 -> lock -> s1 -> s1b -> size -> s2 -> s3 -> report, then failures.
 
     The collector is ``tests/fake_collect.py`` (synthetic runs); everything
     after it -- gates, run_probes.py, markers, ledger, report -- is real.
@@ -468,19 +544,30 @@ def test_stage_flow_end_to_end_with_a_fake_collector(tmp_path, monkeypatch):
     rc, out = run("s0")
     assert rc == 0, out
     assert run("lock", "--num-envs", "10")[0] == 0
-    run("s1")
-    gate_paths = [data / "e4_gates" / f"s1_{c}.json" for c in common.CKPTS]
+    run("s1")  # the registered pilot; its gate files stay as the record
+    run("s1b")
+    gate_paths = [data / "e4_gates" / f"s1b_{c}.json" for c in common.CKPTS]
+    assert all((data / "e4_gates" / f"s1_{c}.json").is_file() for c in common.CKPTS)
     if not all(common.read_json(p)["passed"] for p in gate_paths):
         rc, out = run("s2")
-        assert rc == 2 and "S1 gate" in out
+        assert rc == 2 and "S1b (pilot2) gate" in out
         for path in gate_paths:  # gate statistics are not under test here
             common.write_json_atomic(path, {**common.read_json(path), "passed": True})
+    # The sized checkpoint cannot collect S2 before the sizing is frozen.
+    rc, out = run("collect", "--ckpt", "grpo", "--key", "goal_swap_s1")
+    assert rc == 2 and "not sized" in out
+    rc, out = run("size")
+    assert rc == 0, out
+    states = common.read_json(data / "e4_state.json")["sizing"]["states_per_task"]
     rc, out = run("s2", "--only", "goal_swap_s1", "--probes", "inline")
     assert rc == 0, out
     for ckpt in common.CKPTS:
         run_id = f"e4_{ckpt}_goal_swap_s1"
         assert common.job_status(data, run_id, "probe-linear")["ok"]
         assert (data / "e4_derived" / run_id / "competence.csv").is_file()
+    # The sized arm's watchdog expectation follows its episode count.
+    grpo = common.job_status(data, "e4_grpo_goal_swap_s1", "collect")
+    assert grpo["expected_s"] == pytest.approx(1408 * states["goal_swap_s1"] / 20)
     rc, out = run("s3")
     assert rc == 0, out
     assert common.job_status(data, "e4_grpo_goal_swap_s1", "probe-mlp")["ok"]
