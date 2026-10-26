@@ -244,6 +244,88 @@ def test_todo_offers_each_job_once_and_never_retries_a_failure(tmp_path):
     assert json.loads(_driver(tmp_path, "todo")[1])["mlp"] == []
 
 
+def test_todo_queue_puts_the_primary_mlp_rounds_first(tmp_path, capsys):
+    # The state the interim wave stopped in: every goal/spatial/object run
+    # collected, linear done but GRPO object, MLP done only for SFT goal swap,
+    # and an interrupted SFT long attempt.
+    wave = wave_mod.Wave(tmp_path, tmp_path / "logbook.md", PLAN)
+    runs = common.planned_runs(PLAN, "s2")
+    wave.update_state(
+        lock={"num_envs": 10, "speed_factor": 1.0, "mujoco_gl": "egl"},
+        sizing={"states_per_task": {r.key: 2 * wave_mod.base_states(r) for r in runs}},
+    )
+    for run in runs:
+        (tmp_path / run.run_id).mkdir()
+        if run.suite == "long":
+            continue
+        common.write_json_atomic(
+            common.status_path(tmp_path, run.run_id, "collect"), {"ok": True}
+        )
+        if run.run_id != "e4_grpo_object_swap_s0":
+            common.write_json_atomic(
+                common.status_path(tmp_path, run.run_id, "probe-linear"), {"ok": True}
+            )
+    for done in ("e4_sft_goal_swap_s1", "e4_sft_goal_swap_s2"):
+        common.write_json_atomic(
+            common.status_path(tmp_path, done, "probe-mlp"), {"ok": True}
+        )
+
+    assert wave_mod.cmd_todo(wave, None) == 0
+    queue = json.loads(capsys.readouterr().out)["queue"]
+    assert [i["key"] for i in queue] == [
+        "mlp:e4_grpo_goal_swap_s1",
+        "mlp:e4_grpo_goal_swap_s2",
+        "linear:e4_grpo_object_swap_s0",
+        "mlp:e4_sft_goal_mirror_s1",
+        "mlp:e4_grpo_goal_mirror_s1",
+        "mlp:e4_sft_goal_freeze_s1",
+        "mlp:e4_grpo_goal_freeze_s1",
+        "mlp:e4_sft_goal_mirror_s2",
+        "mlp:e4_grpo_goal_mirror_s2",
+        "mlp:e4_sft_goal_freeze_s2",
+        "mlp:e4_grpo_goal_freeze_s2",
+        "collect:e4_sft_long_swap_s0",
+        "collect:e4_grpo_long_swap_s0",
+    ]
+    by_key = {i["key"]: i for i in queue}
+    factor, grace = PLAN["budget"]["watchdog_factor"], PLAN["budget"]["hang_grace_s"]
+    long_s = next(r.expected_s for r in runs if r.key == "long_swap_s0")
+    assert by_key["mlp:e4_grpo_goal_swap_s1"]["max_s"] == factor * 8400
+    assert by_key["mlp:e4_grpo_goal_swap_s1"]["args"] == [
+        "probe",
+        "--run-id",
+        "e4_grpo_goal_swap_s1",
+        "--family",
+        "mlp",
+    ]
+    assert by_key["collect:e4_sft_long_swap_s0"]["max_s"] == factor * long_s + grace
+    # GRPO's sized arm reserves for twice the episodes.
+    assert (
+        by_key["collect:e4_grpo_long_swap_s0"]["max_s"] == 2 * factor * long_s + grace
+    )
+    assert by_key["collect:e4_grpo_long_swap_s0"]["args"] == [
+        "collect",
+        "--ckpt",
+        "grpo",
+        "--key",
+        "long_swap_s0",
+    ]
+
+    wave.halt("two-strike rule")
+    capsys.readouterr()
+    assert wave_mod.cmd_todo(wave, None) == 0
+    queue = json.loads(capsys.readouterr().out)["queue"]
+    assert not [i for i in queue if i["kind"] == "collect"]
+
+
+def test_todo_queue_leaves_out_collections_it_cannot_price(tmp_path, capsys):
+    # Before `lock` and `size` the driver refuses to collect anyway.
+    wave = wave_mod.Wave(tmp_path, tmp_path / "logbook.md", PLAN)
+    assert wave_mod.cmd_todo(wave, None) == 0
+    todo = json.loads(capsys.readouterr().out)
+    assert len(todo["collect"]) == 18 and todo["queue"] == []
+
+
 def test_s2_refuses_before_its_gates(tmp_path):
     rc, out = _driver(tmp_path, "s2")
     assert rc == 2 and "S1b (pilot2) gate" in out
@@ -821,31 +903,112 @@ def test_modal_orchestrator_does_not_read_a_running_call_as_finished():
                 raise self.error
             return 0
 
-    assert modal_e4._finished(Call(TimeoutError())) is False
-    assert modal_e4._finished(Call(modal.exception.TimeoutError())) is False
-    assert modal_e4._finished(Call()) is True
-    assert modal_e4._finished(Call(modal.exception.OutputExpiredError())) is True
-    assert modal_e4._finished(Call(RuntimeError("container died"))) is True
-    assert modal_e4._lane_done({"halted": False, "collect": [["sft", "x"]]}) is False
-    assert modal_e4._lane_done({"halted": False, "collect": []}) is True
-    assert modal_e4._lane_done({"halted": True, "collect": [["sft", "x"]]}) is True
+    assert modal_e4._outcome(Call(TimeoutError())) is None
+    assert modal_e4._outcome(Call(modal.exception.TimeoutError())) is None
+    assert modal_e4._outcome(Call()) == "rc=0"
+    assert modal_e4._outcome(Call(RuntimeError("x"))) == "error: RuntimeError"
+    assert modal_e4._outcome(Call(modal.exception.OutputExpiredError())) == "expired"
 
 
-def test_modal_orchestrator_never_offers_a_round_already_in_flight():
+def _round(key, kind, max_s=3600.0):
+    return {"key": key, "kind": kind, "args": [], "max_s": max_s, "rank": 0}
+
+
+def test_modal_orchestrator_never_starts_a_round_already_in_flight():
     # A second probe on a run renames its live analysis dir to .partial_*.
+    pytest.importorskip("modal")
+    from collections import Counter
+
+    from efference_probe import modal_e4
+
+    queue = [_round("linear:a", "linear"), _round("linear:b", "linear")]
+    caps = {"linear": 2}
+    chosen, held = modal_e4.pick(queue, {"linear:a"}, Counter(), 0.0, 1e9, caps)
+    assert [i["key"] for i in chosen] == ["linear:b"] and held is None
+    chosen, _ = modal_e4.pick(queue, {"linear:a", "linear:b"}, Counter(), 0, 1e9, caps)
+    assert chosen == []
+
+
+def test_modal_orchestrator_caps_each_kind_and_holds_at_the_budget():
+    # The interim wave started all ten MLP rounds at once and lost every one
+    # of them to the workspace spend limit.
+    pytest.importorskip("modal")
+    from collections import Counter
+
+    from efference_probe import modal_e4
+
+    queue = [
+        _round("mlp:grpo_swap_s1", "mlp", 16800),
+        _round("mlp:grpo_swap_s2", "mlp", 16800),
+        _round("linear:grpo_object", "linear", 1600),
+        _round("mlp:sft_mirror_s1", "mlp", 16800),
+        _round("collect:sft_long", "collect", 4596),
+    ]
+    caps = dict(modal_e4.DEFAULT_MAX_RUNNING)
+    chosen, held = modal_e4.pick(queue, set(), Counter(), 0.0, 1e9, caps)
+    assert [i["key"] for i in chosen] == [
+        "mlp:grpo_swap_s1",
+        "mlp:grpo_swap_s2",
+        "linear:grpo_object",
+        "collect:sft_long",
+    ]
+    assert held is None
+    # Two MLP rounds already running: no third, whatever the budget.
+    chosen, _ = modal_e4.pick(queue, set(), Counter(mlp=2), 0.0, 1e9, caps)
+    assert all(i["kind"] != "mlp" for i in chosen)
+    # Room for one MLP reservation: the second is held, and so is every round
+    # queued after it, even the cheap linear one.
+    one = modal_e4.reserve_usd(queue[0])
+    chosen, held = modal_e4.pick(queue, set(), Counter(), 0.0, one * 1.5, caps)
+    assert [i["key"] for i in chosen] == ["mlp:grpo_swap_s1"]
+    assert held["key"] == "mlp:grpo_swap_s2"
+    # What is already committed counts against the budget.
+    chosen, held = modal_e4.pick(queue, set(), Counter(), one, one * 1.5, caps)
+    assert chosen == [] and held["key"] == "mlp:grpo_swap_s1"
+    # --no-lane: collections are never started here.
+    chosen, _ = modal_e4.pick(queue, set(), Counter(), 0.0, 1e9, {**caps, "collect": 0})
+    assert "collect:sft_long" not in [i["key"] for i in chosen]
+
+
+def test_modal_journal_counts_finished_running_and_overrun_rounds():
     pytest.importorskip("modal")
     from efference_probe import modal_e4
 
-    todo = {"linear": ["a", "b"], "mlp": ["a"]}
-    assert modal_e4._offered(todo, set()) == [
-        ("a", "linear"),
-        ("b", "linear"),
-        ("a", "mlp"),
+    def start(key, rate, reserve_s):
+        return {
+            "event": "start",
+            "key": key,
+            "t": 0.0,
+            "usd_per_h": rate,
+            "reserve_s": reserve_s,
+        }
+
+    entries = [
+        start("done", 1.0, 7200),
+        {"event": "end", "key": "done", "t": 3600.0, "outcome": "rc=0"},
+        start("running", 2.0, 3600),
     ]
-    assert modal_e4._offered(todo, {("a", "mlp"), ("a", "linear")}) == [("b", "linear")]
-    assert (
-        modal_e4._offered(todo, {("a", "linear"), ("b", "linear"), ("a", "mlp")}) == []
+    # done: 1 h at $1; running: 0.5 h at $2 so far, $2 reserved in all.
+    assert modal_e4.journal_usd(entries, now=1800.0) == pytest.approx((2.0, 3.0))
+    # A round past its reservation is counted at what it has actually run.
+    assert modal_e4.journal_usd(entries, now=7200.0) == pytest.approx((5.0, 5.0))
+    # A round cut off with no end event keeps counting: the journal over-states.
+    assert modal_e4.journal_usd(entries[:1], now=7200.0) == pytest.approx((2.0, 2.0))
+
+
+def test_modal_rates_price_containers_at_their_limits():
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    cpu, mem = modal_e4.PROBE_CPU[1], modal_e4.PROBE_MEMORY[1] / 1024
+    assert modal_e4.USD_PER_H["mlp"] == pytest.approx(
+        3600 * (cpu * 0.0000131 + mem * 0.00000222)
     )
+    if modal_e4.GPU == "L40S":
+        assert modal_e4.USD_PER_H["collect"] == pytest.approx(3.284, abs=0.001)
+    # The slowest completed MLP round (6720 s) fits its reservation twice over.
+    mlp = _round("mlp:x", "mlp", 2 * PLAN["probes"]["mlp"]["expected_s"])
+    assert modal_e4.reserve_usd(mlp) > 2 * modal_e4.USD_PER_H["mlp"] * 6720 / 3600
 
 
 def test_modal_logbook_part_label_is_a_flat_file_name():

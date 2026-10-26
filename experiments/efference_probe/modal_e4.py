@@ -15,13 +15,21 @@ decides which container a driver command runs in.  From the repo root::
     modal run $M::stage --cmd "s1"                    # GPU
     modal run $M::stage --cmd "s1b"                   # GPU; Amendment 1 pilot2 + gate
     modal run $M::stage --cmd "size"                  # CPU; freezes GRPO's S2 sizing
-    modal run --detach $M::wave                       # S2 + linear + S3 MLP, unattended
+    modal run --detach $M::wave --budget-usd 30       # S2 + linear + S3 MLP, unattended
     modal run $M::stage --cmd "status"
     modal run $M::pull                                # analysis dirs + logbook parts, no hidden/
 
 ``E4_GPU`` picks the card (default ``L40S``; ``A10`` / ``L4`` are the 24 GB
 options).  Set it identically for every command of the wave -- the lock
 records the GPU, and the expected wall clocks assume one card type.
+
+``wave`` spends at most ``--budget-usd``: before starting a round it reserves
+the round's worst case (its watchdog limit, priced at the container's resource
+limits) and holds the round, and every round queued after it, if the
+reservations would pass the budget.  Set the budget below what the Modal
+workspace's spend limit still allows -- a workspace stop kills every running
+container, and an MLP round that is cut off leaves nothing behind.  Spend is
+journalled per session under ``data/e4_spend/`` (one file per event).
 """
 
 from __future__ import annotations
@@ -31,7 +39,9 @@ import os
 import shlex
 import subprocess
 import time
+from collections import Counter
 from pathlib import Path
+from typing import Any, Optional
 
 import modal
 
@@ -64,6 +74,7 @@ ANALYSIS_PINS = (
 )
 VOL = "/vol"
 DATA = f"{VOL}/data"
+SPEND = f"{DATA}/e4_spend"
 INSTALL = "/opt/rlinf"
 PYTHON = f"{INSTALL}/.venv/bin/python"
 DRIVER = f"{REPO}/experiments/efference_probe/e4_wave.py"
@@ -173,108 +184,305 @@ def _todo() -> dict:
 # for num_envs=10 (~40 GB measured).  On Modal the pilots' tree RSS reached
 # 61-62.5 GB and grew with call count, so the limit sits well above it; the
 # request (what is billed when unused) is unchanged.
+GPU_CPU = (8.0, 12.0)
 GPU_MEMORY = (49152, 98304)
+# Probe rounds ran with 24 vCPU visible under a bare ``cpu=8.0``; the limit
+# now says so.  MLP rounds peaked at 27.9 GB tree RSS (SFT goal swap), GRPO
+# linear rounds ran ~3.5 GB above SFT ones, and the first GRPO MLP attempt
+# died ~15 min in without a marker, so the memory limit leaves room above the
+# 32 GiB request.
+PROBE_CPU = (8.0, 12.0)
+PROBE_MEMORY = (32768, 49152)
+ORCHESTRATOR_CPU, ORCHESTRATOR_MEMORY = 0.25, 1024
+
+# Modal list prices (USD), October 2026.  Modal bills the greater of request
+# and use, so the budget gate prices each container at its limits.
+GPU_USD_PER_H = {"L40S": 1.951, "A10": 1.102, "L4": 0.799, "H100": 3.949}
+CORE_USD_PER_S = 0.0000131  # per physical core (2 vCPU)
+GIB_USD_PER_S = 0.00000222
+# Container start before the driver's clock runs; reserved on top of max_s.
+STARTUP_S = 300
 
 
-@app.function(gpu=GPU, cpu=(8.0, 12.0), memory=GPU_MEMORY, timeout=4 * 3600, **COMMON)
+def usd_per_hour(cores: float, memory_mib: float, gpu: Optional[str] = None) -> float:
+    return 3600 * (cores * CORE_USD_PER_S + memory_mib / 1024 * GIB_USD_PER_S) + (
+        GPU_USD_PER_H[gpu] if gpu else 0.0
+    )
+
+
+USD_PER_H = {
+    "collect": usd_per_hour(GPU_CPU[1], GPU_MEMORY[1], GPU),
+    "linear": usd_per_hour(PROBE_CPU[1], PROBE_MEMORY[1]),
+    "mlp": usd_per_hour(PROBE_CPU[1], PROBE_MEMORY[1]),
+    "orchestrate": usd_per_hour(ORCHESTRATOR_CPU, ORCHESTRATOR_MEMORY),
+}
+
+
+@app.function(gpu=GPU, cpu=GPU_CPU, memory=GPU_MEMORY, timeout=4 * 3600, **COMMON)
 def gpu_stage(args: list[str], mujoco_gl: str = "egl") -> int:
     return _driver(
         args, f"gpu_{args[0]}", {"MUJOCO_GL": mujoco_gl, "PYOPENGL_PLATFORM": mujoco_gl}
     )
 
 
-@app.function(gpu=GPU, cpu=(8.0, 12.0), memory=GPU_MEMORY, timeout=14 * 3600, **COMMON)
-def gpu_lane() -> list[dict]:
-    """S2: every pending collection, one at a time, committed after each.
-
-    A preempted container re-runs this from the top; the driver then sees the
-    interrupted attempt and collects under a new id.
-    """
-    results = []
-    while True:
-        todo = _todo()
-        if todo["halted"] or not todo["collect"]:
-            break
-        ckpt, key = todo["collect"][0]
-        rc = _driver(["collect", "--ckpt", ckpt, "--key", key], f"collect_{ckpt}_{key}")
-        results.append({"ckpt": ckpt, "key": key, "rc": rc})
-        if rc != 0:
-            break
-    return results
-
-
 # 8 physical cores = 16 vCPU and 32 GB: the wave-2 CPU pod, whose MLP wall
 # clocks (~2.2 h/run) the plan's expected_s assumes.
-@app.function(cpu=8.0, memory=32768, timeout=6 * 3600, **COMMON)
+@app.function(cpu=PROBE_CPU, memory=PROBE_MEMORY, timeout=6 * 3600, **COMMON)
 def cpu_stage(args: list[str]) -> int:
     return _driver(args, _part_label("cpu", args))
 
 
-def _finished(call) -> bool:
-    """True once a spawned call has returned, failed or expired.
+def _outcome(call) -> Optional[str]:
+    """None while a spawned call runs; once it has returned, failed or expired, how.
 
     modal 1.6 raises the *builtin* ``TimeoutError`` for a call still running
     under ``get(timeout=0)``, not ``modal.exception.TimeoutError``; catching
     only the latter read a running GPU lane as finished on the first poll.
     """
     try:
-        call.get(timeout=0)
-        return True
+        return f"rc={call.get(timeout=0)}"
     except modal.exception.OutputExpiredError:
-        return True
+        return "expired"
     except (TimeoutError, modal.exception.TimeoutError):
-        return False
-    except Exception:  # noqa: BLE001 - a failed call is finished; its marker says how
-        return True
+        return None
+    except Exception as error:  # noqa: BLE001 - a failed call is finished; its marker says how
+        return f"error: {type(error).__name__}"
 
 
-def _lane_done(todo: dict) -> bool:
-    """Without a lane handle: the driver has nothing left to collect, or halted."""
-    return bool(todo["halted"]) or not todo["collect"]
+# -- budget ------------------------------------------------------------------
+
+DEFAULT_MAX_RUNNING = {"collect": 1, "linear": 2, "mlp": 2}
 
 
-def _offered(todo: dict, taken) -> list[tuple[str, str]]:
-    """Probe rounds ``todo`` offers that nobody has started yet."""
-    return [
-        (run_id, family)
-        for family in ("linear", "mlp")
-        for run_id in todo[family]
-        if (run_id, family) not in taken
-    ]
+def reserve_usd(item: dict[str, Any], rates: dict[str, float] = USD_PER_H) -> float:
+    """A round's worst case: its watchdog limit plus start-up, at limit rates."""
+    return rates[item["kind"]] * (item["max_s"] + STARTUP_S) / 3600
 
 
-@app.function(cpu=0.25, memory=1024, timeout=24 * 3600, **COMMON)
-def orchestrate(
-    poll_s: int = 120, start_lane: bool = True, skip: tuple[str, ...] = ()
-) -> dict:
-    """Start the GPU lane, then probe each run as soon as it lands.
+def journal_usd(entries: list[dict[str, Any]], now: float) -> tuple[float, float]:
+    """``(spent, committed)`` for one session's spend journal.
 
-    ``start_lane=False`` only probes, for a lane that is already running (one
-    GPU collection at a time); the lane counts as done from ``todo``.
-    ``skip`` lists ``run_id:family`` rounds already running elsewhere: a
-    second ``probe`` on the same run would rename the live analysis dir.
+    Each container is timed from its spawn to the poll that saw it return (or
+    to ``now``) at its kind's limit rate, so ``spent`` over-states the bill.
+    ``committed`` adds, for every container still running, the rest of its
+    reservation.
     """
-    lane = gpu_lane.spawn() if start_lane else None
-    calls: dict[tuple[str, str], modal.FunctionCall] = {}
-    external = {tuple(item.split(":", 1)) for item in skip}
+    ends = {e["key"]: e for e in entries if e["event"] == "end"}
+    spent = committed = 0.0
+    for start in (e for e in entries if e["event"] == "start"):
+        end = ends.get(start["key"])
+        cost = start["usd_per_h"] * ((end["t"] if end else now) - start["t"]) / 3600
+        spent += cost
+        reserved = start["usd_per_h"] * start["reserve_s"] / 3600
+        committed += cost if end else max(cost, reserved)
+    return spent, committed
 
-    while True:
-        todo = _todo()
-        for run_id, family in _offered(todo, calls.keys() | external):
-            calls[(run_id, family)] = cpu_stage.spawn(
-                ["probe", "--run-id", run_id, "--family", family]
+
+def pick(
+    queue: list[dict[str, Any]],
+    taken: set[str],
+    running: Counter,
+    committed: float,
+    budget_usd: float,
+    max_running: dict[str, int],
+    rates: dict[str, float] = USD_PER_H,
+) -> tuple[list[dict[str, Any]], Optional[dict[str, Any]]]:
+    """The rounds to start now, in queue order, and the round the budget holds.
+
+    A round whose kind is at its cap is passed over, so a round of another
+    kind may start.  A round whose reservation does not fit the budget holds
+    itself and everything queued after it.
+    """
+    chosen = []
+    counts = Counter(running)
+    for item in queue:
+        kind = item["kind"]
+        if item["key"] in taken or counts[kind] >= max_running.get(kind, 0):
+            continue
+        cost = reserve_usd(item, rates)
+        if committed + cost > budget_usd:
+            return chosen, item
+        chosen.append(item)
+        counts[kind] += 1
+        committed += cost
+    return chosen, None
+
+
+def _journal(session: str) -> list[dict[str, Any]]:
+    root = Path(SPEND) / session
+    if not root.is_dir():
+        return []
+    return [json.loads(path.read_text()) for path in sorted(root.glob("*.json"))]
+
+
+def _journal_add(session: str, event: dict[str, Any]) -> None:
+    """One file per event, committed at once so a later ``reload()`` keeps it."""
+    root = Path(SPEND) / session
+    root.mkdir(parents=True, exist_ok=True)
+    name = f"{event['t']:.3f}_{event['event']}_{event['key'].replace(':', '_')}.json"
+    (root / name).write_text(json.dumps(event))
+    volume.commit()
+
+
+def _note(session: str, message: str) -> None:
+    """A line in this session's logbook part (merged by ``pull``)."""
+    path = Path(DATA) / "e4_logbook" / f"{session}_orchestrate.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(f"- `{stamp}` **E4 (orchestrator)** {message}\n")
+    volume.commit()
+
+
+@app.function(
+    cpu=ORCHESTRATOR_CPU, memory=ORCHESTRATOR_MEMORY, timeout=24 * 3600, **COMMON
+)
+def orchestrate(
+    budget_usd: float,
+    session: str,
+    max_running: Optional[dict[str, int]] = None,
+    skip: tuple[str, ...] = (),
+    rates: Optional[dict[str, float]] = None,
+    poll_s: int = 120,
+) -> dict:
+    """Start pending rounds in ``todo``'s queue order, within caps and budget.
+
+    Collections run one at a time on the GPU (the first failed one stops
+    collections for the session, as the old lane did); probe rounds run beside
+    them as soon as their run lands.  A round that returns without a marker
+    (e.g. OOM) is not restarted -- a human decides.  ``skip`` lists
+    ``kind:run_id`` rounds running elsewhere: a second ``probe`` on the same
+    run would rename the live analysis dir.  A restarted orchestrator with the
+    same ``session`` re-reads the journal and re-attaches to its rounds.
+    ``rates`` come from the client, whose ``E4_GPU`` picked the card; this
+    container does not see it.
+    """
+    caps = {**DEFAULT_MAX_RUNNING, **(max_running or {})}
+    rates = rates or USD_PER_H
+    volume.reload()
+    entries = _journal(session)
+    closed = {e["key"] for e in entries if e["event"] == "end"}
+    calls: dict[str, Any] = {}
+    for start in entries:
+        if start["event"] != "start" or start["key"] in closed:
+            continue
+        if start["kind"] == "orchestrate":
+            # An earlier orchestrator of this session died; it stops costing now.
+            _journal_add(
+                session,
+                {
+                    "event": "end",
+                    "key": start["key"],
+                    "t": time.time(),
+                    "outcome": "replaced",
+                },
             )
-        # Done when nothing runs and nothing new is on offer.  A job still
-        # offered after its call finished died before writing a marker (e.g.
-        # OOM); it is not respawned -- a human decides.
-        if (
-            (_finished(lane) if lane is not None else _lane_done(todo))
-            and all(_finished(c) for c in calls.values())
-            and not _offered(todo, calls.keys() | external)
-        ):
+            continue
+        try:
+            calls[start["key"]] = modal.FunctionCall.from_id(start["call_id"])
+        except Exception as error:  # noqa: BLE001
+            _journal_add(
+                session,
+                {
+                    "event": "end",
+                    "key": start["key"],
+                    "t": time.time(),
+                    "outcome": f"lost: {type(error).__name__}",
+                },
+            )
+    taken = {e["key"] for e in entries if e["event"] == "start"} | set(skip)
+    me = f"orchestrate:{time.time():.0f}"
+    _journal_add(
+        session,
+        {
+            "event": "start",
+            "key": me,
+            "kind": "orchestrate",
+            "t": time.time(),
+            "usd_per_h": rates["orchestrate"],
+            "reserve_s": 0,
+        },
+    )
+    _note(
+        session,
+        f"session `{session}` up: budget ${budget_usd:.2f}, caps {caps}, re-attached {sorted(calls)}",
+    )
+
+    held_key, collect_failed, todo = None, False, {}
+    while True:
+        for key, call in list(calls.items()):
+            outcome = _outcome(call)
+            if outcome is None:
+                continue
+            del calls[key]
+            _journal_add(
+                session,
+                {"event": "end", "key": key, "t": time.time(), "outcome": outcome},
+            )
+            _note(session, f"`{key}` returned: {outcome}")
+            if key.startswith("collect:") and outcome != "rc=0":
+                collect_failed = True
+                _note(session, "a collection failed; no more collections this session")
+        todo = _todo()
+        queue = [
+            item
+            for item in todo["queue"]
+            if not (collect_failed and item["kind"] == "collect")
+        ]
+        running = Counter(key.split(":", 1)[0] for key in calls)
+        _, committed = journal_usd(_journal(session), time.time())
+        chosen, held = pick(queue, taken, running, committed, budget_usd, caps, rates)
+        for item in chosen:
+            stage_fn = gpu_stage if item["kind"] == "collect" else cpu_stage
+            call = stage_fn.spawn(item["args"])
+            calls[item["key"]] = call
+            taken.add(item["key"])
+            _journal_add(
+                session,
+                {
+                    "event": "start",
+                    "key": item["key"],
+                    "kind": item["kind"],
+                    "call_id": call.object_id,
+                    "t": time.time(),
+                    "usd_per_h": rates[item["kind"]],
+                    "reserve_s": item["max_s"] + STARTUP_S,
+                },
+            )
+            committed += reserve_usd(item, rates)
+            _note(
+                session,
+                f"started `{item['key']}`: reserves ${reserve_usd(item, rates):.2f}, committed ${committed:.2f} of ${budget_usd:.2f}",
+            )
+        if held is not None and held["key"] != held_key:
+            held_key = held["key"]
+            _note(
+                session,
+                f"budget holds `{held_key}` and everything queued after it: it reserves ${reserve_usd(held, rates):.2f}, ${committed:.2f} of ${budget_usd:.2f} committed",
+            )
+        # A lane running elsewhere may still land runs to probe.
+        external_lane = (
+            caps.get("collect", 0) == 0 and todo["collect"] and not todo["halted"]
+        )
+        if not calls and not chosen and not external_lane:
             break
         time.sleep(poll_s)
-    return {"probes": sorted(f"{r}:{f}" for r, f in calls), "todo_at_exit": todo}
+
+    _journal_add(
+        session, {"event": "end", "key": me, "t": time.time(), "outcome": "done"}
+    )
+    spent, _ = journal_usd(_journal(session), time.time())
+    left = [item["key"] for item in todo.get("queue", []) if item["key"] not in taken]
+    _note(
+        session,
+        f"session `{session}` done: ~${spent:.2f} by the journal (limit rates, so above the bill); not started: {left or 'none'}",
+    )
+    return {
+        "session": session,
+        "spent_usd": spent,
+        "not_started": left,
+        "held": held_key,
+    }
 
 
 GPU_COMMANDS = {"s0", "s0-envs20", "s1", "s1b", "collect"}
@@ -294,17 +502,38 @@ def stage(cmd: str, mujoco_gl: str = "egl"):
 
 
 @app.local_entrypoint()
-def wave(lane: bool = True, skip: str = ""):
+def wave(
+    budget_usd: float,
+    lane: bool = True,
+    skip: str = "",
+    max_mlp: int = DEFAULT_MAX_RUNNING["mlp"],
+    max_linear: int = DEFAULT_MAX_RUNNING["linear"],
+    session: str = "",
+):
     """Spawn the orchestrator and return; run it with ``modal run --detach``.
 
     Spawned, not ``.remote()``: a detached ``.remote()`` input is cancelled when
-    the local client dies.  ``--no-lane`` probes behind a GPU lane that is
-    already running; ``--skip run_id:family,...`` names rounds in flight.
+    the local client dies.  ``--budget-usd`` is the most this session may
+    spend; keep it below the workspace's remaining Modal limit.  ``--no-lane``
+    probes behind a GPU lane that is already running; ``--skip
+    kind:run_id,...`` names rounds in flight elsewhere.  ``--session NAME``
+    continues that session's journal (its spend counts against the budget).
     """
+    if budget_usd <= 0:
+        raise SystemExit("--budget-usd must be positive")
+    session = session or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    caps = {"collect": 1 if lane else 0, "linear": max_linear, "mlp": max_mlp}
     call = orchestrate.spawn(
-        start_lane=lane, skip=tuple(item for item in skip.split(",") if item)
+        budget_usd=budget_usd,
+        session=session,
+        max_running=caps,
+        skip=tuple(item for item in skip.split(",") if item),
+        rates=USD_PER_H,
     )
-    print(f"orchestrate spawned: {call.object_id}")
+    print(
+        f"orchestrate spawned: {call.object_id}; session {session}, "
+        f"budget ${budget_usd:.2f}, caps {caps}"
+    )
 
 
 @app.local_entrypoint()

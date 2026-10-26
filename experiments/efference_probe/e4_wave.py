@@ -530,6 +530,21 @@ def sized_states(wave: Wave, run: common.PlannedRun) -> Optional[int]:
     return int(sizing["states_per_task"][run.key])
 
 
+def expected_collect_s(wave: Wave, run: common.PlannedRun) -> float:
+    """A collection's expected wall clock, before the watchdog factor."""
+    speed = (
+        float(wave.lock["speed_factor"]) if run.stage in ("s1", "s1b", "s2") else 1.0
+    )
+    expected_s = run.expected_s * speed
+    init_states = sized_states(wave, run)
+    if init_states is not None:
+        # More episodes than the wave-2 config: scale the expectation with the
+        # episode count.  An upper bound, since the sized checkpoint is the one
+        # whose episodes end early.
+        expected_s *= init_states / base_states(run)
+    return expected_s
+
+
 def collect(
     wave: Wave, run: common.PlannedRun, mujoco_gl: Optional[str] = None
 ) -> dict:
@@ -554,18 +569,13 @@ def collect(
     plan_budget = wave.plan["budget"]
     if run.stage in ("s1", "s1b", "s2"):
         lock = wave.lock
-        num_envs, speed = int(lock["num_envs"]), float(lock["speed_factor"])
+        num_envs = int(lock["num_envs"])
         mujoco_gl = lock["mujoco_gl"]
     else:
-        num_envs, speed = None, 1.0
+        num_envs = None
         mujoco_gl = mujoco_gl or os.environ.get("MUJOCO_GL", "egl")
-    expected_s = run.expected_s * speed
+    expected_s = expected_collect_s(wave, run)
     init_states = sized_states(wave, run)
-    if init_states is not None:
-        # More episodes than the wave-2 config: scale the expectation with the
-        # episode count.  An upper bound, since the sized checkpoint is the one
-        # whose episodes end early.
-        expected_s *= init_states / base_states(run)
     remaining_s = (
         plan_budget["wave_gpu_hours"] * 3600 - common.gpu_hours_used(data_root) * 3600
     )
@@ -1280,35 +1290,91 @@ def cmd_resume(wave: Wave, args) -> int:
     return 0
 
 
+def queue_rank(kind: str, run: common.PlannedRun) -> int:
+    """Scheduling order when the budget is short.
+
+    The primary R4/R5 MLP rounds (goal swap) first, then the cheap linear
+    rounds, then the R6 control-arm MLP rounds, then collections (the
+    single-seed suites).  ``modal_e4.py`` holds every round below the first
+    one that does not fit the budget.
+    """
+    if kind == "mlp":
+        return 0 if run.transform == "swap" else 2
+    return 1 if kind == "linear" else 3
+
+
 def cmd_todo(wave: Wave, args) -> int:
     """What may run next, as JSON -- the whole scheduling brain for modal_e4.py.
+
+    ``queue`` lists the same rounds in scheduling order, each with the driver
+    arguments that run it and ``max_s``, the longest the driver lets it run
+    (its watchdog), which is what the orchestrator reserves budget for.
 
     A probe round with any marker (passed *or* failed) is not offered again: a
     failure is for a human to look at, not for a loop to retry.
     """
     mlp_suites = set(wave.plan["probes"]["mlp"]["suites"])
+    budget = wave.plan["budget"]
+    factor = float(budget["watchdog_factor"])
     todo: dict[str, Any] = {
         "collect": [],
         "linear": [],
         "mlp": [],
         "halted": wave.halt_path.exists(),
     }
+    queue = []
+
+    def offer(kind: str, run: common.PlannedRun, name: str, args: list[str]) -> None:
+        if kind == "collect":
+            try:
+                expected_s = expected_collect_s(wave, run)
+            except StageError:
+                return  # not locked or not sized yet: the driver would refuse it
+            # The in-process stop, plus the grace the external watchdog allows.
+            max_s = factor * expected_s + budget["hang_grace_s"]
+        else:
+            max_s = factor * wave.plan["probes"][kind]["expected_s"]
+        queue.append(
+            {
+                "key": f"{kind}:{name}",
+                "kind": kind,
+                "args": args,
+                "max_s": max_s,
+                "rank": queue_rank(kind, run),
+            }
+        )
+
     for run in common.planned_runs(wave.plan, "s2"):
         run_id = common.completed_attempt(wave.data_root, run.run_id)
         if run_id is None:
             todo["collect"].append([run.ckpt, run.key])
+            if not todo["halted"]:
+                offer(
+                    "collect",
+                    run,
+                    run.run_id,
+                    ["collect", "--ckpt", run.ckpt, "--key", run.key],
+                )
             continue
         linear = common.job_status(wave.data_root, run_id, "probe-linear")
         if linear is None:
             todo["linear"].append(run_id)
+            offer("linear", run, run_id, probe_args(run_id, "linear"))
         elif (
             run.suite in mlp_suites
             and linear.get("ok")
             and common.job_status(wave.data_root, run_id, "probe-mlp") is None
         ):
             todo["mlp"].append(run_id)
+            offer("mlp", run, run_id, probe_args(run_id, "mlp"))
+    # Stable: plan order within a rank.
+    todo["queue"] = sorted(queue, key=lambda item: item["rank"])
     print(json.dumps(todo))
     return 0
+
+
+def probe_args(run_id: str, family: str) -> list[str]:
+    return ["probe", "--run-id", run_id, "--family", family]
 
 
 def cmd_merge_logbook(wave: Wave, args) -> int:
