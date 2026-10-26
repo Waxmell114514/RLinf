@@ -215,17 +215,40 @@ def ladder_verdict(row: RunNumbers, family: str) -> dict[str, Any]:
         }
     above = [r for r, m in margins.items() if m >= DELTA]
     cmd_ok = CMD_BAND[0] <= cmd <= CMD_BAND[1]
-    beyond = [r for r in above if numbers[r]["bacc"] >= dstates + DELTA and cmd_ok]
+    clears_dstates = [r for r in above if numbers[r]["bacc"] >= dstates + DELTA]
+    beyond = clears_dstates if cmd_ok else []
+    # Which R2 condition an above-floor run failed; either one alone suffices.
+    explained_by = []
+    if above and not clears_dstates:
+        explained_by.append("C_dstates")
+    if above and not cmd_ok:
+        explained_by.append("C_cmd")
     return {
         "status": "above" if above else "at",
         "above": above,
         "beyond_observables": beyond,
+        "explained_by": explained_by,
         "margins": margins,
         "floor": floor,
         "p2r": p2r,
         "c_dstates": dstates,
         "c_cmd": cmd,
     }
+
+
+_EXPLAINED_NAMES = {"C_dstates": "C_dstates", "C_cmd": "C_cmd off chance"}
+
+
+def explained_label(v: dict[str, Any]) -> str:
+    """The R2 condition(s) that kept an above-floor run from counting beyond observables."""
+    parts = []
+    if "C_dstates" in v["explained_by"]:
+        parts.append(f"C_dstates {v['c_dstates']:.3f}")
+    if "C_cmd" in v["explained_by"]:
+        parts.append(f"C_cmd {v['c_cmd']:.3f} outside [{CMD_BAND[0]}, {CMD_BAND[1]}]")
+        if "C_dstates" not in v["explained_by"]:
+            parts.append(f"rungs clear C_dstates {v['c_dstates']:.3f} + δ")
+    return "none (" + "; ".join(parts) + ")"
 
 
 def checkpoint_verdict(seed_rows: list[Optional[RunNumbers]], family: str) -> str:
@@ -242,8 +265,15 @@ def checkpoint_verdict(seed_rows: list[Optional[RunNumbers]], family: str) -> st
         return "above floor"
     if all(v["status"] == "at" for v in verdicts):
         return "at floor"
-    if any(v["status"] == "above" and not v["beyond_observables"] for v in verdicts):
-        return "inconclusive (above floor but explained by C_dstates in a seed)"
+    explained = [
+        v for v in verdicts if v["status"] == "above" and not v["beyond_observables"]
+    ]
+    if explained:
+        why = sorted({w for v in explained for w in v["explained_by"]})
+        return (
+            "inconclusive (above floor but explained by outcome perception in a"
+            f" seed: {' and '.join(_EXPLAINED_NAMES[w] for w in why)})"
+        )
     return "inconclusive (seeds disagree)"
 
 
@@ -510,7 +540,7 @@ def readout(plan: dict[str, Any], rows: list[RunNumbers]) -> list[str]:
             margins = ", ".join(f"{k} {m:+.3f}" for k, m in v["margins"].items())
             extra = ""
             if v["status"] == "above":
-                extra = f"; beyond observables: {v['beyond_observables'] or 'none (C_dstates ' + format(v['c_dstates'], '.3f') + ')'}"
+                extra = f"; beyond observables: {v['beyond_observables'] or explained_label(v)}"
             low_n = " — low n" if row.n is not None and row.n < LOW_N else ""
             post_hoc = (
                 " (wave-2 row; rule applied for reference)"

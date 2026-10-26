@@ -692,6 +692,19 @@ def test_checkpoint_verdict_needs_both_seeds_and_the_observables_twin():
         _numbers(0.53, (0.60, 0.55, 0.55), dstates=0.70, seed=s) for s in (1, 2)
     ]
     assert "C_dstates" in report.checkpoint_verdict(perceived, "mlp")
+    # R2's other arm: rungs clear C_dstates + δ but C_cmd is off chance, and the
+    # label must name C_cmd rather than blame C_dstates.
+    off_chance = [_numbers(0.53, (0.60, 0.55, 0.55), cmd=0.552, seed=s) for s in (1, 2)]
+    verdict = report.checkpoint_verdict(off_chance, "mlp")
+    assert "C_cmd off chance" in verdict and "C_dstates" not in verdict
+    label = report.explained_label(report.ladder_verdict(off_chance[0], "mlp"))
+    assert label == (
+        "none (C_cmd 0.552 outside [0.45, 0.55]; rungs clear C_dstates 0.500 + δ)"
+    )
+    both = report.ladder_verdict(
+        _numbers(0.53, (0.60, 0.55, 0.55), dstates=0.70, cmd=0.40), "mlp"
+    )
+    assert both["explained_by"] == ["C_dstates", "C_cmd"]
     weak = [_numbers(0.53, (0.55, 0.54, 0.54), p2r=0.58, seed=s) for s in (1, 2)]
     assert "uninformative" in report.checkpoint_verdict(weak, "mlp")
     assert report.checkpoint_verdict([above[0], None], "mlp").startswith("inconclusive")

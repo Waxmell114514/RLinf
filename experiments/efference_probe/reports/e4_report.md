@@ -10,7 +10,7 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 
 **R4/R5, mlp family (primary).** Base-Lora: at floor; GRPO: inconclusive (numbers missing). Contrast: (e) inconclusive: a checkpoint has no replicated verdict.
 
-**R4/R5, linear family (secondary).** Base-Lora: at floor; GRPO: inconclusive (above floor but explained by C_dstates in a seed). Contrast: (e) inconclusive: a checkpoint has no replicated verdict.
+**R4/R5, linear family (secondary).** Base-Lora: at floor; GRPO: inconclusive (above floor but explained by outcome perception in a seed: C_cmd off chance). Contrast: (e) inconclusive: a checkpoint has no replicated verdict.
 
 **Per-run ladders (R1-R3, R11).** δ = 0.04 over the same-family floor; 'beyond observables' also needs ≥ C_dstates + δ and C_cmd at chance (R2).
 
@@ -29,14 +29,14 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 - `e4_grpo_goal_swap_s1` linear: **at** (margins P1 +0.035, P3 +0.029, P4 +0.036)
 - `e4_sft_goal_swap_s2` linear: **at** (margins P1 +0.029, P3 +0.032, P4 +0.011)
 - `e4_sft_goal_swap_s2` mlp: **at** (margins P1 +0.018, P3 +0.011, P4 -0.013)
-- `e4_grpo_goal_swap_s2` linear: **above** (margins P1 +0.046, P3 +0.051, P4 +0.049); beyond observables: none (C_dstates 0.532)
-- `e4_sft_goal_mirror_s1` linear: **above** (margins P1 +0.100, P3 +0.103, P4 +0.119); beyond observables: none (C_dstates 0.640)
+- `e4_grpo_goal_swap_s2` linear: **above** (margins P1 +0.046, P3 +0.051, P4 +0.049); beyond observables: none (C_cmd 0.552 outside [0.45, 0.55]; rungs clear C_dstates 0.532 + δ)
+- `e4_sft_goal_mirror_s1` linear: **above** (margins P1 +0.100, P3 +0.103, P4 +0.119); beyond observables: none (C_dstates 0.640; C_cmd 0.446 outside [0.45, 0.55])
 - `e4_grpo_goal_mirror_s1` linear: **above** (margins P1 +0.149, P3 +0.156, P4 +0.170); beyond observables: ['P1', 'P3', 'P4']
 - `e4_sft_goal_freeze_s1` linear: **above** (margins P1 +0.024, P3 +0.029, P4 +0.055); beyond observables: none (C_dstates 0.636)
 - `e4_grpo_goal_freeze_s1` linear: **above** (margins P1 +0.119, P3 +0.112, P4 +0.209); beyond observables: ['P4']
 - `e4_sft_goal_mirror_s2` linear: **above** (margins P1 +0.099, P3 +0.090, P4 +0.126); beyond observables: none (C_dstates 0.664)
 - `e4_grpo_goal_mirror_s2` linear: **above** (margins P1 +0.138, P3 +0.146, P4 +0.179); beyond observables: ['P4']
-- `e4_sft_goal_freeze_s2` linear: **above** (margins P1 +0.048, P3 +0.073, P4 +0.056); beyond observables: none (C_dstates 0.667)
+- `e4_sft_goal_freeze_s2` linear: **above** (margins P1 +0.048, P3 +0.073, P4 +0.056); beyond observables: none (C_dstates 0.667; C_cmd 0.562 outside [0.45, 0.55])
 - `e4_grpo_goal_freeze_s2` linear: **above** (margins P1 +0.074, P3 +0.074, P4 +0.158); beyond observables: none (C_dstates 0.672)
 - `e4_sft_spatial_swap_s0` linear: **above** (margins P1 +0.056, P3 +0.056, P4 +0.056); beyond observables: ['P1', 'P3', 'P4'] (R10: single-seed suite)
 - `e4_grpo_spatial_swap_s0` linear: **above** (margins P1 +0.050, P3 +0.057, P4 +0.050); beyond observables: ['P1', 'P3', 'P4'] (R10: single-seed suite)
@@ -209,7 +209,7 @@ Collection (GPU) wall: **2.96 h**; probe (CPU) wall: **6.09 h**.
 This is an interim readout. The lines below restate what `e4_report.py` printed above, without new numbers.
 
 - **R4/R5, MLP family (primary).** Base-Lora: at floor. GRPO: inconclusive (numbers missing). Contrast: (e) inconclusive: a checkpoint has no replicated verdict. **Blocked by missing MLP rounds:** GRPO's verdict needs the MLP rounds on `e4_grpo_goal_swap_s1` and `e4_grpo_goal_swap_s2`, and neither finished. So the primary pre-registered contrast cannot be decided from this data.
-- **R4/R5, linear family (secondary).** Base-Lora: at floor. GRPO: inconclusive (above floor but explained by C_dstates in a seed). Contrast: (e) inconclusive: a checkpoint has no replicated verdict. In the per-run ladders above, `e4_grpo_goal_swap_s1` linear is at floor and `e4_grpo_goal_swap_s2` linear is above floor with "beyond observables: none (C_dstates 0.532)"; under R4 that is not a replicated positive.
+- **R4/R5, linear family (secondary).** Base-Lora: at floor. GRPO: inconclusive (above floor but explained by outcome perception in a seed: C_cmd off chance). Contrast: (e) inconclusive: a checkpoint has no replicated verdict. In the per-run ladders above, `e4_grpo_goal_swap_s1` linear is at floor and `e4_grpo_goal_swap_s2` linear is above floor and its rungs clear C_dstates 0.532 + δ, but its C_cmd is 0.552, just outside R2's [0.45, 0.55] chance band, so R2 calls it "explained by outcome perception"; with s1 at floor the seeds would not replicate either way, so under R4 it is not a replicated positive.
 - **R6 (mirror/freeze, MLP).** [TO VERIFY]: a Base-Lora mirror MLP round is missing. **Blocked:** all eight mirror/freeze MLP rounds are missing. The linear ladders for these arms are reported above, but R6 counts only through the MLP family's R2 test.
 - **R7 (E3 migration).** not migrated (GRPO freeze reaction on 0/2 seeds, Base-Lora on 0/2).
 - **R8 (compensation).** does not strengthen on every arm (clean-probe gap Base-Lora->GRPO: +0.05->+0.06, +0.10->+0.07, +0.17->+0.17, +0.16->+0.27).
@@ -228,3 +228,4 @@ This is an interim readout. The lines below restate what `e4_report.py` printed 
 - **Driver orchestration on Modal.** The orchestrator failed twice before it ran unattended, both times in `modal_e4.py`, and both are fixed and logged: modal 1.6's builtin `TimeoutError`, then a detached `.remote()` cancelled when the local client was killed. Collections were never affected; linear rounds started up to ~26 min late (`e4_grpo_goal_swap_s1` collected 07:14:56, linear started 07:41:21).
 - **R12 flags.** GRPO task 5 on both goal swap seeds. Base-Lora none on S2 (task 7 at pilot2). Flagged tasks are kept in every analysis.
 - **Not collected or not probed.** See the banner. `e4_sft_long_swap_s0` has a run directory on the Volume with no completion marker; a resume collects it under a new id and leaves the old one untouched.
+- **R2 reason labels corrected after generation (`e4_report.py` fix, same commit).** The generator printed every above-floor run that failed R2 as "none (C_dstates …)" and the R4 verdict as "explained by C_dstates", even when the failing R2 condition was C_cmd off its [0.45, 0.55] chance band. Verdicts are unchanged; only the reasons are relabelled, using the C_cmd values already in the tables: `e4_grpo_goal_swap_s2` linear fails on C_cmd alone (0.552, its rungs clear C_dstates + δ), and `e4_sft_goal_mirror_s1` (C_cmd 0.446) and `e4_sft_goal_freeze_s2` (C_cmd 0.562) fail on both conditions. The lines were edited by hand because the Volume data is not readable from this session; a regeneration on resume prints the same labels.
