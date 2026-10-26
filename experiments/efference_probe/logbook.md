@@ -987,3 +987,126 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - Final state: 10 of 12 probe rounds COMPLETE (linear: all 6 runs; MLP: main02, main02_mirror, main02_freeze, suite_spatial02). main02 and main02_mirror linear came from the earlier pod; 8 rounds ran on this pod. Cut: suite_object01 MLP, suite_long01 MLP. Skipped: suite_spatial01.
   - Git: the first `git push` at 09:05Z failed: `fatal: could not read Username for 'https://github.com': No such device or address`. After the operator provided a token, commits through `2600bd15` were pushed at ~10:05Z (fast-forward `cc5bc289..2600bd15`, no force).
   - Tarball (`/workspace/exports/p0_wave2_<date>.tar.gz` + `.sha256`) stays on the volume and is not committed to git.
+- `2026-10-26 03:10` **T-CODE (agent). E4 (SFT vs GRPO) prepared; no E4 run exists yet, S0 included.**
+  Scope per README S4 / E4: the wave-2 battery, unchanged, on
+  A = `RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora` (SFT) and
+  B = `RLinf/RLinf-OpenVLAOFT-LIBERO-130` (GRPO from A), both
+  `unnorm_key: libero_130_no_noops_trajall`; goal-traj1 wave-2 runs are the
+  third point and are not re-collected. Authoring box has no GPU and no torch:
+  nothing below was run against a model.
+  **How A loads (checked before any smoke run, from the weights).** A's HF repo
+  ships full root shards *and* a `lora_adapter/` (r=32, alpha=16, base
+  `openvla-7b`), while the harness hard-codes `is_lora=False`. Single tensors
+  were read from the published shards by HTTP range request
+  (`e4_ckpt_check.py merged-test`, revisions pinned in `e4_plan.yaml`):
+  `language_model.model.layers.0.input_layernorm.weight` (no adapter targets
+  it) is **bit-identical** to `openvla/openvla-7b`; the targeted
+  `layers.0.self_attn.q_proj` and vision `blocks.0.attn.qkv` differ from the
+  base by **effective rank 64** above the bf16 rounding floor (singular values
+  0.158 -> 0.021 and 0.174 -> 0.012 at the edge; 99.999% / 99.994% of the
+  delta's energy), i.e. two merged rank-32 LoRA rounds; the shipped adapter
+  explains only part of that delta (cosine 0.268 / 0.580). B sits
+  ||B-A||/||A|| = 0.00045 (q_proj) / 0.0033 (qkv) from A's root but 0.203 /
+  0.166 from root + adapter, and B's layernorm moved (full-parameter RL). So
+  A = the root as published, loaded with `is_lora=false`; applying
+  `lora_adapter/` would apply a merged round twice. The model card agrees ("to
+  evaluate the model directly, set is_lora to false"). `download` excludes the
+  adapter. Correction to a working note: an early look printed the spectrum
+  rounded to 3 decimals and read "exact rank 64"; the tail is bf16 noise, not
+  zero, and the script now counts rank against a simulated rounding floor.
+  **Other checkpoint facts.** `dataset_statistics.json` holds exactly one key,
+  `libero_130_no_noops_trajall`, in both. B carries a 5-tensor `value_head`
+  that A lacks; the harness sets `add_value_head=false`, so it is dropped at
+  load. Pinned: A `a4ea91b3897648f3c1395e5221edb40b8f53d1a4`, B
+  `473954241c8148bc9a1bf9ed547a74523e4a7d41`, four shard sha256s each.
+  **Protocol decisions (fixed now, not after seeing data).** (1) Decoding:
+  every S1/S2 arm samples at T=1.6 (= main02). The card's 49.40% goal number
+  for A is *greedy*; A's success here is reported as measured. pilot.yaml's
+  `do_sample: false` predates wave 1's switch to sampling, so the E4 pilot
+  overrides it to match S2. (2) `env.num_envs=10` for every arm unless
+  `s0-envs20` passes on both checkpoints and the operator locks 20; 10 keeps
+  batch partitioning identical to all wave-2 runs. (3) Episodes are the
+  wave-2 configs' own: goal swap 200, mirror/freeze 150 (tasks {2,3,6,8,9}),
+  spatial/object 200, **long 150** (`suite_long.yaml`, 15 states x 10 tasks),
+  not the 200 in the request, so long stays comparable with `suite_long01`.
+  (4) Seeds: goal arms s1 = seed 1 (= main02), s2 = seed 2; suites seed 0
+  (= wave 2). (5) Horizon stays at the configs' 40 calls = 320 steps
+  (long: 64 = 512); `env/libero_130.yaml` trains/evaluates at 512, so the
+  cards' success numbers need not transfer to the 320-step suites.
+  **Tooling.** `e4_plan.yaml` (each run = wave-2 config + listed overrides;
+  `tests/test_e4.py` fails if any other field moves), `e4_wave.py` (stages,
+  gates, ledger, 2x watchdog, never-reuse run ids, `--jobs` from the cgroup
+  quota), `e4_report.py`, `e4_ckpt_check.py`, `modal_e4.py` (untested against
+  a live Modal account). Offline: `test_offline.py` 56 passed,
+  `test_e4.py` 26 passed. Nothing under `rlinf/`, no probe code, transform or
+  gate was modified.
+- `2026-10-26 03:10` **E4 PRE-REGISTERED READOUT (fixed before any E4 data exists; S0 not yet run).**
+  Notation, per run r and probe family f in {linear, MLP}: F = the selection
+  floor (max over the same 27 layer x pool cells of P0, same family); X in
+  {P1, P3, P4} at its best of those 27 cells; margin(X) = X - F; C_dstates,
+  C_cmd, P2r single-cell, same family; delta = **0.04** balanced accuracy.
+  Calibration of delta, done before E4 data: it is the upper end of the
+  paper's stated detection limit ("effects below ~0.03-0.04 are undetectable
+  at these n"), and applying R1-R2 with delta=0.04 to the committed wave-2
+  numbers (`reports/p0_wave2_report.md`) reproduces every published wave-2
+  verdict; delta=0.03 would flip `suite_spatial02` and `suite_object01`
+  linear to "above floor" by <=0.005, contradicting the paper's rule-(d)
+  verdict. Pinned by `test_delta_reproduces_every_published_wave2_verdict`.
+  **R1 (rung vs floor).** X is *above floor* iff margin(X) >= 0.04. A run's
+  ladder is above floor iff at least one of P1/P3/P4 is; *at floor* iff all
+  three margins are < 0.04.
+  **R2 (observables-only twin, paper T5).** An above-floor rung counts as
+  *beyond observables* only if X >= C_dstates + 0.04 (same run, same family)
+  and C_cmd is in [0.45, 0.55]; otherwise it is "explained by outcome
+  perception".
+  **R3 (informative run, paper T4).** A run is informative only if
+  P2r >= F + 0.10; otherwise its verdict is "uninformative (intervention too
+  weak)", never "at floor".
+  **R4 (the E4 question).** Checkpoint k's ladder is *above its MLP selection
+  floor* iff on BOTH libero_goal swap seeds, under the MLP family, at least
+  one rung is above floor AND beyond observables, and both runs are
+  informative. k is *at floor* iff on both seeds all three MLP rungs are at
+  floor and both runs are informative. Anything else (one seed only, a seed
+  explained by C_dstates, an uninformative or missing run) is
+  *inconclusive / not replicated* and is never reported as a positive. The
+  same rule under the linear family is the secondary verdict.
+  **R5 (contrast; = paper Sec. 6 pre-registration).** (a) GRPO above, Base-Lora
+  at floor -> RL post-training creates an attribution-relevant representation
+  SFT lacks. (b) Both at floor -> RL post-training does not create a readable
+  attribution trace. (c) Both above -> present in both, not RL-specific
+  (then compare with goal-traj1 `main02`, at floor in wave 2). (d) Base-Lora
+  above, GRPO at floor -> reported as stated. (e) Either inconclusive -> the
+  contrast is inconclusive.
+  **R6 (mirror/freeze arms).** Above-floor rungs are expected there (visible
+  outcomes). They count only through R2: a rung beyond observables on both
+  seeds for GRPO but not for Base-Lora supports (a); otherwise these arms are
+  not evidence for attribution.
+  **R7 (E3: novelty-gated -> mismatch-gated).** Wave-2 SFT fingerprint: mirror
+  significant, freeze null. GRPO's fingerprint has *migrated* iff on both
+  GRPO freeze seeds the next call reacts in the surprise direction
+  (Delta-entropy > 0 with p < 0.05, or Delta-logprob < 0 with p < 0.05;
+  episode-level Wilcoxon) while Base-Lora freeze does so on neither seed.
+  Otherwise *not migrated*. Swap E3 is reported but not used (wave 2: 2/5
+  swap runs significant).
+  **R8 (compensation).** Clean-minus-probe success gap per arm. *Strengthens*
+  iff GRPO's gap is smaller than Base-Lora's on both swap and both mirror
+  seeds. Used only to split (b): (b) + strengthens -> "RL sharpens the
+  visual-servoing loop without new monitoring machinery".
+  **R9 (E1 positive control).** Best-cell E1 R^2 (linear) per goal swap run;
+  if < 0.30 on an E4 run, that checkpoint's verdict is withheld pending
+  inspection. Differences in E1 between checkpoints are descriptive.
+  **R10 (suites).** Spatial/object/long are one seed, linear only (S3 is
+  goal-only): R1-R3 per suite, labelled "single-seed, linear"; they can
+  corroborate, never establish, R5. Never pooled across suites.
+  **R11 (n).** GRPO episodes end early, so its runs will carry fewer probe
+  samples; floors are per run and absorb this. A run with n < 600 is labelled
+  "low n" next to its verdict.
+  **R12 (competence).** Per run and task: success rate (non-censored
+  episodes), intervention strength (median ||a_exec - a_cmd|| / ||a_cmd|| on
+  the 6 motion dims of hijacked calls) and SELF-call end-effector motion. A
+  task is flagged if success <= 0.10, or (with >= 3 tasks) strength or motion
+  <= 0.5x the run's across-task median. Flagged tasks are listed and kept in
+  every analysis; none is dropped.
+  `e4_report.py` applies R1-R12 mechanically; `e4_wave.py s2` refuses to start
+  unless this entry is in the logbook.
+- `2026-10-26 03:33` **T-CODE (agent).** Test count at commit, superseding the 03:10 entry's "test_e4.py 26": two tests were added after it -- an end-to-end readout test (R4-R9 on a complete synthetic E4 row set) and an end-to-end stage-flow test (`init -> s0 -> lock -> s1 -> s2 -> s3 -> report`, `tests/fake_collect.py` standing in for the GPU collector, real `run_probes.py` behind it, then the halt / new-id / two-strike failure paths). Offline suite: `test_offline.py` 56 + `test_e4.py` 28 = **84 passed** (py3.11, numpy 1.26.4, pandas 2.3.3, scikit-learn 1.9.1, joblib 1.6.0 -- the wave-2 analysis versions). `reports/e4_report.md` is committed as the pre-data skeleton: wave-2 rows only (transcribed, marked †), every E4 row `[TO VERIFY: not collected]`. Operator note: this file carries 361 NUL bytes from the wave-2 MooseFS outage, so plain `grep` treats it as binary -- use `grep -a`, and only ever append to it.
