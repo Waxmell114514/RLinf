@@ -833,3 +833,17 @@ def test_modal_orchestrator_never_offers_a_round_already_in_flight():
     assert (
         modal_e4._offered(todo, {("a", "linear"), ("b", "linear"), ("a", "mlp")}) == []
     )
+
+
+def test_modal_logbook_part_label_is_a_flat_file_name():
+    # The init part landed in data/e4_logbook/<stamp>_cpu_init_sft_/vol/ckpts/sft.md.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    label = modal_e4._part_label("cpu", ["init", "--sft", "/vol/ckpts/sft"])
+    assert "/" not in label
+    assert label == "cpu_init_sft_vol_ckpts_sft"
+    assert (
+        modal_e4._part_label("cpu", ["probe", "--run-id", "e4_x"])
+        == "cpu_probe_run-id_e4_x"
+    )

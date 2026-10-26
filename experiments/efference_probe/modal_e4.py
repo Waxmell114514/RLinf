@@ -151,6 +151,13 @@ def _driver(args: list[str], label: str, env: dict[str, str] | None = None) -> i
     return rc
 
 
+def _part_label(prefix: str, args: list[str]) -> str:
+    """A flat logbook-part name: ``init --sft /vol/ckpts/sft`` once made a
+    nested path that ``merge-logbook``'s ``*.md`` glob never saw."""
+    words = (a.lstrip("-").strip("/").replace("/", "_") for a in args[:3])
+    return "_".join([prefix, *words])
+
+
 def _todo() -> dict:
     volume.reload()
     out = subprocess.run(
@@ -200,7 +207,7 @@ def gpu_lane() -> list[dict]:
 # clocks (~2.2 h/run) the plan's expected_s assumes.
 @app.function(cpu=8.0, memory=32768, timeout=6 * 3600, **COMMON)
 def cpu_stage(args: list[str]) -> int:
-    return _driver(args, "cpu_" + "_".join(a.lstrip("-") for a in args[:3]))
+    return _driver(args, _part_label("cpu", args))
 
 
 def _finished(call) -> bool:

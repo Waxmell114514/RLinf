@@ -1189,3 +1189,295 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - GPU collection seconds over the whole wave: 10127 s from pilot2 on + ~538 s for S0/S1 = **~2.96 GPU-h** [TO VERIFY against `status` when Modal is reachable]. Ledger probe seconds: 21880 s completed, plus ~10 MLP rounds killed after up to ~2 h each.
   - Spend by the operator formula: ~2.96 x $2.81 = ~$8.3 GPU, plus CPU [TO VERIFY: the killed MLP containers are not in the ledger]. The workspace's actual billed total is on the Modal dashboard [TO VERIFY].
   No resume was attempted. Nothing on the Volume was deleted.
+- `2026-10-26 04:12:35` **E4 (driver)** collect `e4_sft_smoke` (s0, sft, smoke.yaml); expected 11 min, stop at 23 min; MUJOCO_GL=egl; GPU used so far 0.00/12.0 h
+- `2026-10-26 04:12:38` **START** run_id=`e4_sft_smoke` config=`/root/RLinf/experiments/efference_probe/configs/smoke.yaml` hash=`ec79fdd40555` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_smoke out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3794 notes=E4 sft smoke (Base-Lora)`
+- `2026-10-26 04:12:43` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 04:13:51` building LiberoEnv (2 parallel envs)
+- `2026-10-26 04:14:09` indexing check passed: {'max_abs_logprob_diff': 2.384185791015625e-07, 'tolerance': 0.11956295013427735, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:14:09` heartbeat: task 0 batch 0 call 0 | 0.03/0.4 h, 0.00/2 GB, 0 calls
+- `2026-10-26 04:14:12` **FAILED** run_id=`e4_sft_smoke`: ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+- `2026-10-26 04:14:15` **E4 (driver)** collect `e4_sft_smoke` failed (None): rc=1 1.7 min (expected 11), calls=-1, peak RSS 25.42 GB, peak VRAM 15848 MiB
+- `2026-10-26 04:14:15` **E4 (driver)** gate s0 sft (`e4_sft_smoke`): **FAILED** ['collection_ok', 'indexing_check_passed', 'max_abs_logprob_diff_below_1e-3', 'no_null_cells', 'hidden_calls_match_rows', 'labels_follow_schedule']
+- `2026-10-26 04:14:16` **E4 (driver)** collect `e4_grpo_smoke` (s0, grpo, smoke.yaml); expected 11 min, stop at 23 min; MUJOCO_GL=egl; GPU used so far 0.03/12.0 h
+- `2026-10-26 04:14:18` **START** run_id=`e4_grpo_smoke` config=`/root/RLinf/experiments/efference_probe/configs/smoke.yaml` hash=`f1d70b24b9ab` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_smoke out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3794 notes=E4 grpo smoke (GRPO)`
+- `2026-10-26 04:14:21` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 04:15:30` building LiberoEnv (2 parallel envs)
+- `2026-10-26 04:15:39` indexing check passed: {'max_abs_logprob_diff': 2.384185791015625e-07, 'tolerance': 0.09638646125793457, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:15:40` heartbeat: task 0 batch 0 call 0 | 0.02/0.4 h, 0.00/2 GB, 0 calls
+- `2026-10-26 04:15:42` **FAILED** run_id=`e4_grpo_smoke`: ImportError: Unable to find a usable engine; tried using: 'pyarrow', 'fastparquet'.
+- `2026-10-26 04:15:47` **E4 (driver)** collect `e4_grpo_smoke` failed (None): rc=1 1.5 min (expected 11), calls=-1, peak RSS 21.84 GB, peak VRAM 4 MiB
+- `2026-10-26 04:15:47` **E4 (driver)** gate s0 grpo (`e4_grpo_smoke`): **FAILED** ['collection_ok', 'indexing_check_passed', 'max_abs_logprob_diff_below_1e-3', 'no_null_cells', 'hidden_calls_match_rows', 'labels_follow_schedule']
+- `2026-10-26 04:28:40` **E4 (driver)** `e4_sft_smoke`: earlier attempt(s) ['e4_sft_smoke'] never completed; collecting as `e4_sft_smoke_r2` (interrupted collection = new id; nothing overwritten or deleted)
+- `2026-10-26 04:28:42` **E4 (driver)** collect `e4_sft_smoke_r2` (s0, sft, smoke.yaml); expected 11 min, stop at 23 min; MUJOCO_GL=egl; GPU used so far 0.05/12.0 h
+- `2026-10-26 04:28:44` **START** run_id=`e4_sft_smoke_r2` config=`/root/RLinf/experiments/efference_probe/configs/smoke.yaml` hash=`ec79fdd40555` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_smoke_r2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3794 notes=E4 sft smoke (Base-Lora)`
+- `2026-10-26 04:28:48` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 04:29:19` building LiberoEnv (2 parallel envs)
+- `2026-10-26 04:29:35` indexing check passed: {'max_abs_logprob_diff': 2.384185791015625e-07, 'tolerance': 0.11956295013427735, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:29:38` done: 12 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_smoke_r2/calls.parquet (0.00 GB)
+- `2026-10-26 04:29:38` **DONE** run_id=`e4_sft_smoke_r2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_smoke_r2/calls.parquet`
+- `2026-10-26 04:29:42` **E4 (driver)** collect `e4_sft_smoke_r2` ok: rc=0 1.0 min (expected 11), calls=12, peak RSS 21.39 GB, peak VRAM 9 MiB
+- `2026-10-26 04:29:42` **E4 (driver)** gate s0 sft (`e4_sft_smoke_r2`): **PASSED**
+- `2026-10-26 04:29:42` **E4 (driver)** `e4_grpo_smoke`: earlier attempt(s) ['e4_grpo_smoke'] never completed; collecting as `e4_grpo_smoke_r2` (interrupted collection = new id; nothing overwritten or deleted)
+- `2026-10-26 04:29:43` **E4 (driver)** collect `e4_grpo_smoke_r2` (s0, grpo, smoke.yaml); expected 11 min, stop at 23 min; MUJOCO_GL=egl; GPU used so far 0.07/12.0 h
+- `2026-10-26 04:29:44` **START** run_id=`e4_grpo_smoke_r2` config=`/root/RLinf/experiments/efference_probe/configs/smoke.yaml` hash=`f1d70b24b9ab` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_smoke_r2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3794 notes=E4 grpo smoke (GRPO)`
+- `2026-10-26 04:29:47` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 04:30:17` building LiberoEnv (2 parallel envs)
+- `2026-10-26 04:30:25` indexing check passed: {'max_abs_logprob_diff': 2.384185791015625e-07, 'tolerance': 0.09638646125793457, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:30:27` done: 12 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_smoke_r2/calls.parquet (0.00 GB)
+- `2026-10-26 04:30:27` **DONE** run_id=`e4_grpo_smoke_r2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_smoke_r2/calls.parquet`
+- `2026-10-26 04:30:33` **E4 (driver)** collect `e4_grpo_smoke_r2` ok: rc=0 0.8 min (expected 11), calls=12, peak RSS 21.57 GB, peak VRAM 9 MiB
+- `2026-10-26 04:30:33` **E4 (driver)** gate s0 grpo (`e4_grpo_smoke_r2`): **PASSED**
+- `2026-10-26 04:35:16` **E4 (driver)** wave constants locked for every S1/S2 arm: num_envs=10, MUJOCO_GL=egl, speed_factor=1.0
+- `2026-10-26 04:36:04` **E4 (driver)** collect `e4_sft_pilot` (s1, sft, pilot.yaml); expected 10 min, stop at 20 min; MUJOCO_GL=egl; GPU used so far 0.08/12.0 h
+- `2026-10-26 04:36:07` **START** run_id=`e4_sft_pilot` config=`/root/RLinf/experiments/efference_probe/configs/pilot.yaml` hash=`60f9b3458f44` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_pilot out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3333 notes=E4 sft pilot (Base-Lora) env.num_envs=10 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 04:36:12` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 04:36:45` building LiberoEnv (10 parallel envs)
+- `2026-10-26 04:37:16` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.23237913131713867, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:38:16` done: 544 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_pilot/calls.parquet (0.10 GB)
+- `2026-10-26 04:38:16` **DONE** run_id=`e4_sft_pilot` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_pilot/calls.parquet`
+- `2026-10-26 04:38:21` **E4 (driver)** collect `e4_sft_pilot` ok: rc=0 2.3 min (expected 10), calls=544, peak RSS 60.98 GB, peak VRAM 25464 MiB
+- `2026-10-26 04:38:21` **E4 (driver)** probe `e4_sft_pilot` pilot (--jobs 12); stop at 0.2 h
+- `2026-10-26 04:38:36` **E4 (driver)** probe `e4_sft_pilot` pilot ok: rc=0 0.2 min, plumbing.passed=True
+- `2026-10-26 04:38:36` **E4 (driver)** gate s1 sft (`e4_sft_pilot`): **FAILED** ['C_phase_in_band']
+- `2026-10-26 04:38:37` **E4 (driver)** collect `e4_grpo_pilot` (s1, grpo, pilot.yaml); expected 10 min, stop at 20 min; MUJOCO_GL=egl; GPU used so far 0.12/12.0 h
+- `2026-10-26 04:38:39` **START** run_id=`e4_grpo_pilot` config=`/root/RLinf/experiments/efference_probe/configs/pilot.yaml` hash=`6d2ee385d18a` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_pilot out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.3333 notes=E4 grpo pilot (GRPO) env.num_envs=10 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 04:38:43` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 04:39:14` building LiberoEnv (10 parallel envs)
+- `2026-10-26 04:39:31` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.19337639808654788, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 04:40:14` done: 313 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_pilot/calls.parquet (0.06 GB)
+- `2026-10-26 04:40:14` **DONE** run_id=`e4_grpo_pilot` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_pilot/calls.parquet`
+- `2026-10-26 04:40:17` **E4 (driver)** collect `e4_grpo_pilot` ok: rc=0 1.7 min (expected 10), calls=313, peak RSS 60.13 GB, peak VRAM 25463 MiB
+- `2026-10-26 04:40:17` **E4 (driver)** probe `e4_grpo_pilot` pilot (--jobs 12); stop at 0.2 h
+- `2026-10-26 04:40:37` **E4 (driver)** probe `e4_grpo_pilot` pilot ok: rc=0 0.3 min, plumbing.passed=True
+- `2026-10-26 04:40:38` **E4 (driver)** gate s1 grpo (`e4_grpo_pilot`): **FAILED** ['P0_mean_over_cells_in_band', 'C_cmd_in_band', 'C_phase_in_band']
+- `2026-10-26 06:29:53` **E4 (driver)** collect `e4_sft_pilot2` (s1b, sft, pilot.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.15/12.0 h
+- `2026-10-26 06:29:56` **START** run_id=`e4_sft_pilot2` config=`/root/RLinf/experiments/efference_probe/configs/pilot.yaml` hash=`54e749573351` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_pilot2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.5000 notes=E4 sft pilot2 (Base-Lora) env.num_envs=10 model.do_sample=true model.temperature=1.6 env.task_ids=null env.init_states_per_task=8`
+- `2026-10-26 06:30:01` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 06:30:36` building LiberoEnv (10 parallel envs)
+- `2026-10-26 06:31:09` indexing check passed: {'max_abs_logprob_diff': 9.5367431640625e-07, 'tolerance': 0.23847316741943358, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 06:34:57` heartbeat: task 7 batch 0 call 36 | 0.08/0.5 h, 0.28/10 GB, 1452 calls
+- `2026-10-26 06:36:17` done: 1958 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_pilot2/calls.parquet (0.37 GB)
+- `2026-10-26 06:36:17` **DONE** run_id=`e4_sft_pilot2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_pilot2/calls.parquet`
+- `2026-10-26 06:36:27` **E4 (driver)** collect `e4_sft_pilot2` ok: rc=0 6.5 min (expected 15), calls=1958, peak RSS 62.51 GB, peak VRAM 25464 MiB
+- `2026-10-26 06:36:27` **E4 (driver)** probe `e4_sft_pilot2` pilot (--jobs 12); stop at 0.2 h
+- `2026-10-26 06:38:32` **E4 (driver)** probe `e4_sft_pilot2` pilot ok: rc=0 2.1 min, plumbing.passed=True
+- `2026-10-26 06:38:32` **E4 (driver)** `e4_sft_pilot2`: low-competence task flags [7] (kept in every analysis; see e4_derived/<run>/competence.csv)
+- `2026-10-26 06:38:32` **E4 (driver)** gate s1b sft (`e4_sft_pilot2`): **PASSED**
+- `2026-10-26 06:38:33` **E4 (driver)** collect `e4_grpo_pilot2` (s1b, grpo, pilot.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.26/12.0 h
+- `2026-10-26 06:38:35` **START** run_id=`e4_grpo_pilot2` config=`/root/RLinf/experiments/efference_probe/configs/pilot.yaml` hash=`7dc757a87a29` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_pilot2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.5000 notes=E4 grpo pilot2 (GRPO) env.num_envs=10 model.do_sample=true model.temperature=1.6 env.task_ids=null env.init_states_per_task=8`
+- `2026-10-26 06:38:39` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 06:39:17` building LiberoEnv (10 parallel envs)
+- `2026-10-26 06:39:35` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2412325668334961, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 06:43:10` done: 1291 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_pilot2/calls.parquet (0.24 GB)
+- `2026-10-26 06:43:10` **DONE** run_id=`e4_grpo_pilot2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_pilot2/calls.parquet`
+- `2026-10-26 06:43:16` **E4 (driver)** collect `e4_grpo_pilot2` ok: rc=0 4.7 min (expected 15), calls=1291, peak RSS 61.22 GB, peak VRAM 25464 MiB
+- `2026-10-26 06:43:16` **E4 (driver)** probe `e4_grpo_pilot2` pilot (--jobs 12); stop at 0.2 h
+- `2026-10-26 06:44:31` **E4 (driver)** probe `e4_grpo_pilot2` pilot ok: rc=0 1.3 min, plumbing.passed=True
+- `2026-10-26 06:44:31` **E4 (driver)** `e4_grpo_pilot2`: low-competence task flags [5] (kept in every analysis; see e4_derived/<run>/competence.csv)
+- `2026-10-26 06:44:31` **E4 (driver)** gate s1b grpo (`e4_grpo_pilot2`): **PASSED**
+- `2026-10-26 06:45:04` **E4 (driver)** Amendment 1 sizing frozen: positives/episode sft=2.388, grpo=1.212, r=1.97; grpo S2 init_states_per_task {'goal_swap_s1': 40, 'goal_swap_s2': 40, 'goal_mirror_s1': 50, 'goal_freeze_s1': 50, 'goal_mirror_s2': 50, 'goal_freeze_s2': 50, 'spatial_swap_s0': 40, 'object_swap_s0': 40, 'long_swap_s0': 30} (cap 50)
+- `2026-10-26 06:52:48` **E4 (driver)** collect `e4_sft_goal_swap_s1` (s2, sft, main02.yaml); expected 23 min, stop at 47 min; MUJOCO_GL=egl; GPU used so far 0.34/12.0 h
+- `2026-10-26 06:52:51` **START** run_id=`e4_sft_goal_swap_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02.yaml` hash=`f061964ffb03` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_swap_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.7822 notes=E4 sft goal_swap_s1 (Base-Lora) env.num_envs=10 env.seed=1 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 06:52:54` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 06:53:27` building LiberoEnv (10 parallel envs)
+- `2026-10-26 06:53:55` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2251776885986328, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 06:57:51` heartbeat: task 5 batch 0 call 4 | 0.08/0.8 h, 0.43/30 GB, 2253 calls
+- `2026-10-26 07:02:11` done: 4832 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_swap_s1/calls.parquet (0.91 GB)
+- `2026-10-26 07:02:11` **DONE** run_id=`e4_sft_goal_swap_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_swap_s1/calls.parquet`
+- `2026-10-26 07:02:21` **E4 (driver)** collect `e4_sft_goal_swap_s1` ok: rc=0 9.4 min (expected 23), calls=4832, peak RSS 62.48 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:02:25` **E4 (driver)** collect `e4_grpo_goal_swap_s1` (s2, grpo, main02.yaml); expected 47 min, stop at 94 min; MUJOCO_GL=egl; GPU used so far 0.49/12.0 h
+- `2026-10-26 07:02:26` **START** run_id=`e4_grpo_goal_swap_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02.yaml` hash=`aaae683ae520` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_swap_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.5644 notes=E4 grpo goal_swap_s1 (GRPO) env.num_envs=10 env.seed=1 env.init_states_per_task=40 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:02:29` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 07:02:41` **E4 (driver)** probe `e4_sft_goal_swap_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:02:59` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:03:14` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.20153170585632324, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:07:27` heartbeat: task 3 batch 0 call 38 | 0.08/1.6 h, 0.34/30 GB, 1799 calls
+- `2026-10-26 07:08:57` **E4 (driver)** probe `e4_sft_goal_swap_s1` linear ok: rc=0 6.3 min, plumbing.passed=True
+- `2026-10-26 07:10:41` **E4 (driver)** probe `e4_sft_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 07:12:33` heartbeat: task 8 batch 0 call 0 | 0.17/1.6 h, 0.97/30 GB, 5133 calls
+- `2026-10-26 07:14:42` done: 6346 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_swap_s1/calls.parquet (1.19 GB)
+- `2026-10-26 07:14:42` **DONE** run_id=`e4_grpo_goal_swap_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_swap_s1/calls.parquet`
+- `2026-10-26 07:14:56` **E4 (driver)** collect `e4_grpo_goal_swap_s1` ok: rc=0 12.3 min (expected 47), calls=6346, peak RSS 61.97 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:14:56` **E4 (driver)** `e4_grpo_goal_swap_s1`: low-competence task flags [5] (kept in every analysis; see e4_derived/<run>/competence.csv)
+- `2026-10-26 07:15:01` **E4 (driver)** collect `e4_sft_goal_swap_s2` (s2, sft, main02.yaml); expected 23 min, stop at 47 min; MUJOCO_GL=egl; GPU used so far 0.70/12.0 h
+- `2026-10-26 07:15:03` **START** run_id=`e4_sft_goal_swap_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02.yaml` hash=`14ed2e58fefb` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_swap_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.7822 notes=E4 sft goal_swap_s2 (Base-Lora) env.num_envs=10 env.seed=2 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:15:06` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 07:15:40` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:15:56` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.25029932022094725, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:20:03` heartbeat: task 4 batch 1 call 39 | 0.08/0.8 h, 0.40/30 GB, 2103 calls
+- `2026-10-26 07:24:26` done: 4828 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_swap_s2/calls.parquet (0.91 GB)
+- `2026-10-26 07:24:26` **DONE** run_id=`e4_sft_goal_swap_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_swap_s2/calls.parquet`
+- `2026-10-26 07:24:38` **E4 (driver)** collect `e4_sft_goal_swap_s2` ok: rc=0 9.5 min (expected 23), calls=4828, peak RSS 61.17 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:24:42` **E4 (driver)** collect `e4_grpo_goal_swap_s2` (s2, grpo, main02.yaml); expected 47 min, stop at 94 min; MUJOCO_GL=egl; GPU used so far 0.86/12.0 h
+- `2026-10-26 07:24:44` **START** run_id=`e4_grpo_goal_swap_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02.yaml` hash=`7a690dd3a5fa` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_swap_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.5644 notes=E4 grpo goal_swap_s2 (GRPO) env.num_envs=10 env.seed=2 env.init_states_per_task=40 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:24:47` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 07:25:18` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:25:32` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.27302251815795897, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:29:44` heartbeat: task 3 batch 0 call 31 | 0.08/1.6 h, 0.33/30 GB, 1738 calls
+- `2026-10-26 07:34:44` heartbeat: task 7 batch 3 call 14 | 0.17/1.6 h, 0.92/30 GB, 4871 calls
+- `2026-10-26 07:37:35` done: 6245 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_swap_s2/calls.parquet (1.17 GB)
+- `2026-10-26 07:37:35` **DONE** run_id=`e4_grpo_goal_swap_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_swap_s2/calls.parquet`
+- `2026-10-26 07:37:47` **E4 (driver)** collect `e4_grpo_goal_swap_s2` ok: rc=0 12.9 min (expected 47), calls=6245, peak RSS 62.17 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:37:47` **E4 (driver)** `e4_grpo_goal_swap_s2`: low-competence task flags [5] (kept in every analysis; see e4_derived/<run>/competence.csv)
+- `2026-10-26 07:37:52` **E4 (driver)** collect `e4_sft_goal_mirror_s1` (s2, sft, main02_mirror.yaml); expected 25 min, stop at 50 min; MUJOCO_GL=egl; GPU used so far 1.07/12.0 h
+- `2026-10-26 07:37:53` **START** run_id=`e4_sft_goal_mirror_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`f380d2b8e140` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_mirror_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.8350 notes=E4 sft goal_mirror_s1 (Base-Lora) env.num_envs=10 env.seed=1 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:37:56` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 07:38:25` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:38:40` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.235427188873291, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:41:21` **E4 (driver)** probe `e4_grpo_goal_swap_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:41:23` **E4 (driver)** probe `e4_grpo_goal_swap_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:41:24` **E4 (driver)** probe `e4_sft_goal_swap_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:42:54` heartbeat: task 8 batch 0 call 18 | 0.08/0.8 h, 0.52/30 GB, 2743 calls
+- `2026-10-26 07:45:23` done: 4363 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_mirror_s1/calls.parquet (0.82 GB)
+- `2026-10-26 07:45:23` **DONE** run_id=`e4_sft_goal_mirror_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_mirror_s1/calls.parquet`
+- `2026-10-26 07:45:33` **E4 (driver)** collect `e4_sft_goal_mirror_s1` ok: rc=0 7.6 min (expected 25), calls=4363, peak RSS 61.12 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:45:38` **E4 (driver)** collect `e4_grpo_goal_mirror_s1` (s2, grpo, main02_mirror.yaml); expected 42 min, stop at 84 min; MUJOCO_GL=egl; GPU used so far 1.20/12.0 h
+- `2026-10-26 07:45:39` **START** run_id=`e4_grpo_goal_mirror_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`65cd4b1143e3` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_mirror_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.3917 notes=E4 grpo goal_mirror_s1 (GRPO) env.num_envs=10 env.seed=1 env.init_states_per_task=50 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:45:42` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 07:46:12` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:46:26` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.20583423614501956, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:47:14` **E4 (driver)** probe `e4_sft_goal_swap_s2` linear ok: rc=0 5.8 min, plumbing.passed=True
+- `2026-10-26 07:47:20` **E4 (driver)** probe `e4_sft_goal_mirror_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:47:25` **E4 (driver)** probe `e4_sft_goal_swap_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 07:50:40` heartbeat: task 6 batch 0 call 11 | 0.08/1.4 h, 0.46/30 GB, 2464 calls
+- `2026-10-26 07:54:10` **E4 (driver)** probe `e4_sft_goal_mirror_s1` linear ok: rc=0 6.8 min, plumbing.passed=True
+- `2026-10-26 07:55:25` **E4 (driver)** probe `e4_sft_goal_mirror_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 07:55:43` heartbeat: task 9 batch 3 call 0 | 0.17/1.4 h, 0.92/30 GB, 4868 calls
+- `2026-10-26 07:56:37` done: 5332 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_mirror_s1/calls.parquet (1.00 GB)
+- `2026-10-26 07:56:37` **DONE** run_id=`e4_grpo_goal_mirror_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_mirror_s1/calls.parquet`
+- `2026-10-26 07:56:51` **E4 (driver)** collect `e4_grpo_goal_mirror_s1` ok: rc=0 11.1 min (expected 42), calls=5332, peak RSS 61.38 GB, peak VRAM 25467 MiB
+- `2026-10-26 07:56:56` **E4 (driver)** collect `e4_sft_goal_freeze_s1` (s2, sft, main02_freeze.yaml); expected 25 min, stop at 51 min; MUJOCO_GL=egl; GPU used so far 1.38/12.0 h
+- `2026-10-26 07:56:57` **START** run_id=`e4_sft_goal_freeze_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02_freeze.yaml` hash=`78ef44e8006c` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_freeze_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.8433 notes=E4 sft goal_freeze_s1 (Base-Lora) env.num_envs=10 env.seed=1 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 07:57:00` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 07:57:30` **E4 (driver)** probe `e4_grpo_goal_mirror_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 07:57:31` building LiberoEnv (10 parallel envs)
+- `2026-10-26 07:57:39` **E4 (driver)** probe `e4_grpo_goal_swap_s2` linear ok: rc=0 16.3 min, plumbing.passed=True
+- `2026-10-26 07:57:47` indexing check passed: {'max_abs_logprob_diff': 9.5367431640625e-07, 'tolerance': 0.2522344207763672, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 07:59:28` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:00:02` **E4 (driver)** probe `e4_grpo_goal_swap_s1` linear ok: rc=0 18.7 min, plumbing.passed=True
+- `2026-10-26 08:01:29` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:01:57` heartbeat: task 8 batch 2 call 0 | 0.08/0.8 h, 0.51/30 GB, 2728 calls
+- `2026-10-26 08:03:31` done: 3822 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_freeze_s1/calls.parquet (0.72 GB)
+- `2026-10-26 08:03:31` **DONE** run_id=`e4_sft_goal_freeze_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_freeze_s1/calls.parquet`
+- `2026-10-26 08:03:41` **E4 (driver)** collect `e4_sft_goal_freeze_s1` ok: rc=0 6.7 min (expected 25), calls=3822, peak RSS 60.95 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:03:46` **E4 (driver)** collect `e4_grpo_goal_freeze_s1` (s2, grpo, main02_freeze.yaml); expected 42 min, stop at 84 min; MUJOCO_GL=egl; GPU used so far 1.50/12.0 h
+- `2026-10-26 08:03:48` **START** run_id=`e4_grpo_goal_freeze_s1` config=`/root/RLinf/experiments/efference_probe/configs/main02_freeze.yaml` hash=`daa037a2499a` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_freeze_s1 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.4056 notes=E4 grpo goal_freeze_s1 (GRPO) env.num_envs=10 env.seed=1 env.init_states_per_task=50 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:03:50` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 08:04:21` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:04:36` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.21003185272216796, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:05:37` **E4 (driver)** probe `e4_sft_goal_freeze_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:08:48` heartbeat: task 6 batch 3 call 29 | 0.08/1.4 h, 0.48/30 GB, 2552 calls
+- `2026-10-26 08:09:16` **E4 (driver)** probe `e4_grpo_goal_mirror_s1` linear ok: rc=0 11.8 min, plumbing.passed=True
+- `2026-10-26 08:09:37` **E4 (driver)** probe `e4_grpo_goal_mirror_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:12:58` done: 4513 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_freeze_s1/calls.parquet (0.85 GB)
+- `2026-10-26 08:12:58` **DONE** run_id=`e4_grpo_goal_freeze_s1` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_freeze_s1/calls.parquet`
+- `2026-10-26 08:13:08` **E4 (driver)** collect `e4_grpo_goal_freeze_s1` ok: rc=0 9.3 min (expected 42), calls=4513, peak RSS 61.23 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:13:12` **E4 (driver)** collect `e4_sft_goal_mirror_s2` (s2, sft, main02_mirror.yaml); expected 25 min, stop at 50 min; MUJOCO_GL=egl; GPU used so far 1.65/12.0 h
+- `2026-10-26 08:13:14` **START** run_id=`e4_sft_goal_mirror_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`2a024cc91c08` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_mirror_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.8350 notes=E4 sft goal_mirror_s2 (Base-Lora) env.num_envs=10 env.seed=2 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:13:17` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 08:13:42` **E4 (driver)** probe `e4_grpo_goal_freeze_s1` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:13:48` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:14:03` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.3018893623352051, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:16:57` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261026T081657Z` (not deleted)
+- `2026-10-26 08:16:57` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:18:14` heartbeat: task 8 batch 0 call 6 | 0.08/0.8 h, 0.50/30 GB, 2626 calls
+- `2026-10-26 08:19:54` **E4 (driver)** probe `e4_sft_goal_freeze_s1` linear ok: rc=0 14.3 min, plumbing.passed=True
+- `2026-10-26 08:20:37` done: 4198 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_mirror_s2/calls.parquet (0.79 GB)
+- `2026-10-26 08:20:37` **DONE** run_id=`e4_sft_goal_mirror_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_mirror_s2/calls.parquet`
+- `2026-10-26 08:20:48` **E4 (driver)** collect `e4_sft_goal_mirror_s2` ok: rc=0 7.5 min (expected 25), calls=4198, peak RSS 60.85 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:20:53` **E4 (driver)** collect `e4_grpo_goal_mirror_s2` (s2, grpo, main02_mirror.yaml); expected 42 min, stop at 84 min; MUJOCO_GL=egl; GPU used so far 1.77/12.0 h
+- `2026-10-26 08:20:55` **START** run_id=`e4_grpo_goal_mirror_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`2de798dac738` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_mirror_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.3917 notes=E4 grpo goal_mirror_s2 (GRPO) env.num_envs=10 env.seed=2 env.init_states_per_task=50 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:20:57` **E4 (driver)** probe `e4_grpo_goal_freeze_s1` linear ok: rc=0 7.3 min, plumbing.passed=True
+- `2026-10-26 08:20:57` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 08:21:27` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:21:42` **E4 (driver)** probe `e4_sft_goal_mirror_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:21:43` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.21125593185424807, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:21:43` **E4 (driver)** probe `e4_sft_goal_freeze_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:21:47` **E4 (driver)** probe `e4_grpo_goal_freeze_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:26:04` heartbeat: task 6 batch 0 call 0 | 0.09/1.4 h, 0.47/30 GB, 2487 calls
+- `2026-10-26 08:27:52` **E4 (driver)** probe `e4_sft_goal_mirror_s2` linear ok: rc=0 6.2 min, plumbing.passed=True
+- `2026-10-26 08:29:47` **E4 (driver)** probe `e4_sft_goal_mirror_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:31:05` heartbeat: task 9 batch 2 call 19 | 0.17/1.4 h, 0.91/30 GB, 4844 calls
+- `2026-10-26 08:32:14` done: 5626 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_mirror_s2/calls.parquet (1.06 GB)
+- `2026-10-26 08:32:14` **DONE** run_id=`e4_grpo_goal_mirror_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_mirror_s2/calls.parquet`
+- `2026-10-26 08:32:26` **E4 (driver)** collect `e4_grpo_goal_mirror_s2` ok: rc=0 11.4 min (expected 42), calls=5626, peak RSS 61.64 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:32:31` **E4 (driver)** collect `e4_sft_goal_freeze_s2` (s2, sft, main02_freeze.yaml); expected 25 min, stop at 51 min; MUJOCO_GL=egl; GPU used so far 1.97/12.0 h
+- `2026-10-26 08:32:32` **START** run_id=`e4_sft_goal_freeze_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02_freeze.yaml` hash=`555435dd030b` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_goal_freeze_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.8433 notes=E4 sft goal_freeze_s2 (Base-Lora) env.num_envs=10 env.seed=2 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:32:35` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 08:33:06` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:33:21` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2317694664001465, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:33:54` **E4 (driver)** probe `e4_grpo_goal_mirror_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:37:33` heartbeat: task 8 batch 2 call 0 | 0.08/0.8 h, 0.48/30 GB, 2532 calls
+- `2026-10-26 08:39:08` done: 3612 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_freeze_s2/calls.parquet (0.68 GB)
+- `2026-10-26 08:39:08` **DONE** run_id=`e4_sft_goal_freeze_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_goal_freeze_s2/calls.parquet`
+- `2026-10-26 08:39:17` **E4 (driver)** collect `e4_sft_goal_freeze_s2` ok: rc=0 6.7 min (expected 25), calls=3612, peak RSS 61.01 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:39:21` **E4 (driver)** collect `e4_grpo_goal_freeze_s2` (s2, grpo, main02_freeze.yaml); expected 42 min, stop at 84 min; MUJOCO_GL=egl; GPU used so far 2.08/12.0 h
+- `2026-10-26 08:39:23` **START** run_id=`e4_grpo_goal_freeze_s2` config=`/root/RLinf/experiments/efference_probe/configs/main02_freeze.yaml` hash=`a54e1c737ded` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_goal_freeze_s2 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.4056 notes=E4 grpo goal_freeze_s2 (GRPO) env.num_envs=10 env.seed=2 env.init_states_per_task=50 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:39:25` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 08:39:55` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:39:58` **E4 (driver)** probe `e4_sft_goal_freeze_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:40:09` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.25908185958862306, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:44:10` **E4 (driver)** probe `e4_grpo_goal_mirror_s2` linear ok: rc=0 10.3 min, plumbing.passed=True
+- `2026-10-26 08:44:23` heartbeat: task 6 batch 2 call 21 | 0.08/1.4 h, 0.45/30 GB, 2387 calls
+- `2026-10-26 08:45:58` **E4 (driver)** probe `e4_sft_goal_freeze_s2` linear ok: rc=0 6.0 min, plumbing.passed=True
+- `2026-10-26 08:46:00` **E4 (driver)** probe `e4_grpo_goal_mirror_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:48:06` **E4 (driver)** probe `e4_sft_goal_freeze_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 08:48:22` done: 4482 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_freeze_s2/calls.parquet (0.84 GB)
+- `2026-10-26 08:48:22` **DONE** run_id=`e4_grpo_goal_freeze_s2` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_goal_freeze_s2/calls.parquet`
+- `2026-10-26 08:48:33` **E4 (driver)** collect `e4_grpo_goal_freeze_s2` ok: rc=0 9.1 min (expected 42), calls=4482, peak RSS 61.51 GB, peak VRAM 25467 MiB
+- `2026-10-26 08:48:37` **E4 (driver)** collect `e4_sft_spatial_swap_s0` (s2, sft, suite_spatial.yaml); expected 33 min, stop at 66 min; MUJOCO_GL=egl; GPU used so far 2.23/12.0 h
+- `2026-10-26 08:48:39` **START** run_id=`e4_sft_spatial_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_spatial.yaml` hash=`0950e3ff3dbb` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_spatial_swap_s0 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.1044 notes=E4 sft spatial_swap_s0 (Base-Lora) env.num_envs=10 env.seed=0 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:48:41` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 08:49:11` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:49:26` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2686763381958008, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 08:50:06` **E4 (driver)** probe `e4_grpo_goal_freeze_s2` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 08:53:39` heartbeat: task 4 batch 1 call 33 | 0.08/1.1 h, 0.40/30 GB, 2132 calls
+- `2026-10-26 08:58:35` done: 4794 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_spatial_swap_s0/calls.parquet (0.90 GB)
+- `2026-10-26 08:58:35` **DONE** run_id=`e4_sft_spatial_swap_s0` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_spatial_swap_s0/calls.parquet`
+- `2026-10-26 08:58:44` **E4 (driver)** collect `e4_sft_spatial_swap_s0` ok: rc=0 10.0 min (expected 33), calls=4794, peak RSS 65.05 GB, peak VRAM 26288 MiB
+- `2026-10-26 08:58:49` **E4 (driver)** collect `e4_grpo_spatial_swap_s0` (s2, grpo, suite_spatial.yaml); expected 66 min, stop at 133 min; MUJOCO_GL=egl; GPU used so far 2.39/12.0 h
+- `2026-10-26 08:58:50` **START** run_id=`e4_grpo_spatial_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_spatial.yaml` hash=`c3d06b40cd04` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_spatial_swap_s0 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=2.2089 notes=E4 grpo spatial_swap_s0 (GRPO) env.num_envs=10 env.seed=0 env.init_states_per_task=40 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 08:58:53` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 08:59:23` building LiberoEnv (10 parallel envs)
+- `2026-10-26 08:59:40` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.24766237258911133, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 09:00:25` **E4 (driver)** probe `e4_sft_spatial_swap_s0` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 09:02:41` **E4 (driver)** probe `e4_sft_goal_swap_s1` mlp ok: rc=0 112.0 min, plumbing.passed=True
+- `2026-10-26 09:03:43` **E4 (driver)** probe `e4_grpo_goal_freeze_s2` linear ok: rc=0 13.6 min, plumbing.passed=True
+- `2026-10-26 09:03:53` heartbeat: task 4 batch 1 call 0 | 0.08/2.2 h, 0.43/30 GB, 2262 calls
+- `2026-10-26 09:04:11` **E4 (driver)** probe `e4_grpo_goal_freeze_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-26 09:06:10` **E4 (driver)** probe `e4_sft_spatial_swap_s0` linear ok: rc=0 5.8 min, plumbing.passed=True
+- `2026-10-26 09:08:54` heartbeat: task 8 batch 1 call 16 | 0.17/2.2 h, 0.90/30 GB, 4765 calls
+- `2026-10-26 09:10:43` done: 5807 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_spatial_swap_s0/calls.parquet (1.09 GB)
+- `2026-10-26 09:10:43` **DONE** run_id=`e4_grpo_spatial_swap_s0` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_spatial_swap_s0/calls.parquet`
+- `2026-10-26 09:10:57` **E4 (driver)** collect `e4_grpo_spatial_swap_s0` ok: rc=0 12.0 min (expected 66), calls=5807, peak RSS 65.77 GB, peak VRAM 26288 MiB
+- `2026-10-26 09:11:02` **E4 (driver)** collect `e4_sft_object_swap_s0` (s2, sft, suite_object.yaml); expected 25 min, stop at 50 min; MUJOCO_GL=egl; GPU used so far 2.59/12.0 h
+- `2026-10-26 09:11:04` **START** run_id=`e4_sft_object_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_object.yaml` hash=`e9c9ec4aebd5` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_object_swap_s0 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=0.8367 notes=E4 sft object_swap_s0 (Base-Lora) env.num_envs=10 env.seed=0 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 09:11:07` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 09:11:38` building LiberoEnv (10 parallel envs)
+- `2026-10-26 09:11:57` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.26981407165527344, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 09:12:21` **E4 (driver)** probe `e4_grpo_spatial_swap_s0` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 09:16:04` heartbeat: task 4 batch 0 call 36 | 0.08/0.8 h, 0.45/30 GB, 2367 calls
+- `2026-10-26 09:20:52` **E4 (driver)** probe `e4_grpo_spatial_swap_s0` linear ok: rc=0 8.5 min, plumbing.passed=True
+- `2026-10-26 09:21:05` heartbeat: task 9 batch 1 call 29 | 0.17/0.8 h, 1.01/30 GB, 5359 calls
+- `2026-10-26 09:21:18` done: 5713 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_object_swap_s0/calls.parquet (1.07 GB)
+- `2026-10-26 09:21:18` **DONE** run_id=`e4_sft_object_swap_s0` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_sft_object_swap_s0/calls.parquet`
+- `2026-10-26 09:21:30` **E4 (driver)** collect `e4_sft_object_swap_s0` ok: rc=0 10.3 min (expected 25), calls=5713, peak RSS 65.41 GB, peak VRAM 25667 MiB
+- `2026-10-26 09:21:35` **E4 (driver)** collect `e4_grpo_object_swap_s0` (s2, grpo, suite_object.yaml); expected 50 min, stop at 100 min; MUJOCO_GL=egl; GPU used so far 2.77/12.0 h
+- `2026-10-26 09:21:36` **START** run_id=`e4_grpo_object_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_object.yaml` hash=`265688ad535e` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_object_swap_s0 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.6733 notes=E4 grpo object_swap_s0 (GRPO) env.num_envs=10 env.seed=0 env.init_states_per_task=40 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 09:21:39` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo
+- `2026-10-26 09:22:08` building LiberoEnv (10 parallel envs)
+- `2026-10-26 09:22:27` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.24602540969848635, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 09:22:27` **E4 (driver)** probe `e4_sft_object_swap_s0` linear (--jobs 24); stop at 0.4 h
+- `2026-10-26 09:26:37` heartbeat: task 3 batch 2 call 0 | 0.08/1.7 h, 0.51/30 GB, 2690 calls
+- `2026-10-26 09:29:30` **E4 (driver)** probe `e4_sft_goal_swap_s2` mlp ok: rc=0 102.1 min, plumbing.passed=True
+- `2026-10-26 09:31:37` heartbeat: task 8 batch 1 call 9 | 0.17/1.7 h, 1.12/30 GB, 5934 calls
+- `2026-10-26 09:32:12` **E4 (driver)** probe `e4_sft_object_swap_s0` linear ok: rc=0 9.8 min, plumbing.passed=True
+- `2026-10-26 09:33:12` done: 7104 calls -> /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_object_swap_s0/calls.parquet (1.33 GB)
+- `2026-10-26 09:33:12` **DONE** run_id=`e4_grpo_object_swap_s0` -> `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data/e4_grpo_object_swap_s0/calls.parquet`
+- `2026-10-26 09:33:25` **E4 (driver)** collect `e4_grpo_object_swap_s0` ok: rc=0 11.7 min (expected 50), calls=7104, peak RSS 65.53 GB, peak VRAM 25667 MiB
+- `2026-10-26 09:33:30` **E4 (driver)** collect `e4_sft_long_swap_s0` (s2, sft, suite_long.yaml); expected 31 min, stop at 62 min; MUJOCO_GL=egl; GPU used so far 2.96/12.0 h
+- `2026-10-26 09:33:32` **START** run_id=`e4_sft_long_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_long.yaml` hash=`8c9f8f269779` overrides=`model.model_path=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_long_swap_s0 out_root=/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/data budget.max_gpu_hours=1.0267 notes=E4 sft long_swap_s0 (Base-Lora) env.num_envs=10 env.seed=0 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 09:33:35` loading checkpoint /__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft
+- `2026-10-26 09:34:06` building LiberoEnv (10 parallel envs)
+- `2026-10-26 04:12:07` **E4 (driver)** checkpoints registered: sft=`RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora@a4ea91b38976` at `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/sft` (sha256 verified), grpo=`RLinf/RLinf-OpenVLAOFT-LIBERO-130@473954241c81` at `/__modal/volumes/vo-LkP78BoclJFMtmrzGoDw4Y/ckpts/grpo` (sha256 verified)
+- `2026-10-26 11:30` **INTERIM REPORT (agent, E4 Modal session).** Operator answer verified in the parent transcript ("先出中期报告 (Recommended)": no Modal spend, Volume reads only). Pulled 421dac0. Data fetched with `modal volume get` / `ls` only (no `modal run`, no containers) into `data/` (git-ignored): every S2 and pilot run's manifest.json, run_config.yaml, calls.parquet, and the `analysis/` and `analysis_mlp/` dirs that hold both probe_results.csv and summary.md (S2 linear: 15; MLP: 2; incomplete `analysis_mlp/` dirs on 10 goal runs were skipped), plus `.e4_status/`, `e4_ledger/`, `e4_gates/`, `e4_derived/`, `e4_logbook/`, `e4_logs/`, `e4_state.json`. No hidden/ or frames/; nothing on the Volume modified. `merge-logbook` appended 290 lines (prefix byte-identical, 361 NULs intact). The `init` part had been written under a nested path (`<stamp>_cpu_init_sft_/vol/ckpts/sft.md`) that the `*.md` glob misses; it was merged from a flat local copy (+1 line, so it sits out of time order), and `modal_e4._part_label` now flattens labels (test `test_modal_logbook_part_label_is_a_flat_file_name`; offline suite **96 passed**). `e4_report.py --data-root data` wrote `reports/e4_report.md`. The generated tables were not edited; an INTERIM banner, "Readout in plain words" and "Surprises / could not verify" were added. Generated verdicts: R4/R5 MLP: Base-Lora at floor, GRPO inconclusive (numbers missing), contrast (e). Linear: Base-Lora at floor, GRPO inconclusive (above floor but explained by C_dstates in a seed), contrast (e). R6 [TO VERIFY] (MLP missing). R7 not migrated (0/2, 0/2). R8 does not strengthen on every arm. R9 Base-Lora 0.471 / 0.484, GRPO 0.670 / 0.700. GPU 2.96 h, probe CPU 6.09 h (completed rounds). The 13 MLP driver starts for 12 rounds include `e4_grpo_goal_swap_s1` twice (08:01:29, 08:16:57; the first `analysis_mlp` was renamed `.partial_20261026T081657Z`, kept); cause [TO VERIFY].
