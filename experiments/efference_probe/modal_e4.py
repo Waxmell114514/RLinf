@@ -33,8 +33,19 @@ from pathlib import Path
 import modal
 
 GPU = os.environ.get("E4_GPU", "L40S")
-REPO_LOCAL = Path(__file__).resolve().parents[2]
 REPO = "/root/RLinf"
+
+
+def _repo_local(module_file: str, local: bool) -> Path:
+    """The repo root on the client; in a container, the mounted copy.
+
+    Modal imports this file as ``/root/modal_e4.py`` inside the container,
+    which has no ``parents[2]``; the image spec is not rebuilt there.
+    """
+    return Path(module_file).resolve().parents[2] if local else Path(REPO)
+
+
+REPO_LOCAL = _repo_local(__file__, modal.is_local())
 VOL = "/vol"
 DATA = f"{VOL}/data"
 INSTALL = "/opt/rlinf"

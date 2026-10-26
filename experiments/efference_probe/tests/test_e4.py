@@ -643,3 +643,14 @@ def test_report_renders_with_nothing_collected(tmp_path):
     for line in text.splitlines():
         if "`e4_" in line and line.startswith("|"):
             assert "[TO VERIFY" in line
+
+
+def test_modal_launcher_imports_inside_the_container():
+    # Modal imports the launcher as /root/modal_e4.py in every container.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    assert modal_e4._repo_local("/root/modal_e4.py", local=False) == Path(
+        modal_e4.REPO
+    )
+    assert modal_e4.REPO_LOCAL == Path(__file__).resolve().parents[2].parent
