@@ -1023,3 +1023,32 @@ def test_modal_logbook_part_label_is_a_flat_file_name():
         modal_e4._part_label("cpu", ["probe", "--run-id", "e4_x"])
         == "cpu_probe_run-id_e4_x"
     )
+
+
+def test_volume_copy_plans_only_missing_or_changed_files_and_verifies_them():
+    from efference_probe import e4_copy_volume as copy
+
+    old = {
+        "/ckpts/sft/model-00001.safetensors": 5,
+        "/data/e4_state.json": 1,
+        "/data/e4_x/hidden/ep00001.npz": 3,
+        "/data/e4_x/calls.parquet": 2,
+    }
+    new = {"/data/e4_state.json": 1, "/data/e4_x/calls.parquet": 9}
+    assert copy.to_copy(old, new, ()) == [
+        "/ckpts/sft/model-00001.safetensors",
+        "/data/e4_x/calls.parquet",
+        "/data/e4_x/hidden/ep00001.npz",
+    ]
+    assert copy.to_copy(old, new, ("/ckpts",)) == [
+        "/data/e4_x/calls.parquet",
+        "/data/e4_x/hidden/ep00001.npz",
+    ]
+    assert copy.unit("/data/e4_x/hidden/ep00001.npz") == "data/e4_x"
+    assert copy.unit("/ckpts/sft/model-00001.safetensors") == "ckpts/sft"
+    assert copy.unit("/data/e4_state.json") == "data"
+    assert copy.differences(old, new, ("/ckpts",)) == [
+        "missing /data/e4_x/hidden/ep00001.npz",
+        "size /data/e4_x/calls.parquet: old 2 new 9",
+    ]
+    assert copy.differences(old, dict(old), ()) == []
