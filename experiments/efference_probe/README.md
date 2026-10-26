@@ -177,8 +177,30 @@ they are linear-family diagnostics that the linear pass already produced.
 - **P5** (vision/projector features): re-collect with
   `--set capture.capture_vision=true`, then `--probes P5`.
 - **E3(iii)** undo-alignment: already reported under `extra.undo_alignment`.
-- **E4** SFT vs GRPO: rerun `main.yaml` with the other checkpoint and a new
-  `run_id`, then compare ladders.
+- **E4** SFT vs GRPO: see [E4](#e4--sft-vs-grpo-on-the-same-architecture)
+  below.
+
+### E4 — SFT vs GRPO on the same architecture
+
+The wave-2 battery, unchanged, on `RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora`
+(SFT) and `RLinf/RLinf-OpenVLAOFT-LIBERO-130` (GRPO from it), both with
+`unnorm_key: libero_130_no_noops_trajall`. The existing wave-2 runs are the
+third point and are not re-collected.
+
+- `e4_plan.yaml` declares every run as *an existing wave-2 config plus
+  overrides*; `tests/test_e4.py` resolves each one through `load_config` and
+  fails if anything else moved.
+- `e4_ckpt_check.py merged-test` settles how A loads: its root weights are
+  already merged (untargeted weights bit-identical to `openvla-7b`, targeted
+  ones moved by a rank-64 delta, and GRPO sits next to the root, not next to
+  root + `lora_adapter/`), so the harness's `is_lora=False` is right and the
+  adapter must not be applied. `verify` checks a local copy against the pinned
+  revision and shard sha256s.
+- `e4_wave.py` drives the stages (`init`, `s0`, `lock`, `s1`, `s2`, `s3`) and
+  stops at each gate; `e4_report.py` writes `reports/e4_report.md` and applies
+  the readout pre-registered in `logbook.md` (`E4 PRE-REGISTERED READOUT`).
+- `modal_e4.py` runs the same commands on Modal (one GPU lane, parallel CPU
+  probe lanes, one Volume); it is untested against a live account.
 
 ---
 
@@ -195,7 +217,8 @@ probes.py     grouped-CV logistic probes and the E1 ridge readout   [sklearn]
 analysis.py   the ladder, controls, E1, E3, markdown summary
 figures.py    F1-F5 and the T1 run card
 run_collect.py / run_probes.py    CLI entry points
-tests/        synthetic run generator + 31 offline tests
+e4_*.py, e4_plan.yaml, modal_e4.py    E4 wave: plan, driver, report, Modal
+tests/        synthetic run generator + offline tests
 ```
 
 The split is deliberate: everything from `datasets.py` rightwards runs without
