@@ -1,8 +1,11 @@
-**INTERIM — Modal workspace spend limit hit 09:33-09:37 UTC; missing: e4_sft_long_swap_s0 and e4_grpo_long_swap_s0 collections, e4_grpo_object_swap_s0 linear, 10 of 12 MLP rounds (only sft goal_swap s1/s2 done). Every missing value is [TO VERIFY].**
+**INTERIM, closed with the data in hand (operator decision, 2026-10-27).** Missing, so every value for these is [TO VERIFY]:
+- `e4_grpo_goal_swap_s1` MLP: three Modal launches, all preempted or on hosts past the pace rule; no result.
+- All eight goal mirror/freeze MLP rounds (R6).
+- `e4_grpo_long_swap_s0` linear: stopped at its 1600 s watchdog with 199/200 permutations done; the Amendment 2 re-run was not run.
 
 # E4 report — SFT vs GRPO on the unchanged hijack→probe battery
 
-Generated 2026-10-26T11:06:42Z by `e4_report.py` from `experiments/efference_probe/data`. Every number is read from a results file; † = transcribed from `reports/p0_wave2_report.md` because that run's analysis directory was not available here. `[TO VERIFY]` = not found, not estimated.
+Generated 2026-10-27T13:29:05Z by `e4_report.py` from a client-side copy of the Modal Volume's results (everything but `hidden/` and `frames/`). Every number is read from a results file; † = transcribed from `reports/p0_wave2_report.md` because that run's analysis directory was not available here. `[TO VERIFY]` = not found, not estimated.
 
 Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; that suite's own SFT checkpoint elsewhere), Base-Lora (`RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora`) and GRPO (`RLinf/RLinf-OpenVLAOFT-LIBERO-130`). Probe rungs are the best of 27 layer×pool cells ± fold sd, read against the same-family P0 floor.
 
@@ -30,6 +33,7 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 - `e4_sft_goal_swap_s2` linear: **at** (margins P1 +0.029, P3 +0.032, P4 +0.011)
 - `e4_sft_goal_swap_s2` mlp: **at** (margins P1 +0.018, P3 +0.011, P4 -0.013)
 - `e4_grpo_goal_swap_s2` linear: **above** (margins P1 +0.046, P3 +0.051, P4 +0.049); beyond observables: none (C_cmd 0.552 outside [0.45, 0.55]; rungs clear C_dstates 0.532 + δ)
+- `e4_grpo_goal_swap_s2` mlp: **above** (margins P1 +0.064, P3 +0.060, P4 +0.051); beyond observables: none (C_dstates 0.568)
 - `e4_sft_goal_mirror_s1` linear: **above** (margins P1 +0.100, P3 +0.103, P4 +0.119); beyond observables: none (C_dstates 0.640; C_cmd 0.446 outside [0.45, 0.55])
 - `e4_grpo_goal_mirror_s1` linear: **above** (margins P1 +0.149, P3 +0.156, P4 +0.170); beyond observables: ['P1', 'P3', 'P4']
 - `e4_sft_goal_freeze_s1` linear: **above** (margins P1 +0.024, P3 +0.029, P4 +0.055); beyond observables: none (C_dstates 0.636)
@@ -41,6 +45,8 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 - `e4_sft_spatial_swap_s0` linear: **above** (margins P1 +0.056, P3 +0.056, P4 +0.056); beyond observables: ['P1', 'P3', 'P4'] (R10: single-seed suite)
 - `e4_grpo_spatial_swap_s0` linear: **above** (margins P1 +0.050, P3 +0.057, P4 +0.050); beyond observables: ['P1', 'P3', 'P4'] (R10: single-seed suite)
 - `e4_sft_object_swap_s0` linear: **above** (margins P1 +0.037, P3 +0.036, P4 +0.042); beyond observables: none (C_dstates 0.577) (R10: single-seed suite)
+- `e4_grpo_object_swap_s0` linear: **above** (margins P1 +0.062, P3 +0.059, P4 +0.053); beyond observables: none (C_dstates 0.531) (R10: single-seed suite)
+- `e4_sft_long_swap_s0_r2` linear: **at** (margins P1 +0.021, P3 +0.021, P4 +0.033) (R10: single-seed suite)
 
 **R6 (mirror/freeze, MLP).** [TO VERIFY]: a Base-Lora mirror MLP round is missing.
 
@@ -68,7 +74,7 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 | Base-Lora | `e4_sft_goal_swap_s1` | 1 | 968 | 0.525 | 0.536±0.047 | 0.545±0.037 | 0.552±0.018 | 0.846±0.023 | 0.541±0.042 | 0.508±0.043 | n/a (linear-only) | -0.0049 (0.157) | +0.756 (0.063) | 0.61 / 0.60 / 0.65 | 138 |
 | GRPO | `e4_grpo_goal_swap_s1` | 1 | [TO VERIFY: missing: no mlp round] |  |  |  |  |  |  |  |  |  |  |  |  |
 | Base-Lora | `e4_sft_goal_swap_s2` | 2 | 948 | 0.538 | 0.556±0.018 | 0.549±0.023 | 0.525±0.023 | 0.856±0.026 | 0.529±0.050 | 0.521±0.040 | n/a (linear-only) | +0.0167 (0.310) | -0.864 (0.166) | 0.61 / 0.60 / 0.69 | 128 |
-| GRPO | `e4_grpo_goal_swap_s2` | 2 | [TO VERIFY: missing: no mlp round] |  |  |  |  |  |  |  |  |  |  |  |  |
+| GRPO | `e4_grpo_goal_swap_s2` | 2 | 858 | 0.527 | 0.591±0.027 | 0.586±0.023 | 0.578±0.012 | 0.705±0.025 | 0.568±0.058 | 0.513±0.049 | n/a (linear-only) | -0.0203 (0.422) | +0.023 (0.209) | 0.95 / 0.93 / 1.00 | 245 |
 
 ## libero_goal / mirror / linear
 
@@ -124,15 +130,15 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | object-traj1† | `suite_object01` | 0 | 1478 | 0.542 | 0.566±0.026 | 0.565±0.028 | 0.576±0.022 | 0.800±0.023 | 0.513±0.016 | 0.512±0.019 | [TO VERIFY]: not in the wave-2 report | +0.0128 (0.011) | -1.619 (0.0036) | 0.21 / 0.18 / 0.31 | 153 |
 | Base-Lora | `e4_sft_object_swap_s0` | 0 | 1178 | 0.509 | 0.546±0.026 | 0.545±0.023 | 0.551±0.048 | 0.880±0.020 | 0.577±0.036 | 0.527±0.031 | 0.443 (L32/act_mean) | +0.0342 (0.144) | -1.157 (0.606) | 0.56 / 0.53 / 0.67 | 147 |
-| GRPO | `e4_grpo_object_swap_s0` | 0 | [TO VERIFY: missing: no completed analysis directory] |  |  |  |  |  |  |  |  |  |  |  |  |
+| GRPO | `e4_grpo_object_swap_s0` | 0 | 1082 | 0.505 | 0.567±0.036 | 0.564±0.027 | 0.558±0.033 | 0.625±0.038 | 0.531±0.042 | 0.510±0.030 | 0.596 (L28/act_mean) | +0.0247 (0.591) | -1.835 (0.457) | 0.97 / 0.96 / 1.00 | 284 |
 
 ## libero_long / swap / linear
 
 | row | run | seed | n | P0 floor | P1 | P3 | P4 | P2r | C_dstates | C_cmd | E1 R² (cell) | E3 Δentropy (p) | E3 Δlogprob (p) | success all / probe / clean | n_ep |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | libero10-traj1† | `suite_long01` | 0 | 2354 | 0.523 | 0.546±0.013 | 0.545±0.014 | 0.549±0.026 | 0.774±0.018 | 0.512±0.016 | 0.488±0.017 | [TO VERIFY]: not in the wave-2 report | +0.0020 (0.428) | -0.473 (0.260) | 0.07 / 0.04 / 0.22 | 123 |
-| Base-Lora | `e4_sft_long_swap_s0` | 0 | [TO VERIFY: missing: not collected] |  |  |  |  |  |  |  |  |  |  |  |  |
-| GRPO | `e4_grpo_long_swap_s0` | 0 | [TO VERIFY: missing: not collected] |  |  |  |  |  |  |  |  |  |  |  |  |
+| Base-Lora | `e4_sft_long_swap_s0_r2` | 0 | 1974 | 0.515 | 0.536±0.029 | 0.536±0.016 | 0.548±0.020 | 0.844±0.015 | 0.505±0.023 | 0.481±0.028 | 0.390 (L32/act_mean) | +0.0394 (0.015) | -1.990 (0.0075) | 0.33 / 0.30 / 0.44 | 123 |
+| GRPO | `e4_grpo_long_swap_s0` | 0 | [TO VERIFY: missing: no completed analysis directory] |  |  |  |  |  |  |  |  |  |  |  |  |
 
 ## Wall-clock ledger
 
@@ -183,8 +189,14 @@ Rows: the existing wave-2 checkpoint for that suite (goal-traj1 on libero_goal; 
 | 2026-10-26T09:12:21Z | probe-linear | `e4_grpo_spatial_swap_s0` | 0 | 8.5 | ok |
 | 2026-10-26T09:21:44Z | collect | `e4_grpo_object_swap_s0` | 0 | 11.7 | ok |
 | 2026-10-26T09:22:27Z | probe-linear | `e4_sft_object_swap_s0` | 0 | 9.8 | ok |
+| 2026-10-26T14:42:13Z | probe-linear | `e4_grpo_object_swap_s0` | 0 | 14.6 | ok |
+| 2026-10-26T14:42:25Z | collect | `e4_sft_long_swap_s0_r2` | 0 | 16.6 | ok |
+| 2026-10-26T15:01:00Z | collect | `e4_grpo_long_swap_s0` | 0 | 22.7 | ok |
+| 2026-10-26T15:01:41Z | probe-linear | `e4_sft_long_swap_s0_r2` | 0 | 25.1 | ok |
+| 2026-10-26T15:25:33Z | probe-linear | `e4_grpo_long_swap_s0` | -2 | 26.8 | failed |
+| 2026-10-27T08:51:50Z | probe-mlp | `e4_grpo_goal_swap_s2` | 0 | 209.8 | ok |
 
-Collection (GPU) wall: **2.96 h**; probe (CPU) wall: **6.09 h**.
+Collection (GPU) wall: **3.62 h**; probe (CPU) wall: **10.69 h**.
 
 ## Low-competence task flags (R12; kept in every analysis)
 
@@ -203,18 +215,52 @@ Collection (GPU) wall: **2.96 h**; probe (CPU) wall: **6.09 h**.
 - `e4_sft_spatial_swap_s0`: none
 - `e4_grpo_spatial_swap_s0`: none
 - `e4_sft_object_swap_s0`: none
+- `e4_grpo_object_swap_s0`: none
+- `e4_sft_long_swap_s0_r2`: [4, 8]
 
 ## Readout in plain words
 
-This is an interim readout. The lines below restate what `e4_report.py` printed above, without new numbers.
+The lines below restate what `e4_report.py` printed above; they add no numbers.
 
-- **R4/R5, MLP family (primary).** Base-Lora: at floor. GRPO: inconclusive (numbers missing). Contrast: (e) inconclusive: a checkpoint has no replicated verdict. **Blocked by missing MLP rounds:** GRPO's verdict needs the MLP rounds on `e4_grpo_goal_swap_s1` and `e4_grpo_goal_swap_s2`, and neither finished. So the primary pre-registered contrast cannot be decided from this data.
-- **R4/R5, linear family (secondary).** Base-Lora: at floor. GRPO: inconclusive (above floor but explained by outcome perception in a seed: C_cmd off chance). Contrast: (e) inconclusive: a checkpoint has no replicated verdict. In the per-run ladders above, `e4_grpo_goal_swap_s1` linear is at floor and `e4_grpo_goal_swap_s2` linear is above floor and its rungs clear C_dstates 0.532 + δ, but its C_cmd is 0.552, just outside R2's [0.45, 0.55] chance band, so R2 calls it "explained by outcome perception"; with s1 at floor the seeds would not replicate either way, so under R4 it is not a replicated positive.
-- **R6 (mirror/freeze, MLP).** [TO VERIFY]: a Base-Lora mirror MLP round is missing. **Blocked:** all eight mirror/freeze MLP rounds are missing. The linear ladders for these arms are reported above, but R6 counts only through the MLP family's R2 test.
-- **R7 (E3 migration).** not migrated (GRPO freeze reaction on 0/2 seeds, Base-Lora on 0/2).
-- **R8 (compensation).** does not strengthen on every arm (clean-probe gap Base-Lora->GRPO: +0.05->+0.06, +0.10->+0.07, +0.17->+0.17, +0.16->+0.27).
-- **R9 (E1 positive control).** Base-Lora s1: 0.471 (L28/act_mean); Base-Lora s2: 0.484 (L28/act_mean); GRPO s1: 0.670 (L28/act_mean); GRPO s2: 0.700 (L28/act_mean). All four are above R9's 0.30 withholding threshold.
-- **R10 (suites, single seed, linear).** Spatial and object are reported for Base-Lora, and spatial for GRPO. GRPO object and both long runs are missing, so the suites cannot corroborate anything for GRPO beyond spatial.
+- **R4/R5, MLP family (primary).**
+  - Base-Lora is at floor on both goal-swap seeds.
+  - GRPO is inconclusive. The generator says "numbers missing" because the s1 MLP round is absent, but s2 alone already fixes the verdict:
+    - s2 is above floor (margins P1 +0.064, P3 +0.060, P4 +0.051);
+    - s2 is informative (P2r 0.705);
+    - no rung reaches C_dstates (0.568) + δ, so R2 calls it outcome perception;
+    - under R4 a seed explained by C_dstates makes the checkpoint inconclusive, whatever s1 would have shown.
+  - Contrast: (e) inconclusive.
+- **R4/R5, linear family (secondary).**
+  - Base-Lora is at floor on both seeds.
+  - GRPO s1 is at floor (margins +0.035/+0.029/+0.036, all below δ).
+  - GRPO s2 is above floor, and its rungs clear C_dstates 0.532 + δ. But its C_cmd is 0.552, just outside [0.45, 0.55], so R2 calls it explained by outcome perception.
+  - Contrast: (e) inconclusive.
+- **R6 (mirror/freeze, MLP).** Blocked: all eight MLP rounds are missing.
+  - In the linear family, which R6 does not count, GRPO is beyond observables on mirror s1 (P1/P3/P4), mirror s2 (P4) and freeze s1 (P4); Base-Lora is beyond observables on none.
+  - That is the only place the GRPO-vs-SFT pattern points toward (a), and it would count only through the MLP R2 test on both seeds.
+- **R7 (E3 migration).** Not migrated: GRPO freeze reacts on 0/2 seeds, Base-Lora on 0/2.
+- **R8 (compensation).** Does not strengthen on every arm.
+- **R9 (E1 positive control).** All four goal-swap runs are above 0.30, so no verdict is withheld.
+- **R10 (suites, single seed, linear; corroborate only).**
+  - Spatial: both checkpoints are above floor and beyond observables.
+  - Object: both are above floor and explained by C_dstates (Base-Lora 0.577, GRPO 0.531).
+  - Long: Base-Lora (`_r2`) is at floor; GRPO is missing.
+  - With R5 at (e) there is nothing for the suites to corroborate.
+
+## What this means for the paper's hypotheses [interpretation, not a pre-registered verdict]
+
+- **The RL-attribution hypothesis is not supported on the primary arm.**
+  - The paper asks whether anything inside the policy registers that an executed action was not its own.
+  - Its pre-registered RL comparison expects an RL-post-trained sibling to show this beyond what observables explain, if RL builds attribution-relevant representation.
+  - On the stealthy swap arm, the one seed with a complete GRPO MLP ladder rises above floor, while Base-Lora stays at floor on both seeds. But an observables-only probe on Δs reaches 0.568 in the same family, within δ of every rung (P1 − C_dstates = +0.023).
+  - What GRPO adds over SFT is, at this detection limit, readable from the outcome alone: the paper's T5 pattern, now on a policy trained on the consequences of its own actions.
+- **It is not the clean (b) either.**
+  - GRPO is not at floor: on s2 its ladder separates from floor in both families, which Base-Lora's never does on goal swap (on spatial, single seed and linear only, both checkpoints are above floor and beyond observables).
+  - The pre-registration keeps this as "inconclusive / not replicated" and never as a positive. Its R2 call rests on C_dstates in the MLP family, whose fold sd is 0.058, and on C_cmd only 0.002 past the band edge in the linear family. Both are close calls.
+- **The open question is the mirror/freeze arms (R6).**
+  - There, GRPO's linear rungs exceed C_dstates + δ on three of four arm×seed cells and Base-Lora's on none.
+  - If that held under the MLP twin on both seeds, it would be the evidence for (a) that swap could not give.
+  - Until those rounds run, it is a lead, not a result.
 
 ## Surprises / could not verify
 
@@ -227,5 +273,17 @@ This is an interim readout. The lines below restate what `e4_report.py` printed 
 - **Logbook part lost to a path.** The `init` part was written under a nested path (`.../e4_logbook/<stamp>_cpu_init_sft_/vol/ckpts/sft.md`), which `merge-logbook`'s `*.md` glob does not see. It was merged by hand from a flat local copy, so it appears at the end of the logbook rather than in time order. The label is now sanitized.
 - **Driver orchestration on Modal.** The orchestrator failed twice before it ran unattended, both times in `modal_e4.py`, and both are fixed and logged: modal 1.6's builtin `TimeoutError`, then a detached `.remote()` cancelled when the local client was killed. Collections were never affected; linear rounds started up to ~26 min late (`e4_grpo_goal_swap_s1` collected 07:14:56, linear started 07:41:21).
 - **R12 flags.** GRPO task 5 on both goal swap seeds. Base-Lora none on S2 (task 7 at pilot2). Flagged tasks are kept in every analysis.
-- **Not collected or not probed.** See the banner. `e4_sft_long_swap_s0` has a run directory on the Volume with no completion marker; a resume collects it under a new id and leaves the old one untouched.
 - **R2 reason labels corrected after generation (`e4_report.py` fix, same commit).** The generator printed every above-floor run that failed R2 as "none (C_dstates …)" and the R4 verdict as "explained by C_dstates", even when the failing R2 condition was C_cmd off its [0.45, 0.55] chance band. Verdicts are unchanged; only the reasons are relabelled, using the C_cmd values already in the tables: `e4_grpo_goal_swap_s2` linear fails on C_cmd alone (0.552, its rungs clear C_dstates + δ), and `e4_sft_goal_mirror_s1` (C_cmd 0.446) and `e4_sft_goal_freeze_s2` (C_cmd 0.562) fail on both conditions. The lines were edited by hand because the Volume data is not readable from this session; a regeneration on resume prints the same labels.
+- **Second Modal workspace.** After the first workspace's spend limit, the Volume (9151 files, 47.50 GB) was copied client-side to a new workspace and verified file by file by size (`e4_copy_volume.py`). `init` re-registered the checkpoints there, re-checking their sha256, because `e4_state.json` recorded the old Volume's mount path.
+- **Preemption made long CPU rounds unreliable on Modal.** On the new workspace, CPU probe containers were preempted six times: four times with Modal's "Container terminated due to preemption" message, and two simultaneous deaths at ~15:00 UTC on 2026-10-26 [cause TO VERIFY]. An MLP round cannot checkpoint, so each preemption restarted it from zero. `e4_grpo_goal_swap_s1` lost an attempt at ~70% of its round (12:43 UTC, 2026-10-27).
+- **Host speed varied ~2x.** Preemptible 24-CPU hosts on the new workspace ran 1.9-2.8x the old workspace's SFT reference pace, by stage. A non-preemptible host ran 2.3x slower per core while using 23.1 of its 24 cores, at 3x the price, and was stopped after 30 min. Amendment 3 (logbook) relaxed the pace line to 3x and the MLP watchdog to 7 h for the last s1 launch only.
+- **A launcher change of mine halved the probe CPUs.** The 12-core limit in b4963f0 gave probe containers 12 CPUs instead of the 24 a bare `cpu=8.0` had given, because one Modal core is one container CPU. It is now 24.
+- **Orchestrator gap.** After a preemption, Modal can mark a call FAILURE in its call graph while `get(timeout=0)` still raises `TimeoutError`, so the orchestrator kept that call's slot. This is documented in `modal_e4.py`.
+- **libero_long linear rounds need more time.** The SFT long round took 1506.6 s against the 1600 s watchdog. GRPO's was stopped at 1600 s with 199/200 permutations done, an estimated ~1800-2000 s round. Amendment 2 sets long-suite linear rounds to 1600 s expected; the re-run was not done.
+- **Spend.** The new workspace's dashboard read $7.11 when the first resume was stopped (operator). List-price estimates since then:
+  - non-preemptible try ~$2.0;
+  - two s1 pace-rule stops ~$0.6 each;
+  - s2 ~$3.9;
+  - s1 launch 3 ~$3.6;
+  - total ~$17.8 [TO VERIFY on the dashboard].
+- **R12.** `e4_sft_long_swap_s0_r2` flags tasks 4 and 8 (kept in every analysis). The run was collected as `_r2` because the interrupted first attempt's directory exists and is kept.

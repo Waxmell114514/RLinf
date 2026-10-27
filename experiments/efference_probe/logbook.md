@@ -1494,3 +1494,72 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-27 09:45` **E4 (s1 launch 2 stopped; decision to the operator).** `probe_round --launch 2` for `mlp:e4_grpo_goal_swap_s1` (app ap-blaYQVf1TDGIMCdmI8hQLE) loaded samples at 09:19:02 and had no P0 result by 09:44 (+25 min, over the 2x line). Stopped at 09:44:47, ~26 min, no marker; not relaunched (two slow hosts in a row). Pace so far on this workspace: s2 1.87x the SFT reference to its first P0 and 1.93x to P1; s1 >2.2x on both 24-CPU preemptible hosts and 2.3x on the non-preemptible one, but 16 min to its first P0 on a 12-CPU host in the second wave. Host speed varies, and 24 visible CPUs may not mean 24 physical cores [TO VERIFY]. s2 continues, projected to finish ~12:30 UTC. Modal spend since the $7.11 read, at list price: ~$2.0 (non-preemptible try) + ~$0.6 + ~$0.6 (the two s1 stops) + s2 [TO VERIFY on the dashboard].
 - `2026-10-27 09:47` **E4 OPERATIONAL AMENDMENT 3 (operator decision, before launch).** On this workspace preemptible 24-CPU hosts ran ~1.9-2.3x the SFT reference pace (s2 1.87x and 1.93x; s1 >2.2x twice), so the old-workspace 2x pace line rejects ordinary hosts. For `mlp:e4_grpo_goal_swap_s1` launch 3 only: driver `--speed-factor 1.5` (MLP watchdog 7.0 h instead of 4.7 h; the factor is recorded in the status file) and Modal function timeout 8 h; pace line 3x (first P0 result by +34.5 min, else stopped by hand). It runs in parallel with s2, at most 2 attempts. Estimate ~4-4.5 h, ~$5-6; worst case with one preemption restart ~$12. No probe, gate or readout change.
 - `2026-10-27 13:22` **E4 (preemptible primary rounds: s2 done, s1 no result).** `mlp:e4_grpo_goal_swap_s2` (app ap-3DgMHc5ZnnIFh6bt5olimc, attempt 1) finished ok at 12:21:41 UTC: rc=0, 12590.9 s, plumbing passed, peak tree RSS 27.73 GB, ~2.0x the SFT reference pace. Read through `e4_report.ladder_verdict`: floor 0.527; P1/P3/P4 0.591/0.586/0.578 (above floor by +0.064/+0.059/+0.051); P2r 0.705 (informative); C_dstates 0.568, so no rung clears C_dstates + 0.04 = 0.608 and it is explained by outcome perception (C_dstates); C_cmd 0.513 (in band). Under R4 the GRPO MLP verdict is therefore inconclusive whatever s1 shows. `mlp:e4_grpo_goal_swap_s1` launch 3 (speed factor 1.5): attempt 1 reached the best-hidden P4 at 12:43:45, ~70% of the round, and was preempted before 13:06; attempt 2 started 13:06:15 and was preempted within ~15 min; the restart refused under `MAX_PROBE_ATTEMPTS` and the app was stopped at 13:21. No s1 marker. Preemptions of long CPU rounds seen on this workspace: 6. Modal spend estimate at list price since the $7.11 read: ~$2.0 + $0.6 + $0.6 + ~$3.9 (s2) + ~$3.6 (s1 launch 3) = ~$10.7, so ~$17.8 used and ~$12 left [TO VERIFY on the dashboard].
+- `2026-10-26 14:39:41` **E4 (driver)** checkpoints registered: sft=`RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora@a4ea91b38976` at `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft` (sha256 verified), grpo=`RLinf/RLinf-OpenVLAOFT-LIBERO-130@473954241c81` at `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo` (sha256 verified)
+- `2026-10-26 14:41:18` **E4 (orchestrator)** session `20261026T144109Z` up: budget $24.00, caps {'collect': 1, 'linear': 2, 'mlp': 2}, re-attached []
+- `2026-10-26 14:41:33` **E4 (orchestrator)** started `mlp:e4_grpo_goal_swap_s1`: reserves $4.51, committed $4.51 of $24.00
+- `2026-10-26 14:41:37` **E4 (orchestrator)** started `mlp:e4_grpo_goal_swap_s2`: reserves $4.51, committed $9.02 of $24.00
+- `2026-10-26 14:41:39` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261026T144139Z` (not deleted)
+- `2026-10-26 14:41:39` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 12); stop at 4.7 h
+- `2026-10-26 14:41:43` **E4 (orchestrator)** started `linear:e4_grpo_object_swap_s0`: reserves $0.50, committed $9.52 of $24.00
+- `2026-10-26 14:41:49` **E4 (orchestrator)** started `collect:e4_sft_long_swap_s0`: reserves $4.47, committed $13.99 of $24.00
+- `2026-10-26 14:41:55` **E4 (driver)** `e4_sft_long_swap_s0`: earlier attempt(s) ['e4_sft_long_swap_s0'] never completed; collecting as `e4_sft_long_swap_s0_r2` (interrupted collection = new id; nothing overwritten or deleted)
+- `2026-10-26 14:41:57` **E4 (driver)** `e4_grpo_goal_swap_s2`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261026T144157Z` (not deleted)
+- `2026-10-26 14:41:57` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp (--jobs 12); stop at 4.7 h
+- `2026-10-26 14:42:13` **E4 (driver)** probe `e4_grpo_object_swap_s0` linear (--jobs 12); stop at 0.4 h
+- `2026-10-26 14:42:14` **E4 (driver)** collect `e4_sft_long_swap_s0_r2` (s2, sft, suite_long.yaml); expected 31 min, stop at 62 min; MUJOCO_GL=egl; GPU used so far 2.96/12.0 h
+- `2026-10-26 14:42:16` **START** run_id=`e4_sft_long_swap_s0_r2` config=`/root/RLinf/experiments/efference_probe/configs/suite_long.yaml` hash=`ef005b582195` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=e4_sft_long_swap_s0_r2 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data budget.max_gpu_hours=1.0267 notes=E4 sft long_swap_s0 (Base-Lora) env.num_envs=10 env.seed=0 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 14:42:20` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft
+- `2026-10-26 14:43:03` building LiberoEnv (10 parallel envs)
+- `2026-10-26 14:43:43` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.25886457443237304, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 14:47:17` heartbeat: task 2 batch 0 call 62 | 0.08/1.0 h, 0.31/30 GB, 1638 calls
+- `2026-10-26 14:52:17` heartbeat: task 5 batch 1 call 26 | 0.17/1.0 h, 0.86/30 GB, 4560 calls
+- `2026-10-26 14:56:49` **E4 (driver)** probe `e4_grpo_object_swap_s0` linear ok: rc=0 14.6 min, plumbing.passed=True
+- `2026-10-26 14:57:22` heartbeat: task 9 batch 0 call 0 | 0.25/1.0 h, 1.37/30 GB, 7291 calls
+- `2026-10-26 14:58:15` **E4 (orchestrator)** `linear:e4_grpo_object_swap_s0` returned: rc=0
+- `2026-10-26 14:58:47` done: 8206 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/e4_sft_long_swap_s0_r2/calls.parquet (1.54 GB)
+- `2026-10-26 14:58:47` **DONE** run_id=`e4_sft_long_swap_s0_r2` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/e4_sft_long_swap_s0_r2/calls.parquet`
+- `2026-10-26 14:59:02` **E4 (driver)** collect `e4_sft_long_swap_s0_r2` ok: rc=0 16.6 min (expected 31), calls=8206, peak RSS 73.27 GB, peak VRAM 29401 MiB
+- `2026-10-26 14:59:02` **E4 (driver)** `e4_sft_long_swap_s0_r2`: low-competence task flags [4, 8] (kept in every analysis; see e4_derived/<run>/competence.csv)
+- `2026-10-26 15:00:24` **E4 (orchestrator)** `collect:e4_sft_long_swap_s0` returned: rc=0
+- `2026-10-26 15:00:34` **E4 (orchestrator)** started `linear:e4_sft_long_swap_s0_r2`: reserves $0.50, committed $10.81 of $24.00
+- `2026-10-26 15:00:39` **E4 (orchestrator)** started `collect:e4_grpo_long_swap_s0`: reserves $7.84, committed $18.64 of $24.00
+- `2026-10-26 15:00:41` **E4 (driver)** collect `e4_grpo_long_swap_s0` (s2, grpo, suite_long.yaml); expected 62 min, stop at 123 min; MUJOCO_GL=egl; GPU used so far 3.24/12.0 h
+- `2026-10-26 15:00:43` **START** run_id=`e4_grpo_long_swap_s0` config=`/root/RLinf/experiments/efference_probe/configs/suite_long.yaml` hash=`45b021aff90d` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=e4_grpo_long_swap_s0 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data budget.max_gpu_hours=2.0533 notes=E4 grpo long_swap_s0 (GRPO) env.num_envs=10 env.seed=0 env.init_states_per_task=30 model.do_sample=true model.temperature=1.6`
+- `2026-10-26 15:00:47` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-26 15:01:41` **E4 (driver)** probe `e4_sft_long_swap_s0_r2` linear (--jobs 12); stop at 0.4 h
+- `2026-10-26 15:01:42` building LiberoEnv (10 parallel envs)
+- `2026-10-26 15:02:12` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2100075721740723, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-26 15:02:31` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261026T150231Z` (not deleted)
+- `2026-10-26 15:02:31` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 12); stop at 4.7 h
+- `2026-10-26 15:03:02` **E4 (driver)** `e4_grpo_goal_swap_s2`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261026T150302Z` (not deleted)
+- `2026-10-26 15:03:02` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp (--jobs 12); stop at 4.7 h
+- `2026-10-26 15:05:46` heartbeat: task 1 batch 2 call 0 | 0.08/2.1 h, 0.37/30 GB, 1945 calls
+- `2026-10-26 15:11:01` heartbeat: task 4 batch 0 call 0 | 0.17/2.1 h, 0.84/30 GB, 4464 calls
+- `2026-10-26 15:16:01` heartbeat: task 6 batch 1 call 54 | 0.25/2.1 h, 1.26/30 GB, 6725 calls
+- `2026-10-26 15:21:10` heartbeat: task 9 batch 0 call 0 | 0.34/2.1 h, 1.94/30 GB, 10343 calls
+- `2026-10-26 15:23:18` done: 11709 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/e4_grpo_long_swap_s0/calls.parquet (2.20 GB)
+- `2026-10-26 15:23:18` **DONE** run_id=`e4_grpo_long_swap_s0` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/e4_grpo_long_swap_s0/calls.parquet`
+- `2026-10-26 15:23:42` **E4 (driver)** collect `e4_grpo_long_swap_s0` ok: rc=0 22.7 min (expected 62), calls=11709, peak RSS 72.41 GB, peak VRAM 29402 MiB
+- `2026-10-26 15:25:21` **E4 (orchestrator)** `collect:e4_grpo_long_swap_s0` returned: rc=0
+- `2026-10-26 15:25:30` **E4 (orchestrator)** started `linear:e4_grpo_long_swap_s0`: reserves $0.50, committed $12.67 of $24.00
+- `2026-10-26 15:25:33` **E4 (driver)** probe `e4_grpo_long_swap_s0` linear (--jobs 12); stop at 0.4 h
+- `2026-10-26 15:26:48` **E4 (driver)** probe `e4_sft_long_swap_s0_r2` linear ok: rc=0 25.1 min, plumbing.passed=True
+- `2026-10-26 15:27:36` **E4 (orchestrator)** `linear:e4_sft_long_swap_s0_r2` returned: rc=0
+- `2026-10-26 15:52:14` **E4 (driver)** watchdog: `run_probes.py` passed 0.44 h (pid 31); stopping it
+- `2026-10-26 15:52:14` **E4 (driver)** watchdog: sent SIGINT to process group 31
+- `2026-10-26 15:52:19` **E4 (driver)** probe `e4_grpo_long_swap_s0` linear FAILED: rc=-2 26.8 min, plumbing.passed=True
+- `2026-10-26 15:54:34` **E4 (orchestrator)** `linear:e4_grpo_long_swap_s0` returned: rc=1
+- `2026-10-27 03:08:29` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T030829Z` (not deleted)
+- `2026-10-27 03:08:29` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-27 08:51:34` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T085134Z` (not deleted)
+- `2026-10-27 08:51:34` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-27 08:51:48` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-27 08:51:50` **E4 (driver)** `e4_grpo_goal_swap_s2`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T085150Z` (not deleted)
+- `2026-10-27 08:51:50` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-27 09:18:57` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T091857Z` (not deleted)
+- `2026-10-27 09:18:57` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24); stop at 4.7 h
+- `2026-10-27 09:48:03` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T094803Z` (not deleted)
+- `2026-10-27 09:48:03` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24, speed factor 1.5); stop at 7.0 h
+- `2026-10-27 12:21:41` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp ok: rc=0 209.8 min, plumbing.passed=True
+- `2026-10-27 13:06:15` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T130615Z` (not deleted)
+- `2026-10-27 13:06:15` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24, speed factor 1.5); stop at 7.0 h
