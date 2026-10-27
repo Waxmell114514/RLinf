@@ -232,6 +232,19 @@ def cpu_stage(args: list[str]) -> int:
     return _driver(args, _part_label("cpu", args))
 
 
+# A preempted MLP round restarts from zero (it cannot checkpoint); this one is
+# never preempted, at Modal's 3x price for CPU and memory.
+@app.function(
+    cpu=PROBE_CPU,
+    memory=PROBE_MEMORY,
+    timeout=6 * 3600,
+    nonpreemptible=True,
+    **COMMON,
+)
+def cpu_stage_nonpreemptible(args: list[str]) -> int:
+    return _driver(args, _part_label("cpu_np", args))
+
+
 def _outcome(call) -> Optional[str]:
     """None while a spawned call runs; once it has returned, failed or expired, how.
 
@@ -538,6 +551,15 @@ def wave(
         f"orchestrate spawned: {call.object_id}; session {session}, "
         f"budget ${budget_usd:.2f}, caps {caps}"
     )
+
+
+@app.local_entrypoint()
+def probe_np(run_id: str, family: str = "mlp"):
+    """Spawn one non-preemptible probe round and return; use ``--detach``."""
+    call = cpu_stage_nonpreemptible.spawn(
+        ["probe", "--run-id", run_id, "--family", family]
+    )
+    print(f"{family} {run_id}: spawned {call.object_id} (non-preemptible)")
 
 
 @app.local_entrypoint()
