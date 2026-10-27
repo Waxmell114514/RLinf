@@ -261,12 +261,16 @@ def claim_attempt(path: Path, cap: int = MAX_PROBE_ATTEMPTS) -> Optional[int]:
     return len(seen) + 1
 
 
-@app.function(cpu=PROBE_CPU, memory=PROBE_MEMORY, timeout=6 * 3600, **COMMON)
-def probe_stage(run_id: str, family: str, launch: int = 1) -> int:
+# 8 h: room for the driver's watchdog at --speed-factor 1.5 (7 h for MLP).
+@app.function(cpu=PROBE_CPU, memory=PROBE_MEMORY, timeout=8 * 3600, **COMMON)
+def probe_stage(
+    run_id: str, family: str, launch: int = 1, speed_factor: float = 1.0
+) -> int:
     """One probe round, preemptible, at most ``MAX_PROBE_ATTEMPTS`` starts.
 
     ``launch`` > 1 is a deliberate relaunch (logged in the logbook) with its
     own attempt count; earlier launches' counts stay on the Volume.
+    ``speed_factor`` is the driver's: it scales the expected time and watchdog.
     """
     label = _part_label("probe", [run_id, family]) + (
         f"_launch{launch}" if launch > 1 else ""
@@ -279,7 +283,16 @@ def probe_stage(run_id: str, family: str, launch: int = 1) -> int:
         return 75
     print(f"{family} {run_id}: attempt {attempt} of {MAX_PROBE_ATTEMPTS}", flush=True)
     return _driver(
-        ["probe", "--run-id", run_id, "--family", family], f"{label}_a{attempt}"
+        [
+            "probe",
+            "--run-id",
+            run_id,
+            "--family",
+            family,
+            "--speed-factor",
+            f"{speed_factor:g}",
+        ],
+        f"{label}_a{attempt}",
     )
 
 
@@ -592,9 +605,11 @@ def wave(
 
 
 @app.local_entrypoint()
-def probe_round(run_id: str, family: str = "mlp", launch: int = 1):
+def probe_round(
+    run_id: str, family: str = "mlp", launch: int = 1, speed_factor: float = 1.0
+):
     """Spawn one preemptible, attempt-capped probe round; use ``--detach``."""
-    call = probe_stage.spawn(run_id, family, launch)
+    call = probe_stage.spawn(run_id, family, launch, speed_factor)
     print(
         f"{family} {run_id}: spawned {call.object_id} (max {MAX_PROBE_ATTEMPTS} attempts)"
     )
