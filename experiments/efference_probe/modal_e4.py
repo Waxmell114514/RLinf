@@ -262,9 +262,15 @@ def claim_attempt(path: Path, cap: int = MAX_PROBE_ATTEMPTS) -> Optional[int]:
 
 
 @app.function(cpu=PROBE_CPU, memory=PROBE_MEMORY, timeout=6 * 3600, **COMMON)
-def probe_stage(run_id: str, family: str) -> int:
-    """One probe round, preemptible, at most ``MAX_PROBE_ATTEMPTS`` starts."""
-    label = _part_label("probe", [run_id, family])
+def probe_stage(run_id: str, family: str, launch: int = 1) -> int:
+    """One probe round, preemptible, at most ``MAX_PROBE_ATTEMPTS`` starts.
+
+    ``launch`` > 1 is a deliberate relaunch (logged in the logbook) with its
+    own attempt count; earlier launches' counts stay on the Volume.
+    """
+    label = _part_label("probe", [run_id, family]) + (
+        f"_launch{launch}" if launch > 1 else ""
+    )
     volume.reload()
     attempt = claim_attempt(Path(DATA) / "e4_attempts" / f"{label}.json")
     volume.commit()
@@ -586,9 +592,9 @@ def wave(
 
 
 @app.local_entrypoint()
-def probe_round(run_id: str, family: str = "mlp"):
+def probe_round(run_id: str, family: str = "mlp", launch: int = 1):
     """Spawn one preemptible, attempt-capped probe round; use ``--detach``."""
-    call = probe_stage.spawn(run_id, family)
+    call = probe_stage.spawn(run_id, family, launch)
     print(
         f"{family} {run_id}: spawned {call.object_id} (max {MAX_PROBE_ATTEMPTS} attempts)"
     )
