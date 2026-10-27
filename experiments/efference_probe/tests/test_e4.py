@@ -1204,3 +1204,15 @@ def test_local_runner_runs_a_round_through_the_unchanged_driver(tmp_path, monkey
     for line in lines:
         stamp = calendar.timegm(time.strptime(line[3:22], "%Y-%m-%d %H:%M:%S"))
         assert abs(stamp - now) < 600, line
+
+
+def test_modal_probe_attempts_are_capped_across_restarts(tmp_path):
+    # A preempted input restarts from the top; the count lives on the Volume.
+    pytest.importorskip("modal")
+    from efference_probe import modal_e4
+
+    path = tmp_path / "e4_attempts" / "probe_e4_x_mlp.json"
+    assert modal_e4.claim_attempt(path, cap=2) == 1
+    assert modal_e4.claim_attempt(path, cap=2) == 2
+    assert modal_e4.claim_attempt(path, cap=2) is None
+    assert len(json.loads(path.read_text())["attempts"]) == 2

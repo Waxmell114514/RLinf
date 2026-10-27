@@ -245,6 +245,38 @@ def cpu_stage_nonpreemptible(args: list[str]) -> int:
     return _driver(args, _part_label("cpu_np", args))
 
 
+# Modal restarts a preempted input from the top, and each restart of an MLP
+# round costs a full round again; past the cap the round refuses to run.
+MAX_PROBE_ATTEMPTS = 2
+
+
+def claim_attempt(path: Path, cap: int = MAX_PROBE_ATTEMPTS) -> Optional[int]:
+    """Count one more attempt in ``path``; None (and no count) once ``cap`` is used."""
+    seen = json.loads(path.read_text())["attempts"] if path.is_file() else []
+    if len(seen) >= cap:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    path.write_text(json.dumps({"attempts": [*seen, stamp]}))
+    return len(seen) + 1
+
+
+@app.function(cpu=PROBE_CPU, memory=PROBE_MEMORY, timeout=6 * 3600, **COMMON)
+def probe_stage(run_id: str, family: str) -> int:
+    """One probe round, preemptible, at most ``MAX_PROBE_ATTEMPTS`` starts."""
+    label = _part_label("probe", [run_id, family])
+    volume.reload()
+    attempt = claim_attempt(Path(DATA) / "e4_attempts" / f"{label}.json")
+    volume.commit()
+    if attempt is None:
+        print(f"{family} {run_id}: {MAX_PROBE_ATTEMPTS} attempts used; not starting")
+        return 75
+    print(f"{family} {run_id}: attempt {attempt} of {MAX_PROBE_ATTEMPTS}", flush=True)
+    return _driver(
+        ["probe", "--run-id", run_id, "--family", family], f"{label}_a{attempt}"
+    )
+
+
 def _outcome(call) -> Optional[str]:
     """None while a spawned call runs; once it has returned, failed or expired, how.
 
@@ -550,6 +582,15 @@ def wave(
     print(
         f"orchestrate spawned: {call.object_id}; session {session}, "
         f"budget ${budget_usd:.2f}, caps {caps}"
+    )
+
+
+@app.local_entrypoint()
+def probe_round(run_id: str, family: str = "mlp"):
+    """Spawn one preemptible, attempt-capped probe round; use ``--detach``."""
+    call = probe_stage.spawn(run_id, family)
+    print(
+        f"{family} {run_id}: spawned {call.object_id} (max {MAX_PROBE_ATTEMPTS} attempts)"
     )
 
 
