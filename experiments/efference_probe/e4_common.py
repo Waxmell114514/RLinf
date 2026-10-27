@@ -210,7 +210,8 @@ def analysis_dir(run_dir: Path, family: str) -> Path:
 
 def summary_extra(path: Path) -> dict[str, Any]:
     """The JSON "Extra" block that ``analysis.summarize`` appends to summary.md."""
-    text = (path / "summary.md").read_text(encoding="utf-8")
+    # A summary written on Windows has CRLF line ends.
+    text = (path / "summary.md").read_text(encoding="utf-8").replace("\r\n", "\n")
     _, _, tail = text.partition("#### Extra")
     match = re.search(r"```json\n(.*?)\n```", tail, flags=re.S)
     return json.loads(match.group(1)) if match else {}

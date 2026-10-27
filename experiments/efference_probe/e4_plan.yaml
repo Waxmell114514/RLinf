@@ -118,6 +118,11 @@ probes:
   linear:
     args: [--stage, main, --permutations, "200"]
     expected_s: 800
+    # Amendment 2 (operational): libero_long runs hold ~2x the probe samples
+    # of the other suites.  The SFT long round took 1506.6 s and GRPO's was
+    # stopped at the 1600 s watchdog with 199/200 permutations done, so 800 s
+    # under-stated them.  Expected times only; no gate or probe changes.
+    expected_s_by_suite: {long: 1600}
   mlp:
     args: [--stage, main, --probe-family, mlp]
     expected_s: 8400

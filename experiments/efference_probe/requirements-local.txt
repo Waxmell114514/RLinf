@@ -1,0 +1,14 @@
+# e4_local.py: E4's CPU-only probe rounds off Modal.  Python 3.11.
+# The Modal image's analysis versions (numpy, scikit-learn, pandas, joblib,
+# pyarrow); its scipy was not recorded, so scipy is the version the offline
+# test suite ran with.
+numpy==1.26.4
+scipy==1.17.1
+scikit-learn==1.9.1
+pandas==2.3.3
+joblib==1.6.0
+pyarrow==19.0.1
+matplotlib==3.11.2
+pyyaml==6.0.3
+psutil==7.2.2
+modal==1.6.2

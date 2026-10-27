@@ -186,12 +186,12 @@ def _todo() -> dict:
 # request (what is billed when unused) is unchanged.
 GPU_CPU = (8.0, 12.0)
 GPU_MEMORY = (49152, 98304)
-# Probe rounds ran with 24 vCPU visible under a bare ``cpu=8.0``; the limit
-# now says so.  MLP rounds peaked at 27.9 GB tree RSS (SFT goal swap), GRPO
-# linear rounds ran ~3.5 GB above SFT ones, and the first GRPO MLP attempt
-# died ~15 min in without a marker, so the memory limit leaves room above the
-# 32 GiB request.
-PROBE_CPU = (8.0, 12.0)
+# One Modal core is one CPU inside the container: a bare ``cpu=8.0`` gave the
+# old workspace's MLP rounds 24 CPUs, and a 12-core limit (b4963f0) halved
+# them and ran the GRPO MLP retry ~3x slower.  MLP rounds peaked at 27.9 GB
+# tree RSS with 24 workers.  Modal preempted MLP rounds four times and each
+# restarted from scratch, so the remaining ones run off Modal (LOCAL_RUN.md).
+PROBE_CPU = (8.0, 24.0)
 PROBE_MEMORY = (32768, 49152)
 ORCHESTRATOR_CPU, ORCHESTRATOR_MEMORY = 0.25, 1024
 
@@ -234,6 +234,10 @@ def cpu_stage(args: list[str]) -> int:
 
 def _outcome(call) -> Optional[str]:
     """None while a spawned call runs; once it has returned, failed or expired, how.
+
+    Known gap: after a preemption Modal can mark the call FAILURE in its call
+    graph while ``get(timeout=0)`` still raises ``TimeoutError``, so such a
+    call reads as running and keeps its slot (seen on the second wave).
 
     modal 1.6 raises the *builtin* ``TimeoutError`` for a call still running
     under ``get(timeout=0)``, not ``modal.exception.TimeoutError``; catching

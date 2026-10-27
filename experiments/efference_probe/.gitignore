@@ -1,2 +1,5 @@
 # Collected runs: large, machine-specific, and reproducible from the configs.
 data/
+
+# The repo ignores *.txt; this one is the local-run pin set (LOCAL_RUN.md).
+!requirements-local.txt

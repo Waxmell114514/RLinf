@@ -32,6 +32,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
+import re
 import signal
 import subprocess
 import sys
@@ -111,12 +113,40 @@ def memory_limit_bytes(root: Path = Path("/sys/fs/cgroup")) -> int:
             if line.startswith("MemTotal:"):
                 total = int(line.split()[1]) * 1024
     except OSError:
-        pass
+        total = _psutil_total_memory()
     for path in (root / "memory.max", root / "memory/memory.limit_in_bytes"):
         if path.is_file():
             raw = path.read_text().strip()
             if raw != "max" and int(raw) < (total or float("inf")):
                 return int(raw)
+    return total
+
+
+def _psutil_total_memory() -> int:
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    return int(psutil.virtual_memory().total)
+
+
+def _psutil_tree_rss(pid: int) -> int:
+    """``tree_rss_bytes`` where there is no procfs; 0 without psutil."""
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    try:
+        root = psutil.Process(pid)
+        procs = [root, *root.children(recursive=True)]
+    except psutil.Error:
+        return 0
+    total = 0
+    for proc in procs:
+        try:
+            total += proc.memory_info().rss
+        except psutil.Error:
+            continue
     return total
 
 
@@ -126,6 +156,8 @@ def tree_rss_bytes(pid: int) -> int:
     Not cgroup ``memory.current``: that counts page cache, and reading a 15 GB
     checkpoint would make a healthy run look close to its limit.
     """
+    if not Path("/proc").is_dir():  # Windows / macOS: no procfs
+        return _psutil_tree_rss(pid)
     children: dict[int, list[int]] = {}
     rss: dict[int, int] = {}
     for entry in Path("/proc").iterdir():
@@ -219,8 +251,12 @@ def _kill_group(proc: subprocess.Popen, log) -> None:
 
     Signals go to the child's process group, which ``start_new_session`` made
     ours alone -- never a ``pkill`` pattern, which in wave 2 matched joblib
-    workers and the agent's own shell.
+    workers and the agent's own shell.  Windows has no process groups to
+    signal, so there the child and its descendants are stopped by pid.
     """
+    if not hasattr(os, "killpg"):
+        _kill_tree(proc, log)
+        return
     for sig, grace in (
         (signal.SIGINT, 120),
         (signal.SIGTERM, 30),
@@ -236,6 +272,27 @@ def _kill_group(proc: subprocess.Popen, log) -> None:
             return
         except subprocess.TimeoutExpired:
             continue
+
+
+def _kill_tree(proc: subprocess.Popen, log) -> None:
+    """``_kill_group`` without process groups: terminate, then kill, by pid."""
+    import psutil
+
+    try:
+        root = psutil.Process(proc.pid)
+        procs = [*root.children(recursive=True), root]
+    except psutil.NoSuchProcess:
+        return
+    for step, grace in (("terminate", 30), ("kill", 30)):
+        for target in procs:
+            try:
+                getattr(target, step)()
+            except psutil.NoSuchProcess:
+                pass
+        log(f"watchdog: {step} sent to pid {proc.pid} and {len(procs) - 1} descendants")
+        _, procs = psutil.wait_procs(procs, timeout=grace)
+        if not procs:
+            return
 
 
 def run_child(
@@ -321,11 +378,13 @@ class Wave:
 
     def log(self, message: str) -> None:
         """Logbook line in the harness's own format, plus stdout."""
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        # UTC, as every other logbook line; Modal containers ran in UTC anyway.
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
         print(f"[{stamp}] {message}", flush=True)
         with self._log_lock:
             self.logbook.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.logbook, "a", encoding="utf-8") as handle:
+            # newline="\n": a part written on Windows is merged into a LF logbook.
+            with open(self.logbook, "a", encoding="utf-8", newline="\n") as handle:
                 handle.write(f"- `{stamp}` **E4 (driver)** {message}\n")
 
     @property
@@ -363,7 +422,7 @@ class Wave:
                 "watchdog_killed": result["watchdog_killed"],
                 "peak_tree_rss_gb": result["peak_tree_rss_gb"],
                 "peak_vram_mib": result["peak_vram_mib"],
-                "host": os.uname().nodename,
+                "host": platform.node(),
             },
         )
 
@@ -690,8 +749,31 @@ def write_competence(wave: Wave, run_id: str) -> pd.DataFrame:
 # -- probing -----------------------------------------------------------------
 
 
-def probe(wave: Wave, run_id: str, family: str, jobs: int) -> dict[str, Any]:
-    """One ``run_probes.py`` round, with the wave-2 gates around it."""
+def planned_suite(plan: dict[str, Any], run_id: str) -> Optional[str]:
+    """The suite of an S2 run or of a retry of one (``_r2``); None otherwise."""
+    planned = re.sub(r"_r\d+$", "", run_id)
+    for run in common.planned_runs(plan, "s2"):
+        if run.run_id == planned:
+            return run.suite
+    return None
+
+
+def probe_expected_s(plan: dict[str, Any], family: str, run_id: str) -> float:
+    """A probe round's expected wall clock: per suite where the plan says so."""
+    spec = plan["probes"][family]
+    by_suite = spec.get("expected_s_by_suite") or {}
+    return float(by_suite.get(planned_suite(plan, run_id), spec["expected_s"]))
+
+
+def probe(
+    wave: Wave, run_id: str, family: str, jobs: int, speed: float = 1.0
+) -> dict[str, Any]:
+    """One ``run_probes.py`` round, with the wave-2 gates around it.
+
+    ``speed`` scales the expected wall clock (and so the watchdog) for a
+    machine slower than the one the plan's times were measured on, as the
+    lock's ``speed_factor`` does for collections.
+    """
     data_root = wave.data_root
     kind = f"probe-{family}"
     existing = common.job_status(data_root, run_id, kind)
@@ -727,9 +809,12 @@ def probe(wave: Wave, run_id: str, family: str, jobs: int) -> dict[str, Any]:
         str(jobs),
         *[str(a) for a in spec["args"]],
     ]
-    kill_after = wave.plan["budget"]["watchdog_factor"] * spec["expected_s"]
+    expected_s = probe_expected_s(wave.plan, family, run_id) * speed
+    kill_after = wave.plan["budget"]["watchdog_factor"] * expected_s
     wave.log(
-        f"probe `{run_id}` {family} (--jobs {jobs}); stop at {kill_after / 3600:.1f} h"
+        f"probe `{run_id}` {family} (--jobs {jobs}"
+        + (f", speed factor {speed:g}" if speed != 1.0 else "")
+        + f"); stop at {kill_after / 3600:.1f} h"
     )
     result = run_child(
         cmd,
@@ -749,6 +834,8 @@ def probe(wave: Wave, run_id: str, family: str, jobs: int) -> dict[str, Any]:
         "run_id": run_id,
         "family": family,
         "jobs": jobs,
+        "expected_s": expected_s,
+        "speed_factor": speed,
         "ok": ok,
         "plumbing_passed": bool(plumbing.get("passed")),
         "finished_utc": common.utc_now(),
@@ -1222,7 +1309,11 @@ def _probe_quietly(wave: Wave, run_id: str, family: str, jobs: int) -> None:
 
 
 def cmd_probe(wave: Wave, args) -> int:
-    status = probe(wave, args.run_id, args.family, resolve_jobs(args.jobs))
+    if args.speed_factor <= 0:
+        raise StageError("--speed-factor must be positive")
+    status = probe(
+        wave, args.run_id, args.family, resolve_jobs(args.jobs), args.speed_factor
+    )
     return 0 if status.get("ok") else 1
 
 
@@ -1333,7 +1424,7 @@ def cmd_todo(wave: Wave, args) -> int:
             # The in-process stop, plus the grace the external watchdog allows.
             max_s = factor * expected_s + budget["hang_grace_s"]
         else:
-            max_s = factor * wave.plan["probes"][kind]["expected_s"]
+            max_s = factor * probe_expected_s(wave.plan, kind, name)
         queue.append(
             {
                 "key": f"{kind}:{name}",
@@ -1520,6 +1611,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-id", required=True)
     p.add_argument("--family", required=True, choices=["linear", "mlp", "pilot"])
     p.add_argument("--jobs", type=int, default=None)
+    p.add_argument(
+        "--speed-factor",
+        type=float,
+        default=1.0,
+        help="scale the expected wall clock (and watchdog) on a slower machine",
+    )
 
     p = sub.add_parser("competence", help="per-task success / strength flags for a run")
     p.add_argument("--run-id", required=True)

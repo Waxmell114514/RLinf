@@ -10,6 +10,7 @@ from the CPU quota, a watchdog that stops our own child -- actually hold.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -1052,3 +1053,154 @@ def test_volume_copy_plans_only_missing_or_changed_files_and_verifies_them():
         "size /data/e4_x/calls.parquet: old 2 new 9",
     ]
     assert copy.differences(old, dict(old), ()) == []
+
+
+# --------------------------------------------------------------------------
+# Local (off-Modal) probe rounds: Amendment 2
+# --------------------------------------------------------------------------
+
+
+def test_long_suite_linear_rounds_get_the_amended_expected_time():
+    assert wave_mod.planned_suite(PLAN, "e4_grpo_long_swap_s0") == "long"
+    assert wave_mod.planned_suite(PLAN, "e4_sft_long_swap_s0_r2") == "long"
+    assert wave_mod.planned_suite(PLAN, "e4_sft_pilot2") is None
+    assert wave_mod.probe_expected_s(PLAN, "linear", "e4_grpo_long_swap_s0") == 1600
+    assert wave_mod.probe_expected_s(PLAN, "linear", "e4_sft_goal_swap_s1") == 800
+    assert wave_mod.probe_expected_s(PLAN, "mlp", "e4_grpo_goal_swap_s1") == 8400
+    assert wave_mod.probe_expected_s(PLAN, "pilot", "e4_sft_pilot2") == 300
+
+
+def test_process_tree_helpers_work_without_procfs():
+    # Windows has neither /proc nor process groups; psutil stands in.
+    pytest.importorskip("psutil")
+    import time
+
+    assert wave_mod._psutil_tree_rss(os.getpid()) > 0
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess, sys, time; "
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)']); "
+            "time.sleep(120)",
+        ]
+    )
+    import psutil
+
+    deadline = time.time() + 30
+    while not psutil.Process(proc.pid).children() and time.time() < deadline:
+        time.sleep(0.2)
+    family = [proc.pid, *(c.pid for c in psutil.Process(proc.pid).children())]
+    assert len(family) == 2
+    lines = []
+    wave_mod._kill_tree(proc, lines.append)
+    proc.wait(timeout=10)
+    assert not [
+        p
+        for p in family
+        if psutil.pid_exists(p) and psutil.Process(p).status() != psutil.STATUS_ZOMBIE
+    ]
+    assert lines and "terminate" in lines[0]
+
+
+def test_local_runner_plans_downloads_uploads_and_rounds():
+    from efference_probe import e4_local
+
+    remote = {
+        "e4_state.json": 1,
+        "e4_logbook/a.md": 2,
+        "e4_x/hidden/ep1.npz": 3,
+        "e4_x/frames/f.png": 4,
+        "e4_x/calls.parquet": 5,
+        "e4_y/hidden/ep1.npz": 6,
+        "e4_x/analysis_mlp.partial_1/plumbing.json": 7,
+    }
+    assert e4_local.to_download(remote, {}, set()) == [
+        "e4_logbook/a.md",
+        "e4_state.json",
+        "e4_x/analysis_mlp.partial_1/plumbing.json",
+        "e4_x/calls.parquet",
+    ]
+    assert e4_local.to_download(remote, {"e4_state.json": 1}, {"e4_x"}) == [
+        "e4_logbook/a.md",
+        "e4_x/analysis_mlp.partial_1/plumbing.json",
+        "e4_x/calls.parquet",
+        "e4_x/hidden/ep1.npz",
+    ]
+    local = {**remote, "e4_x/analysis_mlp/summary.md": 9, ".e4_status/m.json": 3}
+    local["e4_logbook/a.md"] = 20
+    assert e4_local.to_upload(local, remote) == [
+        ".e4_status/m.json",
+        "e4_logbook/a.md",
+        "e4_x/analysis_mlp/summary.md",
+    ]
+    todo = {
+        "collect": [],
+        "queue": [
+            {"key": "mlp:e4_grpo_goal_swap_s1", "kind": "mlp"},
+            {"key": "linear:e4_x", "kind": "linear"},
+            {"key": "collect:e4_z", "kind": "collect"},
+        ],
+    }
+    done = {("linear", "e4_x")}
+    assert e4_local.rounds_from(todo, lambda f, r: (f, r) in done) == [
+        ("mlp", "e4_grpo_goal_swap_s1"),
+        ("linear", "e4_grpo_long_swap_s0"),
+    ]
+    assert e4_local.choose_jobs(32, 64 * 2**30) == 24
+    assert e4_local.choose_jobs(16, 64 * 2**30) == 16
+    assert e4_local.choose_jobs(32, 24 * 2**30) == 15  # memory-bound
+    assert e4_local.choose_jobs(32, 64 * 2**30, requested=8) == 8
+    assert e4_local.speed_for(24) == 1.0 and e4_local.speed_for(16) == 1.5
+
+
+def test_local_runner_runs_a_round_through_the_unchanged_driver(tmp_path, monkeypatch):
+    pytest.importorskip("psutil")
+    import argparse
+    import time
+
+    import yaml
+
+    from efference_probe import e4_local
+    from efference_probe.tests.synthetic import make_synthetic_run
+
+    data = tmp_path / "data"
+    run_id = "e4_sft_goal_swap_s1"
+    _with_manifest(
+        make_synthetic_run(
+            data / run_id,
+            n_tasks=3,
+            episodes_per_task=10,
+            n_calls=24,
+            hidden_signal=0.0,
+            command_mean=0.4,
+            seed=3,
+        )
+    )
+    common.write_json_atomic(common.status_path(data, run_id, "collect"), {"ok": True})
+    plan = json.loads(json.dumps(PLAN))
+    plan["probes"]["pilot"]["args"] = ["--stage", "pilot", "--no-figures"]
+    plan_path = tmp_path / "plan.yaml"
+    plan_path.write_text(yaml.safe_dump(plan, sort_keys=False))
+    monkeypatch.setattr(e4_local, "_rounds", lambda args: [("pilot", run_id)])
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+
+    args = argparse.Namespace(data_root=data, plan=plan_path, jobs=2, speed_factor=None)
+    assert e4_local.cmd_run(args) == 0
+    status = common.job_status(data, run_id, "probe-pilot")
+    assert status["ok"] and status["speed_factor"] == 12.0
+    assert status["expected_s"] == 300 * 12.0
+    part = next((data / "e4_logbook").glob("*_local_*.md"))
+    raw = part.read_bytes()
+    assert b"\r" not in raw
+    lines = raw.decode("utf-8").splitlines()
+    assert any("**E4 (local)** local probe session on" in l for l in lines)
+    assert any("**E4 (driver)**" in l and "speed factor 12" in l for l in lines)
+    # Every line is stamped in UTC, whatever the machine's zone (the driver ran
+    # under TZ=Asia/Shanghai, 8 h ahead).
+    import calendar
+
+    now = time.time()
+    for line in lines:
+        stamp = calendar.timegm(time.strptime(line[3:22], "%Y-%m-%d %H:%M:%S"))
+        assert abs(stamp - now) < 600, line
