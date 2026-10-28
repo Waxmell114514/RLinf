@@ -1723,3 +1723,61 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - GRPO: -0.050 (goal s1), -0.003 (goal s2), +0.012 (spatial), +0.010 (object).
 
   Base-Lora's activations hold a comparison its own representation does not express. GRPO's representation already reads out about as much as the decoded comparison does, with less to gain from the comparison (P2r 0.63-0.68 against Base-Lora's 0.80-0.88).
+- `2026-10-28 15:03` **X0 FOLLOW-UP PRE-REGISTRATION F1-F7 (fixed before any F number is computed).** Source: `reports/next_steps_fable_x0.md` §5, Tier 0. Exploratory: no R1-R12 or X0 verdict changes.
+  **Scope.** Code is a new `x0_followup.py`; it imports the X0 and probe code and changes neither. Compute is this container only, with no Modal; data are the local copies already used for X0.
+  **Conventions.** Outer folds are `probes._outer_splits` (seed 0, 5) on each run's `analysis/probe_samples.csv`, with C grid and selection as the ladder (`_select_c`, `_make_classifier`). Ridge alphas are picked as in `ridge_readout`. "Swap runs" are the 9 E4 swap runs (Base-Lora goal s1/s2, spatial, object, long r2; GRPO goal s1/s2, spatial, object). "Goal swap" is the 4 goal-swap runs.
+  **BLAS.** Every refit that is compared with a CSV number runs under that run's reproducing BLAS setting from `x0/a7_linear_selected.csv`.
+
+  **F1, BLAS resolution (no fits).** From `x0/a7_passes/*/`:
+  - per run and rung, the max |fold balanced accuracy - CSV| over passes;
+  - per run, the spread of the pooled P1 - C_dstates and P3 - P1 point estimates across passes.
+
+  Descriptive; one Methods sentence.
+
+  **F6, C_phase and the margin sign test (no fits).** C_phase balanced accuracy for every E4 run and family, from `probe_results.csv`. One-sided binomial sign test that GRPO's linear P1 margin over floor exceeds Base-Lora's across the 4 matched cells (goal s1, goal s2, spatial, object). Descriptive.
+
+  **F3, oracle decomposition.** A3's pipeline unchanged (decoders, folds, inner cross-fitting, classifier), with P2r's comparison features built from three input pairs:
+  - (true a, Δŝ_A), with variant A's composed state decode;
+  - (â, true Δs);
+  - (true a, true Δs), which must reproduce the CSV's P2r fold scores within 1e-6 (else flagged).
+
+  Swap runs. Readings, on the 5 Base-Lora swap runs, with OK meaning ">= P2r(true) - 0.10":
+  - "format supports the comparison": both mixed pairs OK on >= 4 of 5;
+  - "outcome decode is the bottleneck": (true a, Δŝ_A) not OK on >= 4 of 5 while (â, true Δs) is OK on >= 4 of 5;
+  - "command decode is the bottleneck": the mirror image of the previous reading;
+  - otherwise "both decodes lossy".
+
+  GRPO is reported alongside.
+
+  **F2, A2b residual test.** Goal swap, the A2 calls (4000, seed 0), the A2 (ii) best cell. Within each outer `GroupKFold(5)` fold:
+  - per-task k-NN (k = 10) predictions Ŝ2 for training calls come from inner `GroupKFold(5)` cross-fitting over training episodes; Ŝ2 for test calls comes from a fit on all training calls;
+  - a ridge from h(c+1) to the training residual Δs - Ŝ2 is fit on training calls and applied to test calls.
+
+  The gain is R²(Δs, Ŝ2 + r̂) - R²(Δs, Ŝ2), uniform over the 8 dims, on all calls and on HIJACK calls. Readings:
+  - "no motion trace beyond the end-effector state": gain < 0.05 on all and on HIJACK calls in 4 of 4;
+  - "motion trace beyond state": gain >= 0.05 on HIJACK calls in >= 3 of 4;
+  - otherwise "mixed".
+
+  **F4, state readout in physical units, with matched support.** Goal swap, the A2 calls, s(c+1) from h(c+1) at L0/`ctx_mean` and at the A2 (i) best cell, out-of-fold ridge on `GroupKFold(5)`. Report per-dim RMSE, plus the SELF-call SD per dim.
+  - **Common scale:** within each seed pair (GRPO sN vs Base-Lora sN), nRMSE = the mean over dims of RMSE_d / SD_d, where SD_d is pooled over both checkpoints' calls.
+  - **Matched support:** a call is in support if its 10-NN distance to the other checkpoint's same-task calls, in pooled-standardised state space, is <= the median 10-NN distance among that other checkpoint's own same-task calls.
+  - **Gap:** nRMSE(Base-Lora) - nRMSE(GRPO), on all calls and on in-support calls.
+
+  Readings, per cell:
+  - "data effect": gap_matched <= 0.5 × gap_all on both pairs;
+  - "representation effect": gap_matched >= 0.8 × gap_all on both;
+  - otherwise "mixed".
+
+  **F5, residualised P1.** Goal swap, P1's best linear cell. Within each outer fold, h(c+1) of the samples is regressed on A8's per-task state features [s(c+1), task one-hot, s ⊗ task one-hot]; this is least squares with no label use, fit on training samples. The linear probe is then refit on the residuals with the ladder's selection.
+  - "state-orthogonal": P1_resid >= P1 - 0.02;
+  - "state-explained": P1_resid <= floor + 0.02;
+  - otherwise "partial".
+
+  P1 and the floor are the CSV values.
+
+  **F7, where P1's hits are (descriptive).** Swap runs, P1's best linear cell, out-of-fold predictions refit under the reproducing BLAS setting; they must reproduce the CSV folds, else flagged.
+  - **Per task:** n, balanced accuracy, and margin share = n_t (bacc_t - 0.5) / Σ_t n_t (bacc_t - 0.5).
+  - **Flag:** raised if the run's competence-flagged tasks (`e4_derived/<run>/competence.csv`) carry > 0.5 of the margin.
+  - **On HIJACK samples:** Spearman of correct-vs-wrong with intervention strength ‖a_exec - a_cmd_env‖ of the hijacked chunk, and the hit rate with vs without a gripper-sign disagreement between a_exec and a_cmd_env (action dim 6, any step of the chunk).
+
+  **Order:** F1, F6, F3, F2, F4, F5, F7. Results are logged as they land.
