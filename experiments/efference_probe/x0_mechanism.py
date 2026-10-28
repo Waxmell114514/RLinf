@@ -736,7 +736,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument(
-        "analysis", choices=["a1", "a2", "a3", "a4", "a5", "a6", "a7", "check"]
+        "analysis",
+        choices=["a1", "a2", "a3", "a4", "a5", "a6", "a6-pool", "a7", "check"],
     )
     parser.add_argument("runs", nargs="*")
     parser.add_argument("--family", default="linear", choices=["linear", "mlp"])
@@ -756,6 +757,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         frame = pd.DataFrame(rows)
         frame.to_csv(out / "a4_visibility.csv", index=False)
         print(frame.to_string(index=False))
+    elif args.analysis == "a6-pool":
+        frame = pd.concat(
+            [pd.read_csv(out / f"a6_{run_id}.csv") for run_id in args.runs],
+            ignore_index=True,
+        )
+        result = {"runs": args.runs, **cluster_bootstrap_spearman(frame)}
+        (out / "a6_pooled.json").write_text(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2))
     elif args.analysis == "check":
         for run_id in args.runs:
             print(
