@@ -1626,3 +1626,19 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - The runs are M1-compatible: (iii) >= 0.69 in all 4.
 
   **Descriptive, not pre-registered:** GRPO's h(c+1) carries the state and especially Δs better than Base-Lora's (0.83-0.85 vs 0.58-0.59 on (ii)). The L0 `ctx_last`/`act_mean` cells are at R² ≈ 0, as expected for input embeddings of fixed tokens. Reading: a memoryless policy can get Δs(c) from o(c+1) only through regularities, i.e. where the arm is now, in this scene and task, predicts how it just moved. That regularity is stronger for the more stereotyped GRPO policy. A2 does not separate this from an encoding of motion. An exploratory control, Δs(c) from the true s(c+1) and task, is proposed below and is not part of the pre-registration. Consequence for the ladder: Δs (the C_dstates input) is largely present in h(c+1) itself, so P1 > C_dstates needs no efference read.
+- `2026-10-28 07:17` **X0 A2b PRE-REGISTRATION (exploratory follow-up to A2; fixed before any A2b number).** Not part of the original X0 plan. Question: does h(c+1) know the last chunk's motion Δs(c) beyond what the current state predicts?
+
+  **Setup.** Goal-swap runs, the A2 calls (same 4000, seed 0), out-of-fold predictions with `GroupKFold(5)` by episode, ridge alpha picked as in `ridge_readout`. Predictors:
+    - **H:** h(c+1) at the run's A2 (ii) best cell;
+    - **S1 (per-task linear in the state):** ridge on [s(c+1), task one-hot, s(c+1) ⊗ task one-hot];
+    - **S2 (nonparametric in the state):** k-NN regression (k = 10, uniform weights) on standardised s(c+1), fit separately per task on training folds;
+    - **H+S1:** H and S1 features concatenated.
+
+  **Readout.** Uniform R² over the 8 Δs dims on all calls, on SELF calls and on HIJACK calls. Each subset's R² uses that subset's own variance.
+
+  **Pre-set readings:**
+    - "regularity explains A2 (ii)" if max(S1, S2) on all calls >= H - 0.10;
+    - "h(c+1) carries motion beyond the state" if H on HIJACK calls >= max(S1, S2) on HIJACK calls + 0.10;
+    - otherwise "unresolved".
+
+  The reading is made per run and summarised by checkpoint.
