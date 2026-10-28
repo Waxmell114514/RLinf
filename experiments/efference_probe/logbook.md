@@ -1662,3 +1662,38 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - otherwise "unresolved".
 
   P1's best cell is a max over 27 cells, so this comparison favours P1.
+- `2026-10-28 07:41` **X0 A3 result (decoded-ingredients oracle, goal swap; `x0/a3_<run>.json`).** Command cell L28/`act_mean` (E1 best) in all 4. Linear balanced accuracy of P2r's comparison features built from decoded inputs:
+
+  | run | variant A | variant B | linear floor | floor + 0.04 | P2r (true inputs) |
+  |---|---|---|---|---|---|
+  | Base-Lora s1 | **0.602** | 0.567 | 0.525 | 0.565 | 0.798 |
+  | GRPO s1 | 0.514 | 0.505 | 0.528 | 0.568 | 0.672 |
+  | Base-Lora s2 | **0.606** | 0.515 | 0.526 | 0.566 | 0.827 |
+  | GRPO s2 | **0.588** | 0.574 | 0.541 | 0.581 | 0.681 |
+
+  Variant A is >= floor + 0.04 on 3 of 4. **Pre-registered reading: "ingredients present, comparator missing (M1)".**
+  - The command and the outcome are both linearly decodable, and a comparison built from the decodes detects the hijack.
+  - The model's own representation does not: P1 and P3 sit at or near floor. Base-Lora s1 has P3 0.541 against A 0.602, Base-Lora s2 has P3 0.558 against A 0.606.
+  - Descriptive: decoding noise costs a lot relative to true inputs (P2r 0.67-0.83). The one miss is GRPO s1.
+  - Suites are pending (they need suite A2).
+- `2026-10-28 07:41` **X0 A7 result (paired episode-cluster bootstrap, B = 2000; `x0/a7_linear_selected.csv`, `x0/a7_passes/`).**
+  - **Reproduction:** all 17 linear runs and the GRPO s2 MLP reproduce the CSV fold accuracies and the selected C exactly, each in one of three BLAS settings (implementation note in the code, commit dce6ba8). The first pass, at this container's default 4-thread AVX-512, reproduced only 4 of 9 swap runs.
+  - **P3 - P1:** the CI covers 0 in 16 of 17 linear runs and in the MLP run. The exception is Base-Lora freeze s2, +0.025 [+0.006, +0.046].
+  - **P1 - C_dstates, goal swap linear:** GRPO s1 +0.103 [+0.056, +0.149]; GRPO s2 +0.055 [+0.008, +0.102]; Base-Lora s1 +0.026 [-0.017, +0.069]; Base-Lora s2 +0.018 [-0.026, +0.059]. GRPO s2 MLP (primary family) is +0.023 [-0.019, +0.065].
+  - **Elsewhere:** the CI excludes 0 upward on GRPO mirror s1 (+0.074), GRPO spatial (+0.058) and Base-Lora spatial (+0.069). It excludes 0 downward (C_dstates > P1) on Base-Lora freeze s1/s2 and GRPO freeze s2.
+
+  **Fixed reading:** the efference increment is not separable from 0 anywhere it matters. GRPO's linear P1 excess over C_dstates excludes 0 on both goal-swap seeds, but this is conditional on the selected cell, so optimistic, and not by itself a positive. It covers 0 in the MLP family.
+- `2026-10-28 07:41` **X0 A4 result (outcome visibility; `x0/a4_visibility.csv`).** Mahalanobis(Δs | task SELF) AUROC on goal swap: GRPO s1 0.520 vs Base-Lora s1 0.528; GRPO s2 0.563 vs Base-Lora s2 0.539. **Prediction (M3: GRPO > Base-Lora on both seeds) fails on s1.**
+  - Descriptive: on mirror the AUROC is 0.59-0.67. On freeze it is 0.24-0.34: a frozen chunk is *less* far from the SELF distribution, because a near-zero Δs is unusually small rather than unusual in direction.
+  - Spearman of AUROC with the linear P1 margin over the 17 E4 runs is ρ = 0.311 (p = 0.22). Post hoc, |AUROC - 0.5| gives ρ = 0.517 (p = 0.034); that figure is not pre-registered.
+- `2026-10-28 07:41` **X0 A6 result (novelty vs reaction; `x0/a6_<run>.csv`, `x0/a6_pooled.json`).**
+  - **Per run:** Spearman ρ(Δnovelty at L0/`ctx_mean`, Δentropy) ranges from -0.041 to +0.111 over the 12 goal runs. Only GRPO freeze s1 (+0.111 [+0.003, +0.211]) excludes 0.
+  - **Pooled:** 5475 pairs and 1892 episode clusters give ρ = +0.026 [-0.003, +0.055]. **Prediction (M4: pooled ρ > 0 with the CI excluding 0) fails:** the novelty mechanism lacks per-pair support.
+  - **Descriptive:** mean Δnovelty is positive on mirror and freeze (+1.1 to +3.1; hijacked observations are more novel at the input layer) but near 0 on swap (-1.39 to +0.46).
+- `2026-10-28 07:41` **X0 A8 result (absolute-state control; `x0/a8_<run>_<family>.json`).** Goal swap, max(C_state, C_state+d) against P1 at its best cell:
+  - GRPO s1 linear: 0.488 vs P1 0.563, **P1 beyond state**.
+  - GRPO s2 linear: 0.565 vs 0.586, unresolved. GRPO s2 MLP: 0.580 vs 0.591, **state accounts for P1**.
+  - Base-Lora s1 linear: 0.522 vs 0.543, unresolved. Base-Lora s1 MLP: 0.584 vs 0.536, state accounts.
+  - Base-Lora s2 linear: 0.495 vs 0.555, P1 beyond state. Base-Lora s2 MLP: 0.522 vs 0.556, unresolved.
+
+  The k-NN state-distance AUROC is 0.50-0.56 in every run. **Reading: mixed.** The robot's 8-dim end state does not account for GRPO s1's P1 excursion. Whatever h(c+1) uses beyond Δs there is not the proprioceptive state; the scene, such as object positions, is the observable candidate left. That is not tested here.
