@@ -1709,3 +1709,17 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - M2 is rejected;
   - the runs are M1-compatible;
   - GRPO > Base-Lora on every column.
+- `2026-10-28 10:39` **X0 A3 result, suites (reported alongside).** Variant A / variant B / floor + 0.04 / P2r (true inputs):
+  - Base-Lora spatial: **0.627** / 0.551 / 0.557 / 0.820;
+  - GRPO spatial: **0.583** / 0.548 / 0.555 / 0.647;
+  - Base-Lora object: **0.680** / 0.593 / 0.549 / 0.880;
+  - GRPO object: **0.577** / 0.559 / 0.545 / 0.625;
+  - Base-Lora long (r2): **0.608** / 0.563 / 0.555 / 0.844.
+
+  All 5 are >= floor + 0.04, so 8 of 9 swap runs are counting goal swap. The M1 reading extends to every suite.
+
+  Descriptive, oracle A minus the best linear rung max(P1, P3, P4):
+  - Base-Lora: +0.046 (goal s1), +0.048 (goal s2), +0.054 (spatial), +0.129 (object), +0.060 (long);
+  - GRPO: -0.050 (goal s1), -0.003 (goal s2), +0.012 (spatial), +0.010 (object).
+
+  Base-Lora's activations hold a comparison its own representation does not express. GRPO's representation already reads out about as much as the decoded comparison does, with less to gain from the comparison (P2r 0.63-0.68 against Base-Lora's 0.80-0.88).

@@ -16,8 +16,8 @@ No R1–R12 verdict changes. Every number below is read from `x0/` result files 
    - It also reads out the last chunk's motion Δs at R² 0.40–0.85, which looked like memory.
    - A per-task k-NN on the true current state predicts that motion just as well, on hijacked calls too (A2b). h(c+1) knows how the arm moved only through where it now is.
 3. **The ingredients of a comparator are present; the comparator is not.**
-   - Decoded command and decoded outcome, fed to P2r's comparison features, detect the hijack at floor + 0.04 or better on 3 of 4 goal-swap runs (A3; pre-registered reading "M1").
-   - The model's own representation, read linearly with or without the command (P1, P3), stays near floor on the same samples.
+   - Decoded command and decoded outcome, fed to P2r's comparison features, detect the hijack at floor + 0.04 or better on 3 of 4 goal-swap runs (A3; pre-registered reading "M1"). All 5 suite runs clear it too, so 8 of 9 swap runs do.
+   - On Base-Lora, the decoded comparison beats the model's own best linear rung (P1, P3 or P4) by +0.046 to +0.129 in every run. On GRPO it adds −0.05 to +0.01.
 4. **Three candidate explanations of GRPO's above-floor P1 fail their pre-registered tests:**
    - late-layer re-planning (A5: GRPO's excursion sits at L4–L20, not late);
    - higher outcome visibility (A4: GRPO > Base-Lora on one seed of two);
@@ -31,7 +31,7 @@ M1–M4 are the candidate mechanisms of `next_steps_fable.md` §B.
 | Mechanism | Test | Pre-registered prediction | Result | Verdict |
 |---|---|---|---|---|
 | M1, no efference channel | A1, efference increment | \|P3 − P1\| < 0.04 everywhere | max +0.031 (wave-2), +0.025 (E4) | holds |
-| M1 | A3, decoded-ingredients oracle | ≥ floor + 0.04 on ≥ 3 of 4 goal swap | 3 of 4 (0.602, 0.606, 0.588; GRPO s1 0.514) | **M1: ingredients present, comparator missing** |
+| M1 | A3, decoded-ingredients oracle | ≥ floor + 0.04 on ≥ 3 of 4 goal swap | 3 of 4 (0.602, 0.606, 0.588; GRPO s1 0.514); suites 5 of 5 | **M1: ingredients present, comparator missing** |
 | M1 | A2 (iii), Δs from h(c) ⊕ h(c+1) | ≥ 0.5 | 0.58–0.90 | compatible |
 | M2, outcome not metric | A2 (i), s(c+1) from h(c+1) | M2 if < 0.3 | 0.81–0.97 | **rejected** |
 | Memoryless premise | A2 (ii), Δs from h(c+1) | < 0.3 | 0.40–0.85 | fails as stated; A2b explains it |
@@ -67,9 +67,15 @@ GRPO's states are more readable than Base-Lora's in every suite. A stronger stat
 | GRPO goal s1 | 0.514 | 0.505 | 0.568 | 0.563 | 0.557 | 0.672 |
 | Base-Lora goal s2 | **0.606** | 0.515 | 0.566 | 0.555 | 0.558 | 0.827 |
 | GRPO goal s2 | **0.588** | 0.574 | 0.581 | 0.586 | 0.591 | 0.681 |
-| suites | [pending] | | | | | |
+| Base-Lora spatial | **0.627** | 0.551 | 0.557 | 0.573 | 0.573 | 0.820 |
+| GRPO spatial | **0.583** | 0.548 | 0.555 | 0.564 | 0.571 | 0.647 |
+| Base-Lora object | **0.680** | 0.593 | 0.549 | 0.546 | 0.545 | 0.880 |
+| GRPO object | **0.577** | 0.559 | 0.545 | 0.567 | 0.564 | 0.625 |
+| Base-Lora long | **0.608** | 0.563 | 0.555 | 0.536 | 0.536 | 0.844 |
 
-On Base-Lora, a comparison computed from the model's own decodable signals beats every linear read of the model by ~0.05. The information to tell "I did this" from "this was done to me" is in the activations. Nothing in the network combines it.
+**Base-Lora.** A comparison computed from the model's own decodable signals beats every linear read of the model by +0.046 to +0.129 in all five runs. The information to tell "I did this" from "this was done to me" is in the activations; nothing in the network combines it.
+
+**GRPO.** Its linear read already matches the decoded comparison, within −0.05 to +0.01. Its comparison also has less to work with (P2r 0.625–0.681 against 0.798–0.880), consistent with a tighter on-policy distribution.
 
 **A7 — paired episode-cluster bootstrap** (B = 2000; every refit reproduces its CSV's fold scores and selected C exactly):
 - **P3 − P1:** the CI covers 0 in 16 of 17 linear runs and in the GRPO s2 MLP run. The exception is Base-Lora freeze s2, +0.025 [+0.006, +0.046].
@@ -81,7 +87,7 @@ On Base-Lora, a comparison computed from the model's own decodable signals beats
 
 ## What the paper can now say
 
-> The policies are memoryless state estimators: a single observation's embedding reads out the robot state almost perfectly (R² up to 0.97), and how the arm last moved only through where it now is. The command that produced the motion is also linearly present (E1). A comparison computed from these two decodable signals detects externally imposed motion on 3 of 4 runs, but the network never computes it. Its own representation, read with or without the command, sits at the chance floor, and the efference increment P3 − P1 is zero in every run, checkpoint and suite. RL fine-tuning sharpens the state estimate (GRPO's motion readout 0.76–0.85 against 0.40–0.59) but adds no comparator. Its above-floor anomaly signal sits in early layers, does not track outcome visibility, and is not novelty-driven.
+> The policies are memoryless state estimators: a single observation's embedding reads out the robot state almost perfectly (R² up to 0.97), and how the arm last moved only through where it now is. The command that produced the motion is also linearly present (E1). A comparison computed from these two decodable signals detects externally imposed motion on 8 of 9 runs, but the network never computes it. Its own representation, read with or without the command, sits at the chance floor, and the efference increment P3 − P1 is zero in every run, checkpoint and suite. RL fine-tuning sharpens the state estimate (GRPO's motion readout 0.76–0.85 against 0.40–0.59) but adds no comparator. Its above-floor anomaly signal sits in early layers, does not track outcome visibility, and is not novelty-driven.
 
 That turns the null into a located deficit: the policy has the ingredients but lacks the comparison. It points straight at the design experiments:
 - **X3 / X6:** feed the command back in.
@@ -91,7 +97,7 @@ That turns the null into a located deficit: the policy has the ingredients but l
 
 - **GRPO s1's P1 excursion** is beyond its robot-state controls (A8). The scene, such as object displacement by the donor chunk, is the candidate. Testing it needs object poses, which are not logged; a scene-only control would need new collection.
 - **GRPO goal-swap s1 has no MLP ladder** (three preempted Modal attempts), so A5's and A7's primary-family checks rest on s2 alone.
-- **Suites have one seed**, and their A3 cells are [pending].
+- **Suites have one seed.**
 - **Best-cell statistics favour P1** (max over 27 cells) in A7 and A8.
 
 ## Process notes
