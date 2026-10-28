@@ -1697,3 +1697,15 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - Base-Lora s2 linear: 0.495 vs 0.555, P1 beyond state. Base-Lora s2 MLP: 0.522 vs 0.556, unresolved.
 
   The k-NN state-distance AUROC is 0.50-0.56 in every run. **Reading: mixed.** The robot's 8-dim end state does not account for GRPO s1's P1 excursion. Whatever h(c+1) uses beyond Δs there is not the proprioceptive state; the scene, such as object positions, is the observable candidate left. That is not tested here.
+- `2026-10-28 10:01` **X0 A2 result, suites (reported alongside).** Best-cell R², listed as (i) s(c+1) / (ii) Δs from h(c+1) / (iii) Δs from h(c) ⊕ h(c+1):
+  - GRPO spatial: 0.946 / 0.780 / 0.878;
+  - Base-Lora spatial: 0.921 / 0.557 / 0.755;
+  - GRPO object: 0.960 / 0.761 / 0.864;
+  - Base-Lora object: 0.916 / 0.557 / 0.765;
+  - Base-Lora long (r2): 0.811 / 0.395 / 0.579.
+
+  (ii)'s best cell is L20/`act_mean` in every suite run. The goal-swap readings carry over unchanged:
+  - the premise as stated fails, with (ii) > 0.3 everywhere;
+  - M2 is rejected;
+  - the runs are M1-compatible;
+  - GRPO > Base-Lora on every column.
