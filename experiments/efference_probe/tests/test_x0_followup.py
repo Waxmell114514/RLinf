@@ -126,3 +126,13 @@ def test_blas_setting_reads_only_reproduced_rows(tmp_path):
     assert fu.blas_setting(tmp_path, "a") == "avx2_1t"
     assert fu.blas_setting(tmp_path, "b") is None
     assert set(fu.BLAS_ENV) == set(x0.BLAS_PASSES)
+
+
+def test_f5_reading_reports_overlapping_conditions_as_indeterminate():
+    def r(p1, floor, resid):
+        return fu.f5_reading({"P1": p1, "floor": floor, "P1_resid": resid})
+
+    assert r(0.60, 0.53, 0.59)["reading"] == "state-orthogonal"
+    assert r(0.60, 0.53, 0.54)["reading"] == "state-explained"
+    assert r(0.60, 0.53, 0.565)["reading"] == "partial"
+    assert r(0.563, 0.528, 0.545)["reading"].startswith("indeterminate")

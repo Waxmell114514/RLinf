@@ -530,25 +530,35 @@ def f5_residualised_p1(data_root: Path, run_id: str) -> dict[str, Any]:
                 residual[train], y[train], groups[train], residual[test], y[test]
             )
         )
-    p1, floor = float(numbers["P1"]["bacc"]), float(numbers["floor"])
-    resid = float(np.mean(folds))
-    if resid >= p1 - 0.02:
-        reading = "state-orthogonal"
-    elif resid <= floor + 0.02:
-        reading = "state-explained"
-    else:
-        reading = "partial"
-    return {
+    result = {
         "run": run_id,
         "checkpoint": x0.checkpoint(run_id),
         "cell": f"L{layer}/{pool}",
-        "P1": p1,
-        "floor": floor,
-        "P1_resid": resid,
+        "P1": float(numbers["P1"]["bacc"]),
+        "floor": float(numbers["floor"]),
+        "P1_resid": float(np.mean(folds)),
         "P1_resid_folds": folds,
-        "reading": reading,
         "n": int(len(y)),
     }
+    return {**result, **f5_reading(result)}
+
+
+def f5_reading(result: dict[str, Any]) -> dict[str, Any]:
+    """Both pre-registered conditions, reported separately.
+
+    They overlap when P1 is itself within 0.04 of its floor; a run that meets
+    both is indeterminate rather than assigned to either reading.
+    """
+    flags = {
+        "state-orthogonal": result["P1_resid"] >= result["P1"] - 0.02,
+        "state-explained": result["P1_resid"] <= result["floor"] + 0.02,
+    }
+    met = [k for k, v in flags.items() if v]
+    if len(met) == 2:
+        reading = "indeterminate (both conditions met; P1 within 0.04 of floor)"
+    else:
+        reading = met[0] if met else "partial"
+    return {"flags": flags, "reading": reading}
 
 
 # -- F7: where P1's hits are ----------------------------------------------------
@@ -684,6 +694,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         f2 = [json.loads(p.read_text()) for p in sorted(out.glob("f2_*.json"))]
         if f2:
             readings["F2"] = f2_reading(f2)
+        for path in sorted(out.glob("f5_*.json")):
+            result = json.loads(path.read_text())
+            result.update(f5_reading(result))
+            path.write_text(json.dumps(result, indent=2))
+            readings.setdefault("F5", {})[result["run"]] = result["reading"]
         print(json.dumps(readings, indent=2))
     else:
         for run_id in args.runs:
