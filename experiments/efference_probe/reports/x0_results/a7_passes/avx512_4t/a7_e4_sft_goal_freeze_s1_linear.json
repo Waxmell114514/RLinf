@@ -1,0 +1,35 @@
+{
+  "run": "e4_sft_goal_freeze_s1",
+  "checkpoint": "Base-Lora",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L32/act_mean",
+      "max_fold_diff": 0.006849315068493178,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L32/act_mean",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": false,
+  "n": 760,
+  "n_episodes": 108,
+  "P1-C_dstates": {
+    "point": -0.08157894736842108,
+    "ci_low": -0.13123693821114185,
+    "ci_high": -0.029021837244827084
+  },
+  "P3-P1": {
+    "point": 0.0052631578947367474,
+    "ci_low": -0.009889830508474622,
+    "ci_high": 0.019582245430809334
+  }
+}

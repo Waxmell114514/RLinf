@@ -1,0 +1,35 @@
+{
+  "run": "e4_grpo_goal_mirror_s2",
+  "checkpoint": "GRPO",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L16/act_mean",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L16/act_mean",
+      "max_fold_diff": 0.004273504273504369,
+      "same_c": false
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": false,
+  "n": 1160,
+  "n_episodes": 176,
+  "P1-C_dstates": {
+    "point": 0.01982758620689662,
+    "ci_low": -0.02112956500062329,
+    "ci_high": 0.06067629919883851
+  },
+  "P3-P1": {
+    "point": 0.006896551724137945,
+    "ci_low": -0.006251977848101137,
+    "ci_high": 0.020906002534051362
+  }
+}

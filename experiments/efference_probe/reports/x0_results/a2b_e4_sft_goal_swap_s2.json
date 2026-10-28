@@ -1,0 +1,37 @@
+{
+  "run": "e4_sft_goal_swap_s2",
+  "checkpoint": "Base-Lora",
+  "cell": [
+    20,
+    "act_mean"
+  ],
+  "n": 4000,
+  "n_hijack": 463,
+  "r2": {
+    "H": {
+      "all": 0.594460129737854,
+      "self": 0.6272494792938232,
+      "hijack": 0.3361327648162842
+    },
+    "S1": {
+      "all": 0.3009132742881775,
+      "self": 0.309844434261322,
+      "hijack": 0.1789950579404831
+    },
+    "S2": {
+      "all": 0.5800918340682983,
+      "self": 0.608365535736084,
+      "hijack": 0.3508409261703491
+    },
+    "H+S1": {
+      "all": 0.5990098714828491,
+      "self": 0.6313453912734985,
+      "hijack": 0.34333863854408264
+    }
+  },
+  "flags": {
+    "regularity explains A2 (ii)": true,
+    "h(c+1) carries motion beyond the state": false
+  },
+  "reading": "regularity explains A2 (ii)"
+}

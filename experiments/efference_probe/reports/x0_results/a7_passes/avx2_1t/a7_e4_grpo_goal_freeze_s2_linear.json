@@ -1,0 +1,35 @@
+{
+  "run": "e4_grpo_goal_freeze_s2",
+  "checkpoint": "GRPO",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L12/ctx_mean",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L12/act_mean",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": true,
+  "n": 784,
+  "n_episodes": 174,
+  "P1-C_dstates": {
+    "point": -0.052295918367346816,
+    "ci_low": -0.09431643296853624,
+    "ci_high": -0.006246561735941319
+  },
+  "P3-P1": {
+    "point": 0.0,
+    "ci_low": -0.035180628753523756,
+    "ci_high": 0.03474027229829039
+  }
+}

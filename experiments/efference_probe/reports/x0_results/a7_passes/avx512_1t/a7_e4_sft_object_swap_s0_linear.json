@@ -1,0 +1,35 @@
+{
+  "run": "e4_sft_object_swap_s0",
+  "checkpoint": "Base-Lora",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L32/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L32/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": true,
+  "n": 1178,
+  "n_episodes": 147,
+  "P1-C_dstates": {
+    "point": -0.031409168081493966,
+    "ci_low": -0.07144426311825254,
+    "ci_high": 0.010948401541184885
+  },
+  "P3-P1": {
+    "point": -0.0008488964346350381,
+    "ci_low": -0.013061580233682734,
+    "ci_high": 0.011987848654893532
+  }
+}

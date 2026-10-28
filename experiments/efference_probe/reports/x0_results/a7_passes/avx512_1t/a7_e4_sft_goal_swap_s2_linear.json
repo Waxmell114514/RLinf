@@ -1,0 +1,35 @@
+{
+  "run": "e4_sft_goal_swap_s2",
+  "checkpoint": "Base-Lora",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L32/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L28/act_mean",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": true,
+  "n": 948,
+  "n_episodes": 128,
+  "P1-C_dstates": {
+    "point": 0.01793248945147674,
+    "ci_low": -0.025642523364485893,
+    "ci_high": 0.05941004989170795
+  },
+  "P3-P1": {
+    "point": 0.0031645569620253333,
+    "ci_low": -0.03451967887879723,
+    "ci_high": 0.04283502534161091
+  }
+}

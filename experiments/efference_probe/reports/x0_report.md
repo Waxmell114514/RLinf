@@ -2,7 +2,7 @@
 - "X0 PRE-REGISTRATION" (2026-10-28 03:24) covers A1–A7, plus the implementation notes that follow it;
 - A2b and A8 were added mid-run, each pre-registered before its own numbers.
 
-No R1–R12 verdict changes. Every number below is read from `x0/` result files on the local data root; the logbook entries carry the same numbers with their file names. Cost: $0 Modal, this container's CPU only.
+No R1–R12 verdict changes. Every number below is read from the result files in `reports/x0_results/` (a copy of the data root's `x0/`); the logbook entries carry the same numbers with their file names. Cost: $0 Modal, this container's CPU only.
 
 # X0 — what the E4 hidden states say about the mechanism
 

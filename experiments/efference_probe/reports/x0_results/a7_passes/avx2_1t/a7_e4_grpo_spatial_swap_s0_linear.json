@@ -1,0 +1,35 @@
+{
+  "run": "e4_grpo_spatial_swap_s0",
+  "checkpoint": "GRPO",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L0/ctx_mean",
+      "max_fold_diff": 0.02777777777777768,
+      "same_c": false
+    },
+    "P3": {
+      "cell": "L16/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": false,
+  "n": 730,
+  "n_episodes": 255,
+  "P1-C_dstates": {
+    "point": 0.06301369863013706,
+    "ci_low": 0.010750537634408591,
+    "ci_high": 0.11285940574576939
+  },
+  "P3-P1": {
+    "point": 0.001369863013698569,
+    "ci_low": -0.03814374185136898,
+    "ci_high": 0.03900819961552033
+  }
+}

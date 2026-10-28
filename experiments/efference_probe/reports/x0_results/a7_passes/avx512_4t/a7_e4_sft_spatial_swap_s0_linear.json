@@ -1,0 +1,35 @@
+{
+  "run": "e4_sft_spatial_swap_s0",
+  "checkpoint": "Base-Lora",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L24/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L28/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": true,
+  "n": 934,
+  "n_episodes": 139,
+  "P1-C_dstates": {
+    "point": 0.06852248394004279,
+    "ci_low": 0.021589046199701954,
+    "ci_high": 0.11392766039370456
+  },
+  "P3-P1": {
+    "point": 0.0,
+    "ci_low": -0.030489909558858823,
+    "ci_high": 0.027536413261130776
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "run": "e4_grpo_object_swap_s0",
+  "checkpoint": "GRPO",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L16/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L20/act_mean",
+      "max_fold_diff": 0.004424778761061843,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": false,
+  "n": 1082,
+  "n_episodes": 284,
+  "P1-C_dstates": {
+    "point": 0.03512014787430684,
+    "ci_low": -0.004853846761141644,
+    "ci_high": 0.07518457054367557
+  },
+  "P3-P1": {
+    "point": -0.001848428835489857,
+    "ci_low": -0.030221166448230675,
+    "ci_high": 0.030076603939226697
+  }
+}

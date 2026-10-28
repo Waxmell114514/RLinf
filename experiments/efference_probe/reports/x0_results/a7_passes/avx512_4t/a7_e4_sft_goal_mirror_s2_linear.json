@@ -1,0 +1,35 @@
+{
+  "run": "e4_sft_goal_mirror_s2",
+  "checkpoint": "Base-Lora",
+  "family": "linear",
+  "checks": {
+    "P1": {
+      "cell": "L20/ctx_last",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    },
+    "P3": {
+      "cell": "L20/ctx_last",
+      "max_fold_diff": 0.005376344086021501,
+      "same_c": true
+    },
+    "C_dstates": {
+      "cell": "-",
+      "max_fold_diff": 0.0,
+      "same_c": true
+    }
+  },
+  "reproduced": false,
+  "n": 902,
+  "n_episodes": 114,
+  "P1-C_dstates": {
+    "point": -0.03658536585365857,
+    "ci_low": -0.08816765044629998,
+    "ci_high": 0.013897116903633397
+  },
+  "P3-P1": {
+    "point": -0.009977827050997812,
+    "ci_low": -0.023919003891419925,
+    "ci_high": 0.003497534305317365
+  }
+}

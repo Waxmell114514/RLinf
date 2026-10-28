@@ -1,0 +1,37 @@
+{
+  "run": "e4_grpo_goal_swap_s1",
+  "checkpoint": "GRPO",
+  "cell": [
+    24,
+    "act_mean"
+  ],
+  "n": 4000,
+  "n_hijack": 393,
+  "r2": {
+    "H": {
+      "all": 0.8344225883483887,
+      "self": 0.85132896900177,
+      "hijack": 0.6662994623184204
+    },
+    "S1": {
+      "all": 0.5118274688720703,
+      "self": 0.5155971050262451,
+      "hijack": 0.43925559520721436
+    },
+    "S2": {
+      "all": 0.8263156414031982,
+      "self": 0.8414064049720764,
+      "hijack": 0.6734844446182251
+    },
+    "H+S1": {
+      "all": 0.8344423770904541,
+      "self": 0.8510043621063232,
+      "hijack": 0.6695135235786438
+    }
+  },
+  "flags": {
+    "regularity explains A2 (ii)": true,
+    "h(c+1) carries motion beyond the state": false
+  },
+  "reading": "regularity explains A2 (ii)"
+}

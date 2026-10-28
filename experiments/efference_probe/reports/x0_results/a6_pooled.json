@@ -1,0 +1,21 @@
+{
+  "runs": [
+    "e4_sft_goal_swap_s1",
+    "e4_grpo_goal_swap_s1",
+    "e4_sft_goal_swap_s2",
+    "e4_grpo_goal_swap_s2",
+    "e4_sft_goal_mirror_s1",
+    "e4_grpo_goal_mirror_s1",
+    "e4_sft_goal_freeze_s1",
+    "e4_grpo_goal_freeze_s1",
+    "e4_sft_goal_mirror_s2",
+    "e4_grpo_goal_mirror_s2",
+    "e4_sft_goal_freeze_s2",
+    "e4_grpo_goal_freeze_s2"
+  ],
+  "rho": 0.026091359589869446,
+  "ci_low": -0.0027609213435844274,
+  "ci_high": 0.05537446935148003,
+  "n_pairs": 5475,
+  "n_clusters": 1892
+}
