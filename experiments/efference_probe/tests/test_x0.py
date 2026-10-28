@@ -126,3 +126,24 @@ def test_a2b_scores_hidden_and_state_predictors_by_label(run_and_samples):
         "regularity explains A2 (ii)",
         "h(c+1) carries motion beyond the state",
     }
+
+
+def test_cli_runs_a2b_from_the_a2_best_cell(run_and_samples):
+    run, samples = run_and_samples
+    analysis = run.run_dir / "analysis"
+    analysis.mkdir(exist_ok=True)
+    samples.to_csv(analysis / "probe_samples.csv", index=False)
+    root = run.run_dir.parent
+    out = x0.out_dir(root)
+    pd.DataFrame(
+        [
+            {
+                "target": "delta_from_next",
+                "layer": run.layers[0],
+                "pool": run.pools[0],
+                "r2_mean": 0.5,
+            }
+        ]
+    ).to_csv(out / f"a2_{run.run_dir.name}.csv", index=False)
+    assert x0.main(["--data-root", str(root), "a2b", run.run_dir.name]) == 0
+    assert (out / f"a2b_{run.run_dir.name}.json").is_file()

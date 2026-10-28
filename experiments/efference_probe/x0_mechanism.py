@@ -864,6 +864,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=[
             "a1",
             "a2",
+            "a2b",
             "a3",
             "a4",
             "a5",
