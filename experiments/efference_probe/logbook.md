@@ -1781,3 +1781,13 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **On HIJACK samples:** Spearman of correct-vs-wrong with intervention strength ‖a_exec - a_cmd_env‖ of the hijacked chunk, and the hit rate with vs without a gripper-sign disagreement between a_exec and a_cmd_env (action dim 6, any step of the chunk).
 
   **Order:** F1, F6, F3, F2, F4, F5, F7. Results are logged as they land.
+- `2026-10-28 15:08` **F1 result (BLAS resolution; `x0/followup/f1_blas.csv`, `f1_summary.json`).** Over the 17 E4 runs and the three BLAS passes:
+  - the largest deviation of a single refit fold from its CSV value is 0.054;
+  - the largest spread of a pooled point estimate across passes is 0.011 (P1 - C_dstates and P3 - P1 alike).
+
+  Methods sentence: reproduction resolution is about 0.01 on pooled differences, about a quarter of δ. Base-Lora freeze s2's P3 - P1 CI, the one that excludes 0, sits inside it (+0.025 reproducing vs +0.036 in the other two passes).
+- `2026-10-28 15:08` **F6 result (C_phase and the margin sign test; `x0/followup/f6_phase_sign.json`).**
+  - C_phase is 0.474-0.561 in every E4 run and family. The highest is GRPO goal swap s2 MLP at 0.561, against an MLP floor of 0.527, so +0.034 < δ.
+  - GRPO's linear P1 margin over floor exceeds Base-Lora's on 3 of 4 matched cells (goal s1 +0.035 vs +0.018, goal s2 +0.046 vs +0.029, object +0.062 vs +0.037; spatial +0.050 vs +0.056 the other way). The one-sided sign test gives p = 0.31.
+
+  Descriptive: phase does not carry the P1 margins, and the GRPO > Base-Lora margin pattern is not distinguishable from chance on 4 cells.
