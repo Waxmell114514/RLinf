@@ -1563,3 +1563,37 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-27 12:21:41` **E4 (driver)** probe `e4_grpo_goal_swap_s2` mlp ok: rc=0 209.8 min, plumbing.passed=True
 - `2026-10-27 13:06:15` **E4 (driver)** `e4_grpo_goal_swap_s1`: half-written `analysis_mlp` renamed to `analysis_mlp.partial_20261027T130615Z` (not deleted)
 - `2026-10-27 13:06:15` **E4 (driver)** probe `e4_grpo_goal_swap_s1` mlp (--jobs 24, speed factor 1.5); stop at 7.0 h
+- `2026-10-28 03:24` **X0 PRE-REGISTRATION (mechanism analyses on existing E4 data; fixed before any X0 number is computed).** Plan source: `reports/next_steps_fable.md` §B-C. Exploratory. It never changes an R1-R12 verdict. Code is a new `x0_mechanism.py`; probe code, samples and folds are unchanged. Samples are each run's own `analysis*/probe_samples.csv`. Folds are `probes._outer_splits` (seed 0, 5 folds), with the same C / alpha grids and inner selection as `run_probes.py`. Compute is this session's container plus free Volume reads. Runs: the E4 goal swap/mirror/freeze runs (both checkpoints, both seeds), spatial/object swap (both checkpoints) and `e4_sft_long_swap_s0_r2`.
+  **A1 efference increment (no fits).** Δeff = P3 - P1 and Δint = P4 - P1 at best cells, same family, for every completed E4 analysis plus the committed wave-2 rows. Also the matched-cell max over cells of P3 - P1. Prediction (M1): |Δeff| < 0.04 in every run.
+  **A2 outcome readout.** `probes.ridge_readout` (same alphas, grouped by episode) on up to 4000 non-post-success calls per run (seed 0), at all 27 cells. Targets, R^2 as the uniform average over the 8 state dims, per-dim also reported:
+    - (i) s(c+1) = `states_after(c)` from h(c+1);
+    - (ii) Δs(c) from h(c+1);
+    - (iii) Δs(c) from h(c) ⊕ h(c+1), at the best (i) cell.
+  Swap runs only. Predictions:
+    - memoryless premise: best (i) >= 0.5 and best (ii) < 0.3;
+    - M2 (outcome not metric): best (i) < 0.3;
+    - M1-compatible: (iii) >= 0.5.
+  **A3 decoded-ingredients oracle.** Per outer fold, ridge decoders are fit on training-episode calls only:
+    - â(c) from h(c) at the run's E1 best cell;
+    - variant A: s_before(c) from h(c) and s_after(c) from h(c+1) at the A2 (i) best cell, with Δŝ composed as `datasets._delta_states` does (rotation composed);
+    - variant B: Δŝ(c) regressed directly from h(c+1).
+
+  Training-sample decodes come from inner 5-fold cross-fitting within the training episodes; test-sample decodes come from decoders fit on all training episodes. P2r's comparison features are computed from (â, Δŝ); the implementation must reproduce the `mismatch` block exactly on true inputs. They are scored by the linear logistic with P2r's C grid and selection. Rule on the 4 goal-swap runs:
+    - "ingredients present, comparator missing (M1)" if variant A >= linear floor + 0.04 on >= 3 of 4;
+    - "ingredients insufficient" if < floor + 0.04 on >= 3 of 4 while P2r(true) >= floor + 0.10 on them;
+    - else "mixed".
+  Suites and variant B are reported alongside.
+  **A4 outcome visibility (M3).** Per run, the AUROC (hijack vs self) of a non-learned score: the Mahalanobis distance of a sample's Δs(c) from its task's SELF-sample Δs distribution (Ledoit-Wolf covariance). Prediction (M3): GRPO > Base-Lora on both goal-swap seeds. Spearman with the linear P1 margin across all E4 runs is descriptive.
+  **A5 locus (no fits).** P1(cell) - floor by layer x pool, GRPO vs Base-Lora goal swap. Prediction (M3): GRPO's top-3 P1 cells are at layer >= 24 or pool `ctx_last`.
+  **A6 novelty (M4).** Per matched pair (`pair_id`):
+    - Δnov = novelty(hijack) - novelty(self), where novelty is the Mahalanobis distance of h(c+1) at L0/`ctx_mean` in PCA-50 space fit on the run's self samples;
+    - Δent = next-call `entropy_mean` difference (E3's quantity);
+    - Spearman ρ per run, and pooled over all goal runs with an episode-cluster bootstrap 95% CI (B = 2000, seed 0).
+
+  Prediction (M4): pooled ρ > 0 with the CI excluding 0. A CI covering 0 means the novelty mechanism lacks per-pair support.
+  **A7 paired bootstrap.** Linear family: P1 and P3 at their best cells (per `probe_results.csv`) plus C_dstates are refit with out-of-fold predictions kept. Each must reproduce the CSV's fold balanced accuracies within 1e-6, else it is flagged and excluded. An episode-cluster bootstrap (B = 2000, seed 0) is computed on the pooled-OOF balanced-accuracy differences P1 - C_dstates and P3 - P1. MLP is run for GRPO goal-swap s2 only. Fixed reading:
+    - the CI is conditional on the selected cell and so optimistic for P1 - C_dstates;
+    - a CI covering 0 means "not separable from observables";
+    - a CI excluding 0 is not by itself a positive.
+
+  **Order:** A1, A5, A2, A3, A7, A4, A6. Results are logged as they land.
