@@ -1791,3 +1791,53 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - GRPO's linear P1 margin over floor exceeds Base-Lora's on 3 of 4 matched cells (goal s1 +0.035 vs +0.018, goal s2 +0.046 vs +0.029, object +0.062 vs +0.037; spatial +0.050 vs +0.056 the other way). The one-sided sign test gives p = 0.31.
 
   Descriptive: phase does not carry the P1 margins, and the GRPO > Base-Lora margin pattern is not distinguishable from chance on 4 cells.
+- `2026-10-28 15:55` **F3 result (oracle decomposition; `x0/followup/f3_<run>.json`).** In every run so far, the (true a, true Δs) pair reproduces the CSV's P2r fold scores exactly.
+
+  | run | true a + decoded Δŝ | decoded â + true Δs | P2r (true) | P2r - 0.10 |
+  |---|---|---|---|---|
+  | Base-Lora goal s1 | 0.688 | 0.645 | 0.798 | 0.698 |
+  | Base-Lora goal s2 | 0.678 | 0.666 | 0.827 | 0.727 |
+  | Base-Lora spatial | 0.711 | 0.656 | 0.820 | 0.720 |
+  | Base-Lora object | **0.784** | 0.734 | 0.880 | 0.780 |
+  | Base-Lora long | 0.666 | 0.690 | 0.844 | 0.744 |
+  | GRPO goal s1 | 0.589 | 0.581 | 0.672 | 0.572 |
+  | GRPO goal s2 | 0.607 | 0.611 | 0.681 | 0.581 |
+  | GRPO object | 0.578 | 0.578 | 0.625 | 0.525 |
+  | GRPO spatial | [pending] | | | |
+
+  **Pre-registered reading: "both decodes lossy".** On Base-Lora the outcome side is OK on 1 of 5 and the command side on 0 of 5.
+  - Each decoded side alone costs 0.10-0.18 against true inputs on Base-Lora. The combined A3 oracle sits lower still (0.60-0.68).
+  - Neither the command decode nor the outcome decode is in command-comparable form at full fidelity. Fable's reading (b), "the format supports the comparison given a supervised state readout", is not supported as stated. Reading (a), "outcome code not in command-comparable form", partly survives on both sides.
+  - Descriptive: on GRPO both mixed pairs are within 0.10 of a lower P2r.
+- `2026-10-28 15:55` **F2 result (A2b residual test; `x0/followup/f2_<run>.json`).** Gain of S2 + ridge(h(c+1) → S2 residual) over S2, listed as all calls / HIJACK calls:
+  - GRPO s1: +0.008 / +0.003;
+  - GRPO s2: +0.007 / +0.005;
+  - Base-Lora s1: +0.009 / -0.007;
+  - Base-Lora s2: +0.005 / +0.002.
+
+  **Pre-registered reading: "no motion trace beyond the end-effector state" (4 of 4).** The "only through the state" sentence is licensed. h(c+1) adds at most 0.009 R² to a per-task k-NN on the true 8-dim end state.
+- `2026-10-28 15:55` **F4 result (state readout in physical units, matched support; `x0/followup/f4_state_rmse.json`).** nRMSE is on the pooled-SD scale; gap = Base-Lora - GRPO, listed as all calls → in-support calls:
+  - s1 pair: L0/`ctx_mean` 0.151 → 0.049 (ratio 0.32); best cells (L4 vs L12 `ctx_mean`) 0.157 → 0.060 (0.38);
+  - s2 pair: L0 0.165 → 0.044 (0.27); best cells (L16 vs L8) 0.160 → 0.033 (0.21).
+
+  **Pre-registered reading: "data effect" at both cells.** The matched gap is <= 0.5 × the all-calls gap in both pairs, so write "RL narrows the state distribution and the state becomes more readable", not "RL sharpens the state estimate".
+  - **Caveat:** only 321-327 of Base-Lora's 4000 calls lie in GRPO's support, against 1706-1863 of GRPO's in Base-Lora's.
+  - **Physical RMSE at L0:** translation is 1.5-2.1 cm for Base-Lora against 0.9-1.3 cm for GRPO; the rotation axis-angle dims are 0.14-0.43 against 0.07-0.19.
+- `2026-10-28 15:55` **F5 result (residualised P1; `x0/followup/f5_<run>.json`).** Linear P1 at its best cell after removing the per-task linear state fit, inside the folds:
+  - GRPO s2 (L8/`ctx_mean`): P1 0.586 → 0.549, floor 0.541, **state-explained**;
+  - Base-Lora s2 (L32/`ctx_last`): 0.555 → 0.530, floor 0.526, **state-explained**;
+  - GRPO s1 (L12/`ctx_mean`): 0.563 → 0.545, floor 0.528;
+  - Base-Lora s1 (L28/`act_mean`): 0.543 → 0.530, floor 0.525.
+
+  GRPO s1 and Base-Lora s1 meet *both* pre-registered conditions (P1_resid >= P1 - 0.02 and <= floor + 0.02), because their P1 is itself within 0.04 of floor. They are reported as **indeterminate**. The first code version labelled them "state-orthogonal" by check order; that was fixed (commit 4bbeeaf) before this entry.
+
+  Reading: the one goal-swap P1 excursion beyond δ, GRPO s2, is carried by a linear function of the end-effector state.
+- `2026-10-28 15:55` **F7 result (where P1's hits are; `x0/followup/f7_<run>.json`).** All 9 refits reproduce the CSV folds.
+  - **Competence flag:** fires only for Base-Lora long, where flagged tasks 4 and 8 carry 0.58 of the margin. GRPO goal's flagged task 5 carries 0.10 (s1) and 0.27 (s2); the margins are spread over tasks elsewhere.
+  - **Intervention strength vs HIJACK hits:** Spearman is significant only on object, Base-Lora ρ = 0.198 (p < 0.001) and GRPO ρ = 0.090 (p = 0.036). Elsewhere |ρ| <= 0.07.
+  - **Hit rate with vs without a gripper-sign disagreement:**
+    - higher with it on object (GRPO 0.675 vs 0.553; Base-Lora 0.594 vs 0.481) and on Base-Lora long (0.605 vs 0.536);
+    - reversed on Base-Lora spatial (0.577 vs 0.670);
+    - within 0.05 elsewhere.
+
+  Descriptive: P1's hits do not concentrate on low-competence tasks, except Base-Lora long. A magnitude/gripper dependence appears only on object, where a wrong gripper action is visible in the scene.
