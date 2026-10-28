@@ -370,6 +370,104 @@ def a2_outcome_readout(data_root: Path, run_id: str, n_jobs: int = 2) -> pd.Data
     return frame
 
 
+# -- A2b: does h(c+1) know the motion beyond the state? ---------------------
+
+
+def _oof_ridge(x: np.ndarray, y: np.ndarray, groups: np.ndarray) -> np.ndarray:
+    """Out-of-fold ridge predictions on ``ridge_readout``'s folds and alphas."""
+    from sklearn.model_selection import GroupKFold
+
+    x, y = np.asarray(x, np.float32), np.asarray(y, np.float32)
+    predicted = np.zeros_like(y)
+    for train, test in GroupKFold(n_splits=N_SPLITS).split(x, y, groups):
+        alpha = _ridge_alpha(x[train], y[train], groups[train])
+        predicted[test] = _SharedRidge(x[train], y[train]).predict(x[test], alpha)
+    return predicted
+
+
+def _oof_knn(
+    state: np.ndarray, y: np.ndarray, groups: np.ndarray, tasks: np.ndarray, k: int = 10
+) -> np.ndarray:
+    """Per-task k-NN on the standardised state, on the same grouped folds."""
+    from sklearn.model_selection import GroupKFold
+    from sklearn.neighbors import KNeighborsRegressor
+    from sklearn.preprocessing import StandardScaler
+
+    predicted = np.zeros_like(y, dtype=np.float32)
+    for train, test in GroupKFold(n_splits=N_SPLITS).split(state, y, groups):
+        for task in np.unique(tasks[test]):
+            fit, rows = train[tasks[train] == task], test[tasks[test] == task]
+            if len(fit) == 0:
+                fit = train
+            scaler = StandardScaler().fit(state[fit])
+            model = KNeighborsRegressor(n_neighbors=min(k, len(fit)))
+            model.fit(scaler.transform(state[fit]), y[fit])
+            predicted[rows] = model.predict(scaler.transform(state[rows]))
+    return predicted
+
+
+def a2b_motion_beyond_state(data_root: Path, run_id: str, cell: tuple[int, str]):
+    """R² of Δs(c) from h(c+1) against state-only controls, by call label."""
+    from sklearn.metrics import r2_score
+
+    run, _, store = load(data_root, run_id)
+    pairs = readout_pairs(run)
+    cur = list(zip(pairs["episode_id"], pairs["call"]))
+    nxt = [(e, c + 1) for e, c in cur]
+    groups = pairs["episode_id"].to_numpy()
+    lookup = call_lookup(run.calls)
+    positions = np.array([lookup[(int(e), int(c))] for e, c in cur])
+    hijack = run.calls["label"].to_numpy()[positions] == "HIJACK"
+    tasks = run.calls["task_id"].to_numpy()[positions]
+    delta = _delta_states(run.calls, lookup, cur)
+    state = states(run, cur, "states_after")
+    onehot = (tasks[:, None] == np.unique(tasks)[None, :]).astype(np.float32)
+    per_task = np.concatenate(
+        [
+            state,
+            onehot,
+            (state[:, :, None] * onehot[:, None, :]).reshape(len(state), -1),
+        ],
+        axis=1,
+    )
+    hidden = store.vectors(nxt, run.layer_index(cell[0]), run.pool_index(cell[1]))
+    predictions = {
+        "H": _oof_ridge(hidden, delta, groups),
+        "S1": _oof_ridge(per_task, delta, groups),
+        "S2": _oof_knn(state, delta, groups, tasks),
+        "H+S1": _oof_ridge(np.concatenate([hidden, per_task], axis=1), delta, groups),
+    }
+    subsets = {"all": np.ones(len(delta), bool), "self": ~hijack, "hijack": hijack}
+    r2 = {
+        name: {
+            subset: float(
+                r2_score(delta[rows], pred[rows], multioutput="uniform_average")
+            )
+            for subset, rows in subsets.items()
+        }
+        for name, pred in predictions.items()
+    }
+    best_state_all = max(r2["S1"]["all"], r2["S2"]["all"])
+    best_state_hijack = max(r2["S1"]["hijack"], r2["S2"]["hijack"])
+    flags = {
+        "regularity explains A2 (ii)": best_state_all >= r2["H"]["all"] - 0.10,
+        "h(c+1) carries motion beyond the state": (
+            r2["H"]["hijack"] >= best_state_hijack + 0.10
+        ),
+    }
+    reading = " and ".join(k for k, v in flags.items() if v) or "unresolved"
+    return {
+        "run": run_id,
+        "checkpoint": checkpoint(run_id),
+        "cell": list(cell),
+        "n": int(len(delta)),
+        "n_hijack": int(hijack.sum()),
+        "r2": r2,
+        "flags": flags,
+        "reading": reading,
+    }
+
+
 # -- A3: decoded-ingredients oracle -----------------------------------------
 
 
@@ -832,6 +930,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                     .head(1)
                     .to_string(index=False)
                 )
+            elif args.analysis == "a2b":
+                a2 = pd.read_csv(out / f"a2_{run_id}.csv")
+                cell = best_cell(a2[a2["target"] == "delta_from_next"])
+                result = a2b_motion_beyond_state(root, run_id, cell)
+                target.with_suffix(".json").write_text(json.dumps(result, indent=2))
+                print(json.dumps(result, indent=2))
             elif args.analysis == "a3":
                 a2 = pd.read_csv(out / f"a2_{run_id}.csv")
                 result = a3_oracle(

@@ -107,3 +107,22 @@ def test_cluster_bootstrap_spearman_resamples_episodes():
     result = x0.cluster_bootstrap_spearman(frame, b=200)
     assert result["n_clusters"] == 40
     assert 0.9 < result["ci_low"] <= result["rho"] <= result["ci_high"] <= 1.0
+
+
+def test_a2b_scores_hidden_and_state_predictors_by_label(run_and_samples):
+    run, samples = run_and_samples
+    analysis = run.run_dir / "analysis"
+    analysis.mkdir(exist_ok=True)
+    samples.to_csv(analysis / "probe_samples.csv", index=False)
+    result = x0.a2b_motion_beyond_state(
+        run.run_dir.parent, run.run_dir.name, (run.layers[-1], run.pools[0])
+    )
+    assert result["n_hijack"] > 0
+    assert set(result["r2"]) == {"H", "S1", "S2", "H+S1"}
+    for scores in result["r2"].values():
+        assert set(scores) == {"all", "self", "hijack"}
+        assert all(np.isfinite(v) for v in scores.values())
+    assert set(result["flags"]) == {
+        "regularity explains A2 (ii)",
+        "h(c+1) carries motion beyond the state",
+    }
