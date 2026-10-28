@@ -147,3 +147,14 @@ def test_cli_runs_a2b_from_the_a2_best_cell(run_and_samples):
     ).to_csv(out / f"a2_{run.run_dir.name}.csv", index=False)
     assert x0.main(["--data-root", str(root), "a2b", run.run_dir.name]) == 0
     assert (out / f"a2b_{run.run_dir.name}.json").is_file()
+
+
+def test_per_task_state_gives_each_task_its_own_linear_map():
+    state = np.arange(12, dtype=np.float32).reshape(3, 4)
+    tasks = np.array([2, 5, 2])
+    features = x0._per_task_state(state, tasks)
+    assert features.shape == (3, 4 + 2 + 4 * 2)
+    np.testing.assert_array_equal(features[:, 4:6], [[1, 0], [0, 1], [1, 0]])
+    interaction = features[:, 6:].reshape(3, 4, 2)
+    np.testing.assert_array_equal(interaction[0, :, 0], state[0])
+    np.testing.assert_array_equal(interaction[0, :, 1], 0)

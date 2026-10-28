@@ -54,6 +54,7 @@ from efference_probe.probes import (  # noqa: E402
     _select_c,
     _SharedRidge,
     ridge_readout,
+    run_probe,
 )
 
 SEED = 0
@@ -827,6 +828,83 @@ def a7_bootstrap(
     return out
 
 
+# -- A8: the absolute state after the hijacked chunk --------------------------
+
+
+def _per_task_state(state: np.ndarray, tasks: np.ndarray) -> np.ndarray:
+    """[s, task one-hot, s ⊗ task one-hot]: a separate linear map per task."""
+    onehot = (tasks[:, None] == np.unique(tasks)[None, :]).astype(np.float32)
+    interaction = (state[:, :, None] * onehot[:, None, :]).reshape(len(state), -1)
+    return np.concatenate([state, onehot, interaction], axis=1).astype(np.float32)
+
+
+def a8_state_control(data_root: Path, run_id: str, family: str) -> dict[str, Any]:
+    """Can the end state alone tell a hijacked chunk from the policy's own?"""
+    from sklearn.metrics import roc_auc_score
+    from sklearn.neighbors import NearestNeighbors
+    from sklearn.preprocessing import StandardScaler
+
+    run, samples, _ = load(data_root, run_id)
+    prev = list(zip(samples["episode_id"], samples["prev_call"]))
+    state = states(run, prev, "states_after")
+    delta = _delta_states(run.calls, call_lookup(run.calls), prev)
+    tasks = samples["task_id"].to_numpy()
+    y = samples["y"].to_numpy(dtype=int)
+    groups = samples["episode_id"].to_numpy()
+    grid = DEFAULT_C_VALUES if family == "linear" else DEFAULT_MLP_ALPHAS
+    features = {
+        "C_state": _per_task_state(state, tasks),
+        "C_state+d": np.concatenate([_per_task_state(state, tasks), delta], axis=1),
+    }
+    scores = {}
+    for name, x in features.items():
+        result = run_probe(
+            x, y, groups, name=name, blocks=[name], c_values=grid, family=family
+        )
+        scores[name] = {
+            "bacc": result.balanced_acc_mean,
+            "sd": result.balanced_acc_std,
+            "folds": result.fold_balanced_acc,
+        }
+    distance = np.full(len(y), np.nan)
+    for train, test in _outer_splits(np.zeros((len(y), 1)), y, groups, N_SPLITS, SEED):
+        for task in np.unique(tasks[test]):
+            ref = train[(tasks[train] == task) & (y[train] == 0)]
+            rows = test[tasks[test] == task]
+            if len(ref) < 2:
+                ref = train[y[train] == 0]
+            scaler = StandardScaler().fit(state[ref])
+            k = min(10, len(ref))
+            neighbours = NearestNeighbors(n_neighbors=k).fit(
+                scaler.transform(state[ref])
+            )
+            distance[rows] = neighbours.kneighbors(scaler.transform(state[rows]))[
+                0
+            ].mean(1)
+    numbers = report._family_numbers(common.analysis_dir(run.run_dir, family))
+    p1 = numbers["P1"]["bacc"]
+    best = max(scores["C_state"]["bacc"], scores["C_state+d"]["bacc"])
+    if best >= p1 - 0.02:
+        reading = "state accounts for P1"
+    elif p1 >= best + DELTA:
+        reading = "P1 beyond state"
+    else:
+        reading = "unresolved"
+    return {
+        "run": run_id,
+        "checkpoint": checkpoint(run_id),
+        "family": family,
+        "floor": numbers["floor"],
+        "P1": p1,
+        "P1_cell": numbers["P1"]["cell"],
+        "C_dstates": numbers["C_dstates"]["bacc"],
+        "scores": scores,
+        "knn_auroc": float(roc_auc_score(y, distance)),
+        "reading": reading,
+        "n": int(len(y)),
+    }
+
+
 # Host types the Modal probe rounds ran on differ in BLAS kernels and thread
 # counts, and lbfgs predictions near the boundary follow them, so a refit can
 # miss its CSV by a sample or two.  A7 is therefore run once per setting below
@@ -872,6 +950,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "a6-pool",
             "a7",
             "a7-select",
+            "a8",
             "check",
         ],
     )
@@ -951,6 +1030,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 frame = a6_novelty(root, run_id)
                 frame.to_csv(target.with_suffix(".csv"), index=False)
                 print(run_id, cluster_bootstrap_spearman(frame))
+            elif args.analysis == "a8":
+                result = a8_state_control(root, run_id, args.family)
+                path = out / f"a8_{run_id}_{args.family}.json"
+                path.write_text(json.dumps(result, indent=2))
+                print(json.dumps(result, indent=2))
             elif args.analysis == "a7":
                 result = a7_bootstrap(root, run_id, args.family)
                 target.with_suffix(".json").write_text(json.dumps(result, indent=2))
