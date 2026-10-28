@@ -1,0 +1,21 @@
+{
+  "run": "e4_grpo_goal_swap_s2",
+  "checkpoint": "GRPO",
+  "cell": "L8/ctx_mean",
+  "P1": 0.586242747299401,
+  "floor": 0.5405711859723841,
+  "P1_resid": 0.5491394248156359,
+  "P1_resid_folds": [
+    0.5697674418604651,
+    0.5229885057471264,
+    0.588235294117647,
+    0.5,
+    0.5647058823529412
+  ],
+  "reading": "state-explained",
+  "n": 858,
+  "flags": {
+    "state-orthogonal": false,
+    "state-explained": true
+  }
+}

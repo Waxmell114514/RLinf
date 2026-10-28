@@ -1,0 +1,77 @@
+{
+  "run": "e4_grpo_spatial_swap_s0",
+  "checkpoint": "GRPO",
+  "cell": "L0/ctx_mean",
+  "reproduced": true,
+  "per_task": [
+    {
+      "task_id": 0,
+      "n": 36,
+      "bacc": 0.5,
+      "margin_share": 0.0
+    },
+    {
+      "task_id": 1,
+      "n": 96,
+      "bacc": 0.65625,
+      "margin_share": 0.3191489361702127
+    },
+    {
+      "task_id": 2,
+      "n": 52,
+      "bacc": 0.5192307692307692,
+      "margin_share": 0.02127659574468077
+    },
+    {
+      "task_id": 3,
+      "n": 46,
+      "bacc": 0.6521739130434783,
+      "margin_share": 0.14893617021276592
+    },
+    {
+      "task_id": 4,
+      "n": 86,
+      "bacc": 0.5348837209302326,
+      "margin_share": 0.06382978723404266
+    },
+    {
+      "task_id": 5,
+      "n": 76,
+      "bacc": 0.6710526315789473,
+      "margin_share": 0.27659574468085096
+    },
+    {
+      "task_id": 6,
+      "n": 82,
+      "bacc": 0.5121951219512195,
+      "margin_share": 0.021276595744680868
+    },
+    {
+      "task_id": 7,
+      "n": 100,
+      "bacc": 0.5800000000000001,
+      "margin_share": 0.17021276595744694
+    },
+    {
+      "task_id": 8,
+      "n": 72,
+      "bacc": 0.4444444444444444,
+      "margin_share": -0.08510638297872343
+    },
+    {
+      "task_id": 9,
+      "n": 84,
+      "bacc": 0.5357142857142857,
+      "margin_share": 0.06382978723404252
+    }
+  ],
+  "flagged_tasks": [],
+  "flagged_margin_share": 0.0,
+  "flag": false,
+  "hijack_hit_vs_strength_spearman": 0.06966812994336473,
+  "hijack_hit_vs_strength_p": 0.1841594607620158,
+  "hit_rate_gripper_disagree": 0.5632183908045977,
+  "n_gripper_disagree": 87,
+  "hit_rate_gripper_agree": 0.5503597122302158,
+  "n_gripper_agree": 278
+}

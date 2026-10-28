@@ -1,0 +1,21 @@
+{
+  "run": "e4_grpo_goal_swap_s1",
+  "checkpoint": "GRPO",
+  "cell": "L12/ctx_mean",
+  "P1": 0.5630811403508773,
+  "floor": 0.5276380185030841,
+  "P1_resid": 0.5451754385964913,
+  "P1_resid_folds": [
+    0.5421052631578948,
+    0.5368421052631579,
+    0.531578947368421,
+    0.5736842105263158,
+    0.5416666666666667
+  ],
+  "reading": "indeterminate (both conditions met; P1 within 0.04 of floor)",
+  "n": 952,
+  "flags": {
+    "state-orthogonal": true,
+    "state-explained": true
+  }
+}

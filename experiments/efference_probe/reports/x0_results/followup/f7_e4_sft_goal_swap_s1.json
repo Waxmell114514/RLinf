@@ -1,0 +1,77 @@
+{
+  "run": "e4_sft_goal_swap_s1",
+  "checkpoint": "Base-Lora",
+  "cell": "L28/act_mean",
+  "reproduced": true,
+  "per_task": [
+    {
+      "task_id": 0,
+      "n": 122,
+      "bacc": 0.5901639344262295,
+      "margin_share": 0.26190476190476186
+    },
+    {
+      "task_id": 1,
+      "n": 30,
+      "bacc": 0.6666666666666666,
+      "margin_share": 0.11904761904761903
+    },
+    {
+      "task_id": 2,
+      "n": 78,
+      "bacc": 0.5641025641025641,
+      "margin_share": 0.11904761904761904
+    },
+    {
+      "task_id": 3,
+      "n": 198,
+      "bacc": 0.5353535353535354,
+      "margin_share": 0.16666666666666669
+    },
+    {
+      "task_id": 4,
+      "n": 32,
+      "bacc": 0.5625,
+      "margin_share": 0.047619047619047616
+    },
+    {
+      "task_id": 5,
+      "n": 166,
+      "bacc": 0.5240963855421688,
+      "margin_share": 0.09523809523809554
+    },
+    {
+      "task_id": 6,
+      "n": 106,
+      "bacc": 0.5471698113207547,
+      "margin_share": 0.11904761904761903
+    },
+    {
+      "task_id": 7,
+      "n": 26,
+      "bacc": 0.5,
+      "margin_share": 0.0
+    },
+    {
+      "task_id": 8,
+      "n": 60,
+      "bacc": 0.35,
+      "margin_share": -0.21428571428571433
+    },
+    {
+      "task_id": 9,
+      "n": 150,
+      "bacc": 0.58,
+      "margin_share": 0.2857142857142856
+    }
+  ],
+  "flagged_tasks": [],
+  "flagged_margin_share": 0.0,
+  "flag": false,
+  "hijack_hit_vs_strength_spearman": -0.059964209052068305,
+  "hijack_hit_vs_strength_p": 0.18784304617575348,
+  "hit_rate_gripper_disagree": 0.5633333333333334,
+  "n_gripper_disagree": 300,
+  "hit_rate_gripper_agree": 0.6086956521739131,
+  "n_gripper_agree": 184
+}

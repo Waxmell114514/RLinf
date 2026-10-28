@@ -1841,3 +1841,4 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - within 0.05 elsewhere.
 
   Descriptive: P1's hits do not concentrate on low-competence tasks, except Base-Lora long. A magnitude/gripper dependence appears only on object, where a wrong gripper action is visible in the scene.
+- `2026-10-28 16:01` **F3, GRPO spatial (fills the [pending] row above).** True a + decoded Δŝ 0.594; decoded â + true Δs 0.586; P2r (true) 0.647, reproduced exactly; P2r - 0.10 = 0.547. Both mixed pairs are within 0.10, as on the other GRPO runs. The F3 reading ("both decodes lossy", made on Base-Lora) is unchanged. F1-F7 are complete.

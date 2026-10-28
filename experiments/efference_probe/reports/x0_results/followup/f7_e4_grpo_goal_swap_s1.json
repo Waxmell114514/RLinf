@@ -1,0 +1,79 @@
+{
+  "run": "e4_grpo_goal_swap_s1",
+  "checkpoint": "GRPO",
+  "cell": "L12/ctx_mean",
+  "reproduced": true,
+  "per_task": [
+    {
+      "task_id": 0,
+      "n": 126,
+      "bacc": 0.5952380952380952,
+      "margin_share": 0.2
+    },
+    {
+      "task_id": 1,
+      "n": 50,
+      "bacc": 0.5,
+      "margin_share": 0.0
+    },
+    {
+      "task_id": 2,
+      "n": 66,
+      "bacc": 0.6818181818181819,
+      "margin_share": 0.2000000000000001
+    },
+    {
+      "task_id": 3,
+      "n": 268,
+      "bacc": 0.5634328358208955,
+      "margin_share": 0.28333333333333344
+    },
+    {
+      "task_id": 4,
+      "n": 46,
+      "bacc": 0.391304347826087,
+      "margin_share": -0.08333333333333333
+    },
+    {
+      "task_id": 5,
+      "n": 126,
+      "bacc": 0.5476190476190476,
+      "margin_share": 0.0999999999999999
+    },
+    {
+      "task_id": 6,
+      "n": 58,
+      "bacc": 0.5862068965517242,
+      "margin_share": 0.0833333333333334
+    },
+    {
+      "task_id": 7,
+      "n": 36,
+      "bacc": 0.6666666666666666,
+      "margin_share": 0.09999999999999998
+    },
+    {
+      "task_id": 8,
+      "n": 44,
+      "bacc": 0.45454545454545453,
+      "margin_share": -0.033333333333333354
+    },
+    {
+      "task_id": 9,
+      "n": 132,
+      "bacc": 0.5681818181818181,
+      "margin_share": 0.1499999999999999
+    }
+  ],
+  "flagged_tasks": [
+    5
+  ],
+  "flagged_margin_share": 0.0999999999999999,
+  "flag": false,
+  "hijack_hit_vs_strength_spearman": 0.024281827823189092,
+  "hijack_hit_vs_strength_p": 0.5971856667454493,
+  "hit_rate_gripper_disagree": 0.5527950310559007,
+  "n_gripper_disagree": 161,
+  "hit_rate_gripper_agree": 0.5396825396825397,
+  "n_gripper_agree": 315
+}

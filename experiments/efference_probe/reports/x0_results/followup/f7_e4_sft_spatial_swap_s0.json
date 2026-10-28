@@ -1,0 +1,77 @@
+{
+  "run": "e4_sft_spatial_swap_s0",
+  "checkpoint": "Base-Lora",
+  "cell": "L24/ctx_last",
+  "reproduced": true,
+  "per_task": [
+    {
+      "task_id": 0,
+      "n": 92,
+      "bacc": 0.5543478260869565,
+      "margin_share": 0.07352941176470594
+    },
+    {
+      "task_id": 1,
+      "n": 136,
+      "bacc": 0.5147058823529411,
+      "margin_share": 0.029411764705882262
+    },
+    {
+      "task_id": 2,
+      "n": 36,
+      "bacc": 0.6666666666666666,
+      "margin_share": 0.08823529411764706
+    },
+    {
+      "task_id": 3,
+      "n": 50,
+      "bacc": 0.6599999999999999,
+      "margin_share": 0.11764705882352941
+    },
+    {
+      "task_id": 4,
+      "n": 140,
+      "bacc": 0.5785714285714285,
+      "margin_share": 0.1617647058823529
+    },
+    {
+      "task_id": 5,
+      "n": 98,
+      "bacc": 0.5204081632653061,
+      "margin_share": 0.029411764705882398
+    },
+    {
+      "task_id": 6,
+      "n": 100,
+      "bacc": 0.61,
+      "margin_share": 0.16176470588235298
+    },
+    {
+      "task_id": 7,
+      "n": 72,
+      "bacc": 0.6388888888888888,
+      "margin_share": 0.14705882352941177
+    },
+    {
+      "task_id": 8,
+      "n": 94,
+      "bacc": 0.5638297872340425,
+      "margin_share": 0.08823529411764706
+    },
+    {
+      "task_id": 9,
+      "n": 116,
+      "bacc": 0.5603448275862069,
+      "margin_share": 0.1029411764705882
+    }
+  ],
+  "flagged_tasks": [],
+  "flagged_margin_share": 0.0,
+  "flag": false,
+  "hijack_hit_vs_strength_spearman": 0.022367840700282984,
+  "hijack_hit_vs_strength_p": 0.629707895831529,
+  "hit_rate_gripper_disagree": 0.5774647887323944,
+  "n_gripper_disagree": 355,
+  "hit_rate_gripper_agree": 0.6696428571428571,
+  "n_gripper_agree": 112
+}

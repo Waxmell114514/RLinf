@@ -1,0 +1,21 @@
+{
+  "run": "e4_sft_goal_swap_s1",
+  "checkpoint": "Base-Lora",
+  "cell": "L28/act_mean",
+  "P1": 0.5432056208267355,
+  "floor": 0.5249433873460596,
+  "P1_resid": 0.5298357823867474,
+  "P1_resid_folds": [
+    0.5103092783505154,
+    0.5412371134020618,
+    0.5612244897959184,
+    0.5157894736842105,
+    0.5206185567010309
+  ],
+  "reading": "indeterminate (both conditions met; P1 within 0.04 of floor)",
+  "n": 968,
+  "flags": {
+    "state-orthogonal": true,
+    "state-explained": true
+  }
+}

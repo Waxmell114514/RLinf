@@ -1,0 +1,6 @@
+{
+  "max_fold_diff": 0.054054054054053946,
+  "max_spread_P1-C_dstates": 0.010610079575596787,
+  "max_spread_P3-P1": 0.010610079575596787,
+  "runs_with_more_than_one_pass": 17
+}
