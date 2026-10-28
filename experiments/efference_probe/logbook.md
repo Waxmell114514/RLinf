@@ -1642,3 +1642,23 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - otherwise "unresolved".
 
   The reading is made per run and summarised by checkpoint.
+- `2026-10-28 07:26` **X0 A2b result (`x0/a2b_<run>.json`).** Out-of-fold uniform R² for Δs(c), reported as all / SELF / HIJACK calls. Each run is listed as H, S2 (per-task k-NN on the true s(c+1)), S1:
+  - GRPO s1: H 0.834 / 0.851 / 0.666; S2 0.826 / 0.841 / 0.673; S1 0.512.
+  - GRPO s2: H 0.849 / 0.863 / 0.718; S2 0.840 / 0.853 / 0.717; S1 0.298.
+  - Base-Lora s1: H 0.585 / 0.618 / 0.299; S2 0.577 / 0.603 / 0.339; S1 0.321.
+  - Base-Lora s2: H 0.594 / 0.627 / 0.336; S2 0.580 / 0.608 / 0.351; S1 0.301.
+
+  H+S1 is within 0.005 of H everywhere. **Reading:** "regularity explains A2 (ii)" in all 4. "h(c+1) carries motion beyond the state" in none: on HIJACK calls H is at or below S2 in every run. The A2 failure of the memoryless premise is a state effect. h(c+1) knows the last motion only through where the arm now is, as a memoryless policy should.
+- `2026-10-28 07:26` **X0 A8 PRE-REGISTRATION (exploratory; fixed before any A8 number).** Follows from A2b. The ladder has no control for the *absolute* state after the hijacked chunk: C_dstates sees only Δs, while h(c+1) carries s(c+1) at R² >= 0.875 (A2).
+  **Features,** per sample, with s(c+1) = `states_after(prev_call)`:
+    - C_state: [s(c+1), task one-hot, s(c+1) ⊗ task one-hot];
+    - C_state+d: C_state ⊕ Δs(prev_call).
+
+  **Fitting.** Both are scored by `probes.run_probe` on the run's own `probe_samples.csv`, with the ladder's folds, grid and selection. The linear family is fit on all 17 E4 runs; the MLP family on GRPO goal-swap s2 (the only goal-swap run with an MLP ladder besides Base-Lora s1/s2, which are also fit).
+  **Non-learned score.** Mean k-NN distance (k = 10) of standardised s(c+1) to the training-fold SELF samples of the same task, cross-fitted on `_outer_splits`, reported as AUROC.
+  **Readings,** goal swap, same family, P1 at its best cell:
+    - "state accounts for P1" if max(C_state, C_state+d) >= P1 - 0.02;
+    - "P1 beyond state" if P1 >= max(C_state, C_state+d) + 0.04;
+    - otherwise "unresolved".
+
+  P1's best cell is a max over 27 cells, so this comparison favours P1.
