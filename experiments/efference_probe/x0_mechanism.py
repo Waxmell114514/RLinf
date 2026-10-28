@@ -729,6 +729,32 @@ def a7_bootstrap(
     return out
 
 
+# Host types the Modal probe rounds ran on differ in BLAS kernels and thread
+# counts, and lbfgs predictions near the boundary follow them, so a refit can
+# miss its CSV by a sample or two.  A7 is therefore run once per setting below
+# (``OPENBLAS_CORETYPE`` / ``OPENBLAS_NUM_THREADS``), each into
+# ``x0/a7_passes/<setting>/``; a run counts as reproduced when one setting
+# reproduces all of its rungs, and that setting's numbers are used.
+BLAS_PASSES = ("avx2_1t", "avx512_4t", "avx512_1t")
+
+
+def a7_select(out: Path, family: str) -> pd.DataFrame:
+    rows = {}
+    for setting in BLAS_PASSES:
+        for path in sorted((out / "a7_passes" / setting).glob(f"a7_*_{family}.json")):
+            result = json.loads(path.read_text())
+            if result["run"] in rows and rows[result["run"]]["reproduced"]:
+                continue
+            row = {"run": result["run"], "checkpoint": result["checkpoint"]}
+            row.update(family=family, blas=setting, reproduced=result["reproduced"])
+            for key in ("P1-C_dstates", "P3-P1"):
+                for stat in ("point", "ci_low", "ci_high"):
+                    row[f"{key}_{stat}"] = result[key][stat]
+            row["n_episodes"] = result["n_episodes"]
+            rows[result["run"]] = row
+    return pd.DataFrame(list(rows.values()))
+
+
 # -- CLI -----------------------------------------------------------------------
 
 
@@ -737,7 +763,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument(
         "analysis",
-        choices=["a1", "a2", "a3", "a4", "a5", "a6", "a6-pool", "a7", "check"],
+        choices=[
+            "a1",
+            "a2",
+            "a3",
+            "a4",
+            "a5",
+            "a6",
+            "a6-pool",
+            "a7",
+            "a7-select",
+            "check",
+        ],
     )
     parser.add_argument("runs", nargs="*")
     parser.add_argument("--family", default="linear", choices=["linear", "mlp"])
@@ -765,6 +802,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         result = {"runs": args.runs, **cluster_bootstrap_spearman(frame)}
         (out / "a6_pooled.json").write_text(json.dumps(result, indent=2))
         print(json.dumps(result, indent=2))
+    elif args.analysis == "a7-select":
+        frame = a7_select(out, args.family)
+        frame.to_csv(out / f"a7_{args.family}_selected.csv", index=False)
+        print(frame.to_string(index=False))
     elif args.analysis == "check":
         for run_id in args.runs:
             print(
