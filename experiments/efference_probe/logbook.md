@@ -1611,3 +1611,18 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - A6 uses min(50, n_ref - 1) PCA components.
   - **A6 pooling:** pools all 12 E4 goal runs (swap/mirror/freeze × checkpoint × seed).
   - **A7 reproduction:** a refit must also reproduce the CSV's selected C per fold.
+- `2026-10-28 07:06` **X0 A2 result, goal swap (outcome readout; `x0/a2_<run>.csv`).** 4000 non-post-success calls per run, 27 cells, ridge as in E1. Best-cell uniform R² over the 8 state dims; no best-cell alpha at the grid edge.
+
+  | run | (i) s(c+1) ← h(c+1) | (ii) Δs(c) ← h(c+1) | (iii) Δs(c) ← h(c) ⊕ h(c+1) |
+  |---|---|---|---|
+  | GRPO s1 | 0.972 (L12/ctx_mean) | 0.834 (L24/act_mean) | 0.890 (L12/ctx_mean) |
+  | GRPO s2 | 0.965 (L8/ctx_mean) | 0.850 (L20/act_mean) | 0.899 (L8/ctx_mean) |
+  | Base-Lora s1 | 0.881 (L4/ctx_mean) | 0.584 (L20/act_mean) | 0.706 (L4/ctx_mean) |
+  | Base-Lora s2 | 0.875 (L16/ctx_mean) | 0.591 (L20/act_mean) | 0.692 (L16/ctx_mean) |
+
+  **Pre-registered readings:**
+  - The memoryless premise as stated fails in all 4 runs. (i) >= 0.5 holds, but (ii) >= 0.58 everywhere, against the predicted < 0.3: a single h(c+1) already predicts the last chunk's motion.
+  - M2 (outcome not metric) is rejected in all 4: the state is linearly readable at R² >= 0.875.
+  - The runs are M1-compatible: (iii) >= 0.69 in all 4.
+
+  **Descriptive, not pre-registered:** GRPO's h(c+1) carries the state and especially Δs better than Base-Lora's (0.83-0.85 vs 0.58-0.59 on (ii)). The L0 `ctx_last`/`act_mean` cells are at R² ≈ 0, as expected for input embeddings of fixed tokens. Reading: a memoryless policy can get Δs(c) from o(c+1) only through regularities, i.e. where the arm is now, in this scene and task, predicts how it just moved. That regularity is stronger for the more stereotyped GRPO policy. A2 does not separate this from an encoding of motion. An exploratory control, Δs(c) from the true s(c+1) and task, is proposed below and is not part of the pre-registration. Consequence for the ladder: Δs (the C_dstates input) is largely present in h(c+1) itself, so P1 > C_dstates needs no efference read.
