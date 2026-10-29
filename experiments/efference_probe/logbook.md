@@ -2036,3 +2036,9 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-29 09:29` **X1: `x1_sft_swap` linear round done (local, 86.5 min); the main02 reproduction check passes (PREREG §2).**
   - **Ladder (balanced accuracy):** P0 floor 0.527 (perm p95 0.522); P1 0.538, P3 0.532, P4 0.545, P2r 0.683; C_dstates 0.481, C_cmd 0.486. R1: "at" floor, with no rung above floor + δ.
   - **Reproduction:** x1_sft_swap − main02 (wave-2 report) is P1 −0.005, P3 −0.000, P4 +0.009, P2r −0.028. All are within ±0.04, so the reproduction holds.
+- `2026-10-29 09:54:52` **E4 (driver)** probe `x1_grpo_swap` linear ok: rc=0 25.8 min, plumbing.passed=True
+- `2026-10-29 09:55:04` **E4 (driver)** probe `x1_sft_mirror` linear (--jobs 4, speed factor 6); stop at 2.7 h
+- `2026-10-29 09:55` **X1: `x1_grpo_swap` linear round done (local, 25.8 min).**
+  - **Ladder:** floor 0.549; P1 0.588 (margin +0.039), P3 0.590 (+0.041), P4 0.578 (+0.029), P2r 0.691; C_dstates 0.521, C_cmd 0.509.
+  - **R1:** "above" for P3 only, and beyond the 8-dim observables. P1 is 0.001 short of δ.
+  - **Still to come:** X1-R2 (full observables: C_scene, C_joint, C_obs) and X1-R3 (bootstrap) need `controls` and `increment`, after all six rounds. The raw P3 − P1 is +0.002.
