@@ -115,6 +115,10 @@ class LinearMonitor:
     def score(self, features: np.ndarray) -> np.ndarray:
         """The pipeline's ``decision_function``: larger means more hijack-like."""
         x = np.asarray(features, dtype=np.float64)
+        if x.shape[-1] != self.coef.shape[0]:
+            raise ValueError(
+                f"monitor expects {self.coef.shape[0]} features, got {x.shape[-1]}"
+            )
         return ((x - self.mean) / self.scale) @ self.coef + self.intercept
 
     def fires(self, features: np.ndarray) -> np.ndarray:

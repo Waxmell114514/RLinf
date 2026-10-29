@@ -210,8 +210,18 @@ class RunConfig:
                 "env.max_calls_per_episode leaves no eligible calls after warm-up"
             )
         if self.monitor.enabled:
-            if not self.monitor.artifact or not self.monitor.artifact_sha256:
-                raise ValueError("monitor.enabled needs artifact and artifact_sha256")
+            if not self.monitor.artifact:
+                raise ValueError("monitor.enabled needs monitor.artifact")
+            digest = self.monitor.artifact_sha256
+            if not (
+                isinstance(digest, str)
+                and len(digest) == 64
+                and all(c in "0123456789abcdef" for c in digest)
+            ):
+                raise ValueError(
+                    "monitor.artifact_sha256 must be a 64-character hex string "
+                    f"(quote it in YAML), got {digest!r}"
+                )
             probs = self.monitor.condition_probs
             if len(probs) != 3 or min(probs) < 0 or abs(sum(probs) - 1.0) > 1e-9:
                 raise ValueError(

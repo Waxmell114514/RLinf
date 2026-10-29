@@ -37,9 +37,17 @@ import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+from . import observables
 from .capture import HiddenStateCapture
 from .config import RunConfig
 from .hijack import HIJACK, SELF, HijackScheduler, build_executed_chunk
+from .monitor import (
+    RECOVERY,
+    LinearMonitor,
+    assign_conditions,
+    mismatch_features,
+    undo_chunk,
+)
 from .storage import ARRAY_COLUMNS, DiskBudget, RunWriter, flatten, git_sha
 
 # Repo root, i.e. the directory holding `rlinf/` and `examples/`.
@@ -128,6 +136,9 @@ class EfferenceHarness:
         self.model = None
         self.env = None
         self.capture: Optional[HiddenStateCapture] = None
+        self.monitor: Optional[LinearMonitor] = None
+        # X1: object pose keys per task, fixed at the task's first batch.
+        self._object_keys: dict[int, list[str]] = {}
         self._episode_counter = 0
         self._last_heartbeat = time.time()
         self._verification: dict[str, Any] = {}
@@ -146,6 +157,18 @@ class EfferenceHarness:
                 f"no model builder registered for {self.cfg.model.model_type!r}"
             )
         self.model.eval()
+
+        if self.cfg.monitor.enabled:
+            artifact = Path(self.cfg.monitor.artifact)
+            if not artifact.is_absolute():
+                artifact = REPO_ROOT / artifact
+            self.monitor = LinearMonitor.load(
+                artifact, expect_sha256=self.cfg.monitor.artifact_sha256
+            )
+            self.log(
+                f"monitor {artifact.name} sha256={self.monitor.sha256[:12]} "
+                f"threshold={self.monitor.threshold:.4f}"
+            )
 
         self.capture = HiddenStateCapture(
             self.model,
@@ -257,11 +280,19 @@ class EfferenceHarness:
         return parquet_path
 
     def _manifest_extra(self) -> dict[str, Any]:
-        return {
+        extra = {
             "stop_reason": self._stop_reason or "completed",
             "verification": self._verification,
             "config_hash": self.cfg.hash(),
         }
+        if self.cfg.capture.extra_observables:
+            extra["object_keys"] = {str(k): v for k, v in self._object_keys.items()}
+        if self.monitor is not None:
+            extra["monitor"] = {
+                "sha256": self.monitor.sha256,
+                "threshold": self.monitor.threshold,
+            }
+        return extra
 
     def _run_batch(self, task_id: int, batch_ids: np.ndarray, batch_index: int) -> None:
         """Run one batch: ``len(batch_ids)`` episodes of a single task."""
@@ -311,6 +342,26 @@ class EfferenceHarness:
         first_success_call = {int(episode_ids[slot]): -1 for slot in range(n_real)}
         n_hijacks = {int(episode_ids[slot]): 0 for slot in range(n_real)}
 
+        # X4: one condition per episode, from its own RNG stream, and the undo
+        # chunk owed by each slot whose last call made the monitor fire.
+        monitored = self.monitor is not None
+        conditions = np.full(num_envs, "off", dtype=object)
+        if monitored:
+            conditions[:n_real] = assign_conditions(
+                self.cfg.env.seed,
+                task_id,
+                batch_index,
+                n_real,
+                self.cfg.monitor.condition_probs,
+            )
+        pending_undo: list[Optional[np.ndarray]] = [None] * num_envs
+        n_recoveries = {int(episode_ids[slot]): 0 for slot in range(n_real)}
+        # X1: the raw observation behind `obs`, read before it is replaced.
+        extra = self.cfg.capture.extra_observables
+        raw_before = list(self.env.current_raw_obs) if extra else None
+        if extra and task_id not in self._object_keys:
+            self._object_keys[task_id] = observables.object_keys(raw_before[0])
+
         sampling = self._sampling_params()
         budget_stopped = False
         for call_idx in range(self.cfg.env.max_calls_per_episode):
@@ -321,12 +372,17 @@ class EfferenceHarness:
             commanded_env = self._to_env_action_space(commanded)
             # Clean episodes are never hijacked, but stay eligible as swap
             # donors: their commanded chunks are ordinary policy output.
+            # A slot owed an undo executes it this call instead of the policy's
+            # output; it is neither hijacked nor a swap donor.
+            recovering = np.array([undo is not None for undo in pending_undo])
             decisions = scheduler.decide(
                 call_idx,
-                active=recording & is_probe_episode,
-                donor_active=recording,
+                active=recording & is_probe_episode & ~recovering,
+                donor_active=recording & ~recovering,
             )
             executed = build_executed_chunk(commanded_env, decisions)
+            for slot in np.flatnonzero(recovering):
+                executed[slot] = pending_undo[slot]
 
             states_before = _as_numpy(obs["states"])
             main_images = _as_numpy(obs["main_images"])
@@ -344,6 +400,51 @@ class EfferenceHarness:
             truncated = truncations.cpu().numpy().astype(bool)
             reward_sum = rewards.cpu().numpy().astype(np.float32).sum(axis=1)
 
+            if extra:
+                raw_after = list(self.env.current_raw_obs)
+                live = np.flatnonzero(recording)
+                observables.check_eef(
+                    [raw_before[i] for i in live], states_before[live], "before"
+                )
+                observables.check_eef(
+                    [raw_after[i] for i in live], states_after[live], "after"
+                )
+                keys = self._object_keys[task_id]
+                joints = (
+                    observables.joint_positions(raw_before),
+                    observables.joint_positions(raw_after),
+                )
+                objects = (
+                    observables.object_poses(raw_before, keys),
+                    observables.object_poses(raw_after, keys),
+                )
+
+            scores = np.full(num_envs, np.nan)
+            fired = np.zeros(num_envs, dtype=bool)
+            if monitored:
+                scorable = (
+                    recording
+                    & ~recovering
+                    & (call_idx >= self.cfg.monitor.score_from_call)
+                )
+                if scorable.any():
+                    scores[scorable] = self.monitor.score(
+                        mismatch_features(
+                            commanded_env[scorable],
+                            states_before[scorable],
+                            states_after[scorable],
+                        )
+                    )
+                for slot in np.flatnonzero(scorable):
+                    if conditions[slot] == "monitor":
+                        fired[slot] = scores[slot] > self.monitor.threshold
+                    elif conditions[slot] == "oracle":
+                        fired[slot] = decisions[slot].hijacked
+            pending_undo = [
+                undo_chunk(executed[slot]) if fired[slot] else None
+                for slot in range(num_envs)
+            ]
+
             for slot in range(num_envs):
                 if not recording[slot]:
                     continue
@@ -360,7 +461,13 @@ class EfferenceHarness:
                     "env_slot": int(slot),
                     "call_idx": int(call_idx),
                     "is_probe_episode": bool(is_probe_episode[slot]),
-                    "label": HIJACK if decision.hijacked else SELF,
+                    "label": (
+                        RECOVERY
+                        if recovering[slot]
+                        else HIJACK
+                        if decision.hijacked
+                        else SELF
+                    ),
                     "transform": decision.transform or "",
                     "donor_env_slot": (
                         int(decision.donor_env_index)
@@ -393,6 +500,17 @@ class EfferenceHarness:
                     "terminated": bool(terminated[slot].any()),
                     "truncated": bool(truncated[slot].any()),
                 }
+                if extra:
+                    row["joint_pos_before"] = flatten(joints[0][slot])
+                    row["joint_pos_after"] = flatten(joints[1][slot])
+                    row["objects_before"] = flatten(objects[0][slot])
+                    row["objects_after"] = flatten(objects[1][slot])
+                if monitored:
+                    row["monitor_condition"] = str(conditions[slot])
+                    row["monitor_score"] = float(scores[slot])
+                    row["monitor_fired"] = bool(fired[slot])
+                    row["is_recovery"] = bool(recovering[slot])
+                    n_recoveries[episode_id] += int(recovering[slot])
                 rows[episode_id].append(row)
                 if decision.hijacked:
                     n_hijacks[episode_id] += 1
@@ -423,6 +541,8 @@ class EfferenceHarness:
                     recording[slot] = False
 
             obs = obs_after
+            if extra:
+                raw_before = raw_after
             self.heartbeat(f"task {task_id} batch {batch_index} call {call_idx}")
             if self.budget.exceeded() is not None:
                 budget_stopped = True
@@ -435,7 +555,18 @@ class EfferenceHarness:
             int(episode_ids[slot]): bool(budget_stopped and recording[slot])
             for slot in range(n_real)
         }
-        self._finish_batch(rows, first_success_call, n_hijacks, task_id, censored)
+        episode_extra: dict[int, dict[str, Any]] = {}
+        if monitored:
+            episode_extra = {
+                int(episode_ids[slot]): {
+                    "monitor_condition": str(conditions[slot]),
+                    "n_recoveries": n_recoveries[int(episode_ids[slot])],
+                }
+                for slot in range(n_real)
+            }
+        self._finish_batch(
+            rows, first_success_call, n_hijacks, task_id, censored, episode_extra
+        )
 
     def _finish_batch(
         self,
@@ -444,6 +575,7 @@ class EfferenceHarness:
         n_hijacks: dict[int, int],
         task_id: int,
         censored: dict[int, bool],
+        episode_extra: Optional[dict[int, dict[str, Any]]] = None,
     ) -> None:
         """Stamp episode-level outcomes onto rows and flush to disk."""
         for episode_id, episode_rows in rows.items():
@@ -472,6 +604,7 @@ class EfferenceHarness:
                     "is_probe_episode": bool(
                         episode_rows[0]["is_probe_episode"] if episode_rows else False
                     ),
+                    **(episode_extra or {}).get(episode_id, {}),
                 }
             )
             self.writer.flush_episode(episode_id)

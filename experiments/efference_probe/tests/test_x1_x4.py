@@ -247,7 +247,15 @@ def test_x1_x4_settings_change_the_hash_only_when_used(tmp_path):
             [
                 "monitor.enabled=true",
                 "monitor.artifact=m.json",
-                "monitor.artifact_sha256=x",
+                f"monitor.artifact_sha256={'0' * 64}",
+            ],
+            "hex string",
+        ),
+        (
+            [
+                "monitor.enabled=true",
+                "monitor.artifact=m.json",
+                f"monitor.artifact_sha256={'ab' * 32}",
                 "monitor.condition_probs=[0.5, 0.6, 0.0]",
             ],
             "condition_probs",
@@ -256,7 +264,7 @@ def test_x1_x4_settings_change_the_hash_only_when_used(tmp_path):
             [
                 "monitor.enabled=true",
                 "monitor.artifact=m.json",
-                "monitor.artifact_sha256=x",
+                f"monitor.artifact_sha256={'ab' * 32}",
                 "monitor.recovery=complete",
             ],
             "recovery",
