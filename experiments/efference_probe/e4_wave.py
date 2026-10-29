@@ -43,6 +43,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -502,7 +503,8 @@ def collection_checks(run_dir: Path, rc: int) -> dict[str, Any]:
     checks["stop_reason_completed"] = manifest.get("stop_reason") == "completed"
     checks["verification_passed"] = bool(manifest.get("verification", {}).get("passed"))
     parquet = run_dir / "calls.parquet"
-    rows = len(pd.read_parquet(parquet)) if parquet.is_file() else -1
+    calls = pd.read_parquet(parquet) if parquet.is_file() else None
+    rows = len(calls) if calls is not None else -1
     checks["n_calls_manifest"] = manifest.get("n_calls")
     checks["n_calls_parquet"] = rows
     checks["rows_match_manifest"] = rows >= 0 and rows == manifest.get("n_calls")
@@ -514,6 +516,9 @@ def collection_checks(run_dir: Path, rc: int) -> dict[str, Any]:
         and hidden["n_hidden_calls"] == rows
         and hidden["n_archives"] == manifest.get("n_episodes")
     )
+    # X1/X4 runs (their flags in the run's own config) add structural checks.
+    extension = extension_checks(run_dir, calls, smoke=False)
+    checks["extension"] = extension
     checks["passed"] = all(
         checks[k]
         for k in (
@@ -523,7 +528,74 @@ def collection_checks(run_dir: Path, rc: int) -> dict[str, Any]:
             "rows_match_manifest",
             "hidden_matches_rows",
         )
-    )
+    ) and all(extension.values())
+    return checks
+
+
+def _run_config(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "run_config.yaml"
+    if not path.is_file():
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
+
+
+def extension_checks(
+    run_dir: Path, calls: Optional[pd.DataFrame], smoke: bool
+) -> dict[str, bool]:
+    """PREREG_X1_X4.md gates for runs with X1 observables or the X4 monitor.
+
+    Empty for every run with both flags off, so E4's checks are unchanged.
+    ``smoke`` adds the S0-only checks (all conditions seen, recovery present,
+    scores recompute offline, undo error).
+    """
+    payload = _run_config(run_dir)
+    config = payload.get("config", {})
+    extra = bool(config.get("capture", {}).get("extra_observables"))
+    monitor_cfg = config.get("monitor", {})
+    monitored = bool(monitor_cfg.get("enabled"))
+    if not (extra or monitored):
+        return {}
+    checks: dict[str, bool] = {"calls_present": calls is not None and len(calls) > 0}
+    if not checks["calls_present"]:
+        return checks
+    if extra:
+        columns = {
+            "joint_pos_before",
+            "joint_pos_after",
+            "objects_before",
+            "objects_after",
+        }
+        checks["extra_columns_present"] = columns <= set(calls.columns)
+        if checks["extra_columns_present"]:
+            checks["joint_pos_7_dims"] = bool(
+                calls["joint_pos_after"].map(len).eq(7).all()
+            )
+            checks["objects_logged"] = bool(calls["objects_after"].map(len).gt(0).all())
+        manifest = common.read_json(run_dir / "manifest.json") or {}
+        checks["object_keys_in_manifest"] = bool(manifest.get("object_keys"))
+    if monitored:
+        from efference_probe import x4_report  # noqa: PLC0415 - X4 runs only
+
+        columns = {"monitor_condition", "monitor_score", "monitor_fired", "is_recovery"}
+        checks["monitor_columns_present"] = columns <= set(calls.columns)
+        if checks["monitor_columns_present"]:
+            recovery = calls[calls["is_recovery"].astype(bool)]
+            checks["recovery_never_hijacked"] = bool(
+                (recovery["label"] == "RECOVERY").all()
+                and (recovery["transform"] == "").all()
+            )
+            if smoke:
+                checks["recovery_rows_present"] = len(recovery) > 0
+                checks["all_conditions_seen"] = set(calls["monitor_condition"]) == set(
+                    x4_report.CONDITIONS
+                )
+                gap = x4_report.recompute_gap(calls, monitor_cfg, payload["schema"])
+                checks["scores_recompute_within_1e-6"] = gap <= 1e-6
+                errors = x4_report.undo_errors_cm(calls)
+                checks["undo_error_median_at_most_2cm"] = bool(
+                    len(errors) > 0 and float(np.median(errors)) <= 2.0
+                )
     return checks
 
 
@@ -551,7 +623,8 @@ def collect_overrides(
         f"run_id={run_id}",
         f"out_root={data_root}",
         f"budget.max_gpu_hours={budget_s / 3600:.4f}",
-        f"notes=E4 {run.ckpt} {run.key} ({plan['checkpoints'][run.ckpt]['label']})",
+        f"notes={run.wave.upper()} {run.ckpt} {run.key} "
+        f"({plan['checkpoints'][run.ckpt]['label']})",
     ]
     if num_envs is not None:
         overrides.append(f"env.num_envs={num_envs}")
@@ -561,6 +634,10 @@ def collect_overrides(
         overrides.append(f"env.init_states_per_task={init_states}")
     if run.decoding:
         overrides.extend(plan["decoding_overrides"])
+    # Later waves: settings every collection carries (X1's observables) and
+    # per-checkpoint ones (X4's monitor artifact).  E4's plan has neither.
+    overrides.extend(plan.get("collect_overrides", ()))
+    overrides.extend(plan["checkpoints"][run.ckpt].get("collect_overrides", ()))
     overrides.extend(run.overrides)  # entry-specific last, e.g. smoke20's num_envs
     return overrides
 
@@ -867,8 +944,15 @@ def gate_s0(run_dir: Path, collected: dict[str, Any]) -> dict[str, Any]:
         if (run_dir / "calls.parquet").is_file()
         else None
     )
-    checks["no_null_cells"] = calls is not None and int(calls.isna().sum().sum()) == 0
-    hidden = common.hidden_integrity(run_dir, expect_tail=S0_HIDDEN_TAIL)
+    # X4's monitor_score is NaN by design on calls it does not score.
+    checks["no_null_cells"] = (
+        calls is not None
+        and int(
+            calls.drop(columns=["monitor_score"], errors="ignore").isna().sum().sum()
+        )
+        == 0
+    )
+    hidden = common.hidden_integrity(run_dir, expect_tail=_hidden_tail(run_dir))
     checks["hidden_shape_n_3_3_4096"] = (
         bool(hidden.get("shape_ok")) and not hidden["bad_archives"]
     )
@@ -881,6 +965,7 @@ def gate_s0(run_dir: Path, collected: dict[str, Any]) -> dict[str, Any]:
         and "HIJACK" in set(calls["label"])
         and set(calls["transform"]) <= {"", transform}
     )
+    checks.update(extension_checks(run_dir, calls, smoke=True))
     return {
         "stage": "s0",
         "run_id": run_dir.name,
@@ -891,6 +976,14 @@ def gate_s0(run_dir: Path, collected: dict[str, Any]) -> dict[str, Any]:
         "mujoco_gl": collected.get("mujoco_gl"),
         "evaluated_utc": common.utc_now(),
     }
+
+
+def _hidden_tail(run_dir: Path) -> tuple[int, int, int]:
+    """(layers, pools, hidden) the smoke's own config asks for."""
+    capture = _run_config(run_dir).get("config", {}).get("capture", {})
+    if not capture.get("layers") or not capture.get("pools"):
+        return S0_HIDDEN_TAIL
+    return (len(capture["layers"]), len(capture["pools"]), S0_HIDDEN_TAIL[-1])
 
 
 def _run_transform(run_dir: Path) -> str:
@@ -1183,26 +1276,29 @@ def cmd_s1(wave: Wave, args, stage: str = "s1") -> int:
     return 0 if passed else 1
 
 
-def _missing_markers() -> list[str]:
+def _missing_markers(plan: dict[str, Any]) -> list[str]:
     """Registration entries S2 depends on that the canonical logbook lacks."""
     logbook = common.PROBE_DIR / "logbook.md"
     text = logbook.read_text(encoding="utf-8") if logbook.is_file() else ""
-    return [
-        m for m in (common.PREREG_MARKER, *common.AMENDMENT_MARKERS) if m not in text
-    ]
+    markers = plan.get(
+        "prereg_markers", (common.PREREG_MARKER, *common.AMENDMENT_MARKERS)
+    )
+    return [m for m in markers if m not in text]
 
 
 def require_s2_ready(wave: Wave) -> None:
     """S2 starts only after the S1b gates, the sizing, and their registration."""
-    for ckpt in common.CKPTS:
-        gate = wave.gate("s1b", ckpt)
-        if not (gate and gate["passed"]):
-            raise StageError(
-                f"S1b (pilot2) gate for {ckpt} has not passed; S2 does not start"
-            )
+    for stage in wave.plan.get("s2_requires", ["s1b"]):
+        for ckpt in common.CKPTS:
+            gate = wave.gate(stage, ckpt)
+            if not (gate and gate["passed"]):
+                label = {"s1b": "S1b (pilot2)"}.get(stage, stage.upper())
+                raise StageError(
+                    f"{label} gate for {ckpt} has not passed; S2 does not start"
+                )
     if wave.plan.get("sizing") and not wave.state.get("sizing"):
         raise StageError("GRPO arms are not sized yet; run `e4_wave.py size`")
-    missing = _missing_markers()
+    missing = _missing_markers(wave.plan)
     if missing:
         raise StageError(
             f"logbook.md lacks {missing}: every rule S2 depends on must be "

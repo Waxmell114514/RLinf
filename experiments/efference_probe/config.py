@@ -139,6 +139,9 @@ class MonitorConfig:
     # Policy calls before this index are never scored.
     score_from_call: int = 4
     recovery: str = "undo"
+    # "random" draws each episode's condition; "cycle" gives slot i
+    # CONDITIONS[i % 3], so a short smoke is sure to see all three.
+    assignment: str = "random"
 
 
 @dataclass
@@ -226,6 +229,10 @@ class RunConfig:
             if len(probs) != 3 or min(probs) < 0 or abs(sum(probs) - 1.0) > 1e-9:
                 raise ValueError(
                     f"monitor.condition_probs must be 3 probabilities: {probs}"
+                )
+            if self.monitor.assignment not in ("random", "cycle"):
+                raise ValueError(
+                    f"unknown monitor.assignment: {self.monitor.assignment!r}"
                 )
             if self.monitor.recovery != "undo":
                 raise ValueError(f"unknown monitor.recovery: {self.monitor.recovery!r}")

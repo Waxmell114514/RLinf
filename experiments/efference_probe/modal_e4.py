@@ -165,8 +165,33 @@ def _driver(args: list[str], label: str, env: dict[str, str] | None = None) -> i
 def _part_label(prefix: str, args: list[str]) -> str:
     """A flat logbook-part name: ``init --sft /vol/ckpts/sft`` once made a
     nested path that ``merge-logbook``'s ``*.md`` glob never saw."""
+    args = _command_args(args)
     words = (a.lstrip("-").strip("/").replace("/", "_") for a in args[:3])
     return "_".join([prefix, *words])
+
+
+GLOBAL_OPTIONS = ("--data-root", "--logbook", "--plan")
+
+
+def _command_args(args: list[str]) -> list[str]:
+    """``args`` from the subcommand on, past any leading global options."""
+    i = 0
+    while i < len(args) and args[i] in GLOBAL_OPTIONS:
+        i += 2
+    return list(args[i:])
+
+
+def wave_args(wave: str, args: list[str]) -> list[str]:
+    """Route an ``e4_wave.py`` command to a later wave's plan and data root.
+
+    X1 and X4 (PREREG_X1_X4.md) reuse this driver and launcher with their own
+    plan (``<wave>_plan.yaml``) and their own data root on the same Volume
+    (``/vol/data/<wave>``), so nothing of E4's state is read or written.
+    """
+    if wave == "e4":
+        return list(args)
+    plan = f"{REPO}/experiments/efference_probe/{wave}_plan.yaml"
+    return ["--data-root", f"{DATA}/{wave}", "--plan", plan, *args]
 
 
 def _todo() -> dict:
@@ -221,7 +246,9 @@ USD_PER_H = {
 @app.function(gpu=GPU, cpu=GPU_CPU, memory=GPU_MEMORY, timeout=4 * 3600, **COMMON)
 def gpu_stage(args: list[str], mujoco_gl: str = "egl") -> int:
     return _driver(
-        args, f"gpu_{args[0]}", {"MUJOCO_GL": mujoco_gl, "PYOPENGL_PLATFORM": mujoco_gl}
+        args,
+        _part_label("gpu", args),
+        {"MUJOCO_GL": mujoco_gl, "PYOPENGL_PLATFORM": mujoco_gl},
     )
 
 
@@ -557,16 +584,18 @@ GPU_COMMANDS = {"s0", "s0-envs20", "s1", "s1b", "collect"}
 
 
 @app.local_entrypoint()
-def stage(cmd: str, mujoco_gl: str = "egl"):
+def stage(cmd: str, mujoco_gl: str = "egl", wave: str = "e4"):
+    """One driver command; ``--wave x1`` / ``--wave x4`` for the later waves."""
     args = cmd.split()
+    routed = wave_args(wave, args)
     if args[0] == "s0-envs20":
         # ~79 GB peak RSS at 20 envs on the wave-2 cluster run.
-        rc = gpu_stage.with_options(memory=(98304, 131072)).remote(args, mujoco_gl)
+        rc = gpu_stage.with_options(memory=(98304, 131072)).remote(routed, mujoco_gl)
     elif args[0] in GPU_COMMANDS:
-        rc = gpu_stage.remote(args, mujoco_gl)
+        rc = gpu_stage.remote(routed, mujoco_gl)
     else:
-        rc = cpu_stage.remote(args)
-    print(f"e4_wave.py {cmd} -> rc={rc}")
+        rc = cpu_stage.remote(routed)
+    print(f"[{wave}] e4_wave.py {cmd} -> rc={rc}")
 
 
 @app.local_entrypoint()

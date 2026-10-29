@@ -61,11 +61,13 @@ class PlannedRun:
     seed: Optional[int] = None
     decoding: bool = True
     overrides: tuple[str, ...] = field(default_factory=tuple)
+    # The plan's ``wave``: E4, or a later wave (X1, X4) on the same driver.
+    wave: str = "e4"
 
     @property
     def run_id(self) -> str:
         """The planned id; a retry after an interruption gets ``_r2``, ``_r3``."""
-        return f"e4_{self.ckpt}_{self.key}"
+        return f"{self.wave}_{self.ckpt}_{self.key}"
 
 
 def planned_runs(plan: dict[str, Any], stage: str) -> list[PlannedRun]:
@@ -76,8 +78,12 @@ def planned_runs(plan: dict[str, Any], stage: str) -> list[PlannedRun]:
     the next one.
     """
     runs = []
+    # A plan may put its checkpoints in another order (X4 runs GRPO first).
+    order = plan.get("ckpt_order", CKPTS)
+    if sorted(order) != sorted(CKPTS):
+        raise ValueError(f"ckpt_order must be a permutation of {CKPTS}: {order}")
     for entry in plan["stages"][stage]:
-        for ckpt in CKPTS:
+        for ckpt in order:
             runs.append(
                 PlannedRun(
                     stage=stage,
@@ -90,6 +96,7 @@ def planned_runs(plan: dict[str, Any], stage: str) -> list[PlannedRun]:
                     seed=entry.get("seed"),
                     decoding=bool(entry.get("decoding", True)),
                     overrides=tuple(entry.get("overrides", ())),
+                    wave=plan.get("wave", "e4"),
                 )
             )
     return runs

@@ -1,0 +1,94 @@
+# X4 (PREREG_X1_X4.md, X4): an external comparator closing the loop.
+#
+# Same driver as E4 (`e4_wave.py --plan x4_plan.yaml --data-root <root>/x4`).
+# Mirror on goal tasks {2,3,6,8,9} (main02_mirror.yaml unchanged), both E4
+# checkpoints, 50 states per task, seeds 3-6: 4 x 250 = 1000 episodes per
+# checkpoint.  Conditions off / monitor / oracle are drawn per episode by the
+# harness (monitor.py); the frozen monitors were logged before collection
+# ("X4 monitors frozen").  No probing: X4 reads behaviour only.
+
+wave: x4
+unnorm_key: libero_130_no_noops_trajall
+prereg_markers: ["X1 / X4 PRE-REGISTRATION", "X4 monitors frozen"]
+s2_requires: [s0]
+# PREREG: GRPO first (larger G, better power).  Interleaved per seed, so a
+# budget stop cuts Base-Lora's last seed before GRPO's.
+ckpt_order: [grpo, sft]
+
+budget:
+  # PREREG_X1_X4.md §5 hard cap.
+  wave_gpu_hours: 2.0
+  watchdog_factor: 2.0
+  hang_grace_s: 900
+
+decoding_overrides:
+  - model.do_sample=true
+  - model.temperature=1.6
+
+collect_overrides:
+  - monitor.enabled=true
+  - env.init_states_per_task=50
+  # Hidden states are not analysed in X4; keep one cell to save disk.
+  - capture.layers=[32]
+  - capture.pools=[ctx_mean]
+
+checkpoints:
+  sft:
+    label: Base-Lora
+    hf_repo: RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+    revision: a4ea91b3897648f3c1395e5221edb40b8f53d1a4
+    download_exclude: ["lora_adapter/*", "*.png", "*.svg"]
+    shards:
+      model-00001-of-00004.safetensors: cd7a19d50c87d262c9ff883281f82f39b3900e718fa17b53f0a8b84637c5ab48
+      model-00002-of-00004.safetensors: bb912de0e25f879d89702f9b00d403bd3c3f13e1b8395e696ca3e4f82ffba03f
+      model-00003-of-00004.safetensors: 02dadec56f8279273ab6ec163cf443f631385b19300b75e3247861a91e6c1997
+      model-00004-of-00004.safetensors: 7addc803639435c6bee725cc0cc9af97745b3d4da6f8ce18b0d43efd0beb96a3
+    collect_overrides:
+      - monitor.artifact=experiments/efference_probe/x4/monitor_sft.json
+      - monitor.artifact_sha256='a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152'
+  grpo:
+    label: GRPO
+    hf_repo: RLinf/RLinf-OpenVLAOFT-LIBERO-130
+    revision: 473954241c8148bc9a1bf9ed547a74523e4a7d41
+    download_exclude: ["*.png", "*.svg"]
+    shards:
+      model-00001-of-00004.safetensors: 6403b3de54dd815fd33ab46a082dd34a496e78d72876cf1a063b2cdbdcd03c81
+      model-00002-of-00004.safetensors: 45893a45677216bf9481f38c4aa51b5679142a6fe484cc6552bc58ec2b9490df
+      model-00003-of-00004.safetensors: 8c91fe55cb1a33a31fb0dad4c17acdcba7e219e75df78a0c5820063a193bea51
+      model-00004-of-00004.safetensors: f60c3c43d82fda8d0afaf20fa011e6265e5649b13071793943527c05bdecc2da
+    collect_overrides:
+      - monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json
+      - monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b'
+
+# expected_s: E4's measured mirror wall clock per episode (ledger) x 250, x1.2.
+stages:
+  s0:
+    # PREREG S0: 1 task x 8 states, all three conditions forced to occur.
+    - key: smoke
+      config: main02_mirror.yaml
+      expected_s: 300
+      overrides:
+        - "env.task_ids=[2]"
+        - env.init_states_per_task=8
+        - monitor.assignment=cycle
+  s2:
+    - {key: mirror_s3, suite: goal, transform: mirror, seed: 3, config: main02_mirror.yaml, expected_s: 900}
+    - {key: mirror_s4, suite: goal, transform: mirror, seed: 4, config: main02_mirror.yaml, expected_s: 900}
+    - {key: mirror_s5, suite: goal, transform: mirror, seed: 5, config: main02_mirror.yaml, expected_s: 900}
+    - {key: mirror_s6, suite: goal, transform: mirror, seed: 6, config: main02_mirror.yaml, expected_s: 900}
+
+probes:
+  linear:
+    args: [--stage, main, --permutations, "200"]
+    expected_s: 800
+  mlp:
+    args: [--stage, main, --probe-family, mlp]
+    expected_s: 8400
+    suites: []
+  pilot:
+    args: [--stage, pilot]
+    expected_s: 300
+
+existing:
+  label_goal: goal-traj1
+  runs: []

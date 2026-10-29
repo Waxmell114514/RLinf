@@ -353,6 +353,7 @@ class EfferenceHarness:
                 batch_index,
                 n_real,
                 self.cfg.monitor.condition_probs,
+                self.cfg.monitor.assignment,
             )
         pending_undo: list[Optional[np.ndarray]] = [None] * num_envs
         n_recoveries = {int(episode_ids[slot]): 0 for slot in range(n_real)}

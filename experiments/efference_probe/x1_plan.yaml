@@ -1,0 +1,98 @@
+# X1 (PREREG_X1_X4.md, X1): a second SFT -> GRPO pair on libero_goal.
+#
+# Same driver as E4 (`e4_wave.py --plan x1_plan.yaml --data-root <root>/x1`);
+# every X1 collection is a wave-2 config unchanged plus the overrides below,
+# exactly as in E4.  What differs from E4: the checkpoints, X1's observables
+# on every collection (collect_overrides), and the registration markers S2
+# waits for.
+#
+#   sft   Haozhan72/Openvla-oft-SFT-libero-goal-traj1   (waves 1-2, main02)
+#   grpo  RLinf/RLinf-OpenVLAOFT-GRPO-LIBERO-goal        (card: base_model = traj1)
+
+wave: x1
+unnorm_key: libero_goal_no_noops
+prereg_markers: ["X1 / X4 PRE-REGISTRATION"]
+s2_requires: [s1b]
+
+budget:
+  # PREREG_X1_X4.md §5 hard cap.
+  wave_gpu_hours: 1.6
+  watchdog_factor: 2.0
+  hang_grace_s: 900
+
+decoding_overrides:
+  - model.do_sample=true
+  - model.temperature=1.6
+
+collect_overrides:
+  - capture.capture_vision=true
+  - capture.extra_observables=true
+
+checkpoints:
+  sft:
+    label: goal-traj1
+    hf_repo: Haozhan72/Openvla-oft-SFT-libero-goal-traj1
+    revision: d20e1d447dfd87c0daa121b0739e2a379f7fe334
+    download_exclude: ["*.png", "*.svg"]
+    shards:
+      model-00001-of-00004.safetensors: 26d54b51588818beab6e239ebdc7809c9bc847e6d1d905e0189ebc29e1e1b6c8
+      model-00002-of-00004.safetensors: 6ecd484edef6084e954958d47e0e47fbc2a64336bac6dad58fc0f3bfa97fef68
+      model-00003-of-00004.safetensors: 1c12bda929b4d1c03f65eb5a84d499efd5c7f235c202944f7b7ff80680ea1f9f
+      model-00004-of-00004.safetensors: 1268bbdd33f379c7843f3afff40dca6f586e689496c14148b9469ce41f007860
+  grpo:
+    label: GRPO-goal
+    hf_repo: RLinf/RLinf-OpenVLAOFT-GRPO-LIBERO-goal
+    revision: 222f7df4c1b9b8c6ab0c929cf858734bb67619d1
+    download_exclude: ["*.png", "*.svg"]
+    shards:
+      model-00001-of-00004.safetensors: 5f82b1de36b5e5771783597303c2ab45cbc75228bb85dda06e281bc5322c798b
+      model-00002-of-00004.safetensors: 3e66eb6f7518bbc20b127dcd73ec8aecdfdd47a03c07af2318223842fb372394
+      model-00003-of-00004.safetensors: f3ed1b20cd4c9d0c34e8f4ac38defdd13460c3310156fa350d4f3f217f94f94c
+      model-00004-of-00004.safetensors: da0411e795dabb74852840367d85a7e1158c4197a08aca7ae82f00f24264c1d4
+
+# expected_s: E4's measured wall clock for the same config (ledger), x1.5.
+# Planning numbers for the budget gate and watchdog, not readout rules.
+stages:
+  s0:
+    # PREREG S0: 1 task x 8 states, new logging on (collect_overrides).
+    - key: smoke
+      config: smoke.yaml
+      expected_s: 300
+      decoding: false
+      overrides: [env.init_states_per_task=8]
+  s1b:
+    - key: pilot2
+      config: pilot.yaml
+      expected_s: 600
+      overrides: [env.task_ids=null, env.init_states_per_task=8]
+  # Run order: swap (both checkpoints), then mirror, then freeze, so a budget
+  # stop cuts from the tail.  Seed 1 throughout; x1_sft_swap re-collects
+  # main02 (same checkpoint, config and seed) as the reproduction check.
+  s2:
+    - {key: swap, suite: goal, transform: swap, seed: 1, config: main02.yaml, expected_s: 850}
+    - {key: mirror, suite: goal, transform: mirror, seed: 1, config: main02_mirror.yaml, expected_s: 700}
+    - {key: freeze, suite: goal, transform: freeze, seed: 1, config: main02_freeze.yaml, expected_s: 600}
+
+# E4 Amendment 1's rule, unchanged: GRPO arms matched to SFT on probe samples.
+sizing:
+  sized_ckpt: grpo
+  reference_ckpt: sft
+  yield_stage: s1b
+  max_states_per_task: 50
+
+# Linear only on X1 (PREREG §1); no MLP suite is gated or scheduled.
+probes:
+  linear:
+    args: [--stage, main, --permutations, "200"]
+    expected_s: 800
+  mlp:
+    args: [--stage, main, --probe-family, mlp]
+    expected_s: 8400
+    suites: []
+  pilot:
+    args: [--stage, pilot]
+    expected_s: 300
+
+existing:
+  label_goal: goal-traj1
+  runs: []

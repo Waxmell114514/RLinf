@@ -91,9 +91,22 @@ def undo_chunk(executed: np.ndarray) -> np.ndarray:
 
 
 def assign_conditions(
-    seed: int, task_id: int, batch_index: int, n: int, probs: list[float]
+    seed: int,
+    task_id: int,
+    batch_index: int,
+    n: int,
+    probs: list[float],
+    assignment: str = "random",
 ) -> np.ndarray:
-    """One condition per episode slot, from the dedicated condition stream."""
+    """One condition per episode slot, from the dedicated condition stream.
+
+    ``assignment="cycle"`` ignores ``probs`` and gives slot i CONDITIONS[i % 3]
+    (the X4 smoke, which must see all three conditions).
+    """
+    if assignment == "cycle":
+        return np.asarray(
+            [CONDITIONS[i % len(CONDITIONS)] for i in range(n)], dtype=object
+        )
     rng = np.random.default_rng([seed, task_id, batch_index, CONDITION_STREAM])
     picks = rng.choice(len(CONDITIONS), size=n, p=np.asarray(probs, dtype=np.float64))
     return np.asarray([CONDITIONS[i] for i in picks], dtype=object)
