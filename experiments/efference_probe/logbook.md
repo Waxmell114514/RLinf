@@ -1854,3 +1854,18 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - The online features equal the probe `mismatch` block exactly on every training sample; the run aborts otherwise.
   - The exported numbers reproduce the scikit-learn pipeline's decision function within 7e-6.
   - The harness loads only these digests.
+- `2026-10-29 04:20` **X1 / X4 code ready (offline only; no Modal spend).** Commits 36f1ca7, 5e1c2b5, 10b2ca1 and 9ee353b implement PREREG_X1_X4.md §4: harness flags, the monitor, the plans, the driver/launcher generalisation and both readouts. 171 offline tests pass, the 125 earlier ones unchanged.
+  - **Flags-off loop unchanged:** with both flags off, a fake-env run of the new harness writes rows identical to the pre-change harness (36f1ca7).
+  - **Config hashes unchanged:** every shipped config keeps its hash.
+
+  **PREREG §6 [TO VERIFY] items resolved:**
+  - **GRPO-goal checkpoint:** the HF card's `base_model` is `Haozhan72/Openvla-oft-SFT-libero-goal-traj1`, and both X1 checkpoints are full 4-shard weights with no LoRA adapter.
+  - **Pins:** revisions and shard sha256s are pinned in `x1_plan.yaml` (traj1 `d20e1d44…`, GRPO-goal `222f7df4…`).
+  - **Driver:** reused with a plan/data-root generalisation plus plan-driven S2 prerequisites, registration markers, checkpoint order, collection overrides, and X1/X4 gate checks. That is slightly more than "plan path and checkpoint keys", but no gate rule changed for E4 (E4's tests pass unchanged).
+  - **Still open:** the object key list (at S0) and the Modal balance.
+
+  **Pricing correction (observation; changes no rule).** PREREG §5 priced GPU time at $1.95/h, the L40S alone. Modal also bills the container's CPU and memory at the greater of request and use:
+  - at the GPU stage's 8-core / 48 GiB request that is $1.951 + $0.377 + $0.384 ≈ $2.71/h;
+  - E4's pilots used ~62 GB, so ~$2.8/h, matching the $2.81/h the E4 report used.
+
+  Re-priced, the §5 plan is ~$3.5 (X1) + ~$4.9 (X4) ≈ $8.4 [estimate]. That is above the pre-registered $8 combined cap; the GPU-hour caps (1.6 + 2.0 h) correspond to up to ~$10. Before any launch, the operator either amends the cap or the X4 size, or runs X1 first and decides X4 on its actual spend.
