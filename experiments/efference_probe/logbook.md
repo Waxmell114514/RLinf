@@ -1906,3 +1906,4 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Sizing:** r = 1.45, so the GRPO S2 states per task are swap 30, mirror 44 and freeze 44 (cap 50). The SFT arms are unchanged (20 / 30 / 30).
   - **Spend:** $1.08 at the journal's limit rates before S2; collection GPU time 0.25 of 1.6 h.
   - **Operational:** one S2 launch was interrupted on the client before any remote call. There was no journal entry, and its app had 0 tasks, so $0; that empty app was stopped.
+- `2026-10-29 08:02:19` **E4 (driver)** probe `x1_sft_swap` linear (--jobs 4, speed factor 6); stop at 2.7 h
