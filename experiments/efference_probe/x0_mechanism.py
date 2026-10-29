@@ -71,8 +71,19 @@ GOAL_SWAP = (
 )
 
 
+# Run-id prefix -> checkpoint label (E4 and X4 share E4's checkpoints).
+CHECKPOINT_LABELS = {
+    "e4_sft": "Base-Lora",
+    "e4_grpo": "GRPO",
+    "x1_sft": "goal-traj1",
+    "x1_grpo": "GRPO-goal",
+    "x4_sft": "Base-Lora",
+    "x4_grpo": "GRPO",
+}
+
+
 def checkpoint(run_id: str) -> str:
-    return "GRPO" if run_id.startswith("e4_grpo") else "Base-Lora"
+    return CHECKPOINT_LABELS.get("_".join(run_id.split("_")[:2]), "unknown")
 
 
 def out_dir(data_root: Path) -> Path:

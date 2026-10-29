@@ -1869,3 +1869,23 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - E4's pilots used ~62 GB, so ~$2.8/h, matching the $2.81/h the E4 report used.
 
   Re-priced, the §5 plan is ~$3.5 (X1) + ~$4.9 (X4) ≈ $8.4 [estimate]. That is above the pre-registered $8 combined cap; the GPU-hour caps (1.6 + 2.0 h) correspond to up to ~$10. Before any launch, the operator either amends the cap or the X4 size, or runs X1 first and decides X4 on its actual spend.
+- `2026-10-29 04:51` **PREREG_X1_X4.md Amendment 1 (before any X1 or X4 data).** An independent review of the §4 code found 7 driver and 4 readout issues; all are fixed, with tests. The amendment records what changes the registered wording:
+  - **Object keys:** `_to_robot0` keys are excluded from the object list, so robot state stays out of C_scene.
+  - **Driver reuse:** the generalisation went beyond a plan path and checkpoint keys (plan fields, S0 extension checks, `stage --wave`); E4's gates are unchanged.
+  - **X4 smoke:** runs at S2's 10 envs, not 20.
+  - **Spend journal for `stage`:** one journal (session `x_waves`) shared by X1 and X4, with `--budget-usd` required; it reserves each call's watchdog worst case at container limit rates.
+
+  It also records code brought in line with the wording:
+  - X1 smoke sampled;
+  - X4 all GRPO seeds before Base-Lora;
+  - undo accuracy on hijacked undos only;
+  - X1-R3 needing all six runs;
+  - the main02 check implemented;
+  - how X1-R7 marks "replicates", plus F4 on the X1 pair, hijack counts and labels.
+
+  No rule, threshold or yardstick changed.
+
+  **Budget observation (changes no rule; the cap is the operator's).** A dry simulation of the plan files through the new gate gives:
+  - **Billed spend [estimate]:** X1 ≈ $5.3–5.9 (1.8–1.9 GPU-h with start-ups; collection time alone ≈ 1.4 h, under the 1.6 h cap) and X4 ≈ $4.5–5.0. Assumptions: E4-measured speeds (expected_s / 1.5), 1–2 min start-up per call, GRPO arms at up to 50 states.
+  - **Gate:** with worst-case reservations at $3.28/h, the gate needs a cap of ≈ $9 to finish X1 alone and ≈ $14–15 for both. The registered $8 would refuse X1's sized GRPO swap arm.
+  - **Versus the credit:** the full plan does not fit the ~$12 credit [TO VERIFY] under this gate. Before launch, the operator chooses the cap and whether X4 is cut (e.g. fewer seeds or GRPO only).

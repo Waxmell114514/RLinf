@@ -581,20 +581,142 @@ def orchestrate(
 
 
 GPU_COMMANDS = {"s0", "s0-envs20", "s1", "s1b", "collect"}
+# Later waves' stage calls share one spend journal, so PREREG_X1_X4.md's
+# combined cap covers X1 and X4 together.
+X_SESSION = "x_waves"
+CPU_COMMAND_RESERVE_S = 1800
+
+
+def stage_reserve_s(plan: dict[str, Any], args: list[str]) -> float:
+    """Worst-case container seconds of one driver command, from its plan.
+
+    A collection reserves its watchdog limit (``watchdog_factor`` x expected,
+    plus the hang grace); a sized arm at the largest size it may be given.  A
+    stage reserves that for each of its runs, plus a pilot probe round per run
+    of S1/S1b.  Every other command is a short CPU job.
+    """
+    from efference_probe import e4_common as common
+    from efference_probe import e4_wave as wave_mod
+
+    budget = plan["budget"]
+
+    def run_limit(run) -> float:
+        expected = run.expected_s
+        sizing = plan.get("sizing")
+        if sizing and run.stage == "s2" and run.ckpt == sizing["sized_ckpt"]:
+            expected *= sizing["max_states_per_task"] / wave_mod.base_states(run)
+        return budget["watchdog_factor"] * expected + budget["hang_grace_s"]
+
+    command = args[0]
+    if command == "collect":
+        ckpt = args[args.index("--ckpt") + 1]
+        key = args[args.index("--key") + 1]
+        return run_limit(common.find_planned(plan, ckpt, key))
+    if command in ("s0", "s0-envs20", "s1", "s1b"):
+        stage = command.replace("-", "_")
+        total = sum(run_limit(run) for run in common.planned_runs(plan, stage))
+        if stage in ("s1", "s1b"):
+            pilot = plan["probes"]["pilot"]["expected_s"] * budget["watchdog_factor"]
+            total += pilot * len(common.planned_runs(plan, stage))
+        return total
+    return float(CPU_COMMAND_RESERVE_S)
+
+
+def stage_gate(
+    entries: list[dict[str, Any]],
+    now: float,
+    budget_usd: float,
+    usd_per_h: float,
+    reserve_s: float,
+) -> tuple[bool, float, float]:
+    """``(fits, committed, cost)``: may this call start under the cap?"""
+    _spent, committed = journal_usd(entries, now)
+    cost = usd_per_h * (reserve_s + STARTUP_S) / 3600
+    return committed + cost <= budget_usd, committed, cost
+
+
+def _volume_journal(session: str) -> list[dict[str, Any]]:
+    """The session's spend journal on the Volume, read from the client."""
+    root = f"{SPEND.removeprefix(VOL)}/{session}"
+    try:
+        entries = volume.listdir(root)
+    except Exception:  # noqa: BLE001 - no journal yet
+        return []
+    out = []
+    for entry in sorted(entries, key=lambda e: e.path):
+        if entry.path.endswith(".json"):
+            out.append(json.loads(b"".join(volume.read_file(entry.path))))
+    return out
+
+
+def _volume_journal_add(session: str, event: dict[str, Any]) -> None:
+    import io
+
+    name = f"{time.time():.6f}_{event['event']}.json"
+    remote = f"{SPEND.removeprefix(VOL)}/{session}/{name}"
+    with volume.batch_upload(force=True) as batch:
+        batch.put_file(io.BytesIO(json.dumps(event).encode()), remote)
 
 
 @app.local_entrypoint()
-def stage(cmd: str, mujoco_gl: str = "egl", wave: str = "e4"):
-    """One driver command; ``--wave x1`` / ``--wave x4`` for the later waves."""
+def stage(cmd: str, mujoco_gl: str = "egl", wave: str = "e4", budget_usd: float = 0.0):
+    """One driver command; ``--wave x1`` / ``--wave x4`` for the later waves.
+
+    A later wave's call needs ``--budget-usd``, the combined cap of
+    PREREG_X1_X4.md §5.  It is refused unless the shared journal's committed
+    spend plus this call's worst case (limit rates, as the orchestrator
+    prices) fits; its start and end are journaled on the Volume.
+    """
     args = cmd.split()
     routed = wave_args(wave, args)
-    if args[0] == "s0-envs20":
-        # ~79 GB peak RSS at 20 envs on the wave-2 cluster run.
-        rc = gpu_stage.with_options(memory=(98304, 131072)).remote(routed, mujoco_gl)
-    elif args[0] in GPU_COMMANDS:
-        rc = gpu_stage.remote(routed, mujoco_gl)
-    else:
-        rc = cpu_stage.remote(routed)
+    gpu = args[0] in GPU_COMMANDS
+    key = None
+    if wave != "e4":
+        if budget_usd <= 0:
+            raise SystemExit(f"--wave {wave} needs --budget-usd (PREREG_X1_X4.md §5)")
+        from efference_probe import e4_common as common
+
+        plan = common.load_plan(common.PROBE_DIR / f"{wave}_plan.yaml")
+        rate = USD_PER_H["collect" if gpu else "linear"]
+        reserve_s = stage_reserve_s(plan, args)
+        fits, committed, cost = stage_gate(
+            _volume_journal(X_SESSION), time.time(), budget_usd, rate, reserve_s
+        )
+        if not fits:
+            raise SystemExit(
+                f"budget: committed ${committed:.2f} + this call's worst case "
+                f"${cost:.2f} > ${budget_usd:.2f}; not started"
+            )
+        key = f"{wave}:{cmd}:{time.time():.0f}"
+        _volume_journal_add(
+            X_SESSION,
+            {
+                "event": "start",
+                "key": key,
+                "t": time.time(),
+                "usd_per_h": rate,
+                "reserve_s": reserve_s + STARTUP_S,
+                "kind": "collect" if gpu else "linear",
+                "wave": wave,
+                "cmd": cmd,
+            },
+        )
+    rc = None
+    try:
+        if args[0] == "s0-envs20":
+            # ~79 GB peak RSS at 20 envs on the wave-2 cluster run.
+            rc = gpu_stage.with_options(memory=(98304, 131072)).remote(
+                routed, mujoco_gl
+            )
+        elif gpu:
+            rc = gpu_stage.remote(routed, mujoco_gl)
+        else:
+            rc = cpu_stage.remote(routed)
+    finally:
+        if key is not None:
+            _volume_journal_add(
+                X_SESSION, {"event": "end", "key": key, "t": time.time(), "rc": rc}
+            )
     print(f"[{wave}] e4_wave.py {cmd} -> rc={rc}")
 
 

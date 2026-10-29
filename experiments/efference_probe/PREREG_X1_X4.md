@@ -215,4 +215,33 @@ All of them are behind config flags that default off, so every earlier config co
 
 ## Amendments
 
-*(none)*
+### Amendment 1 (2026-10-29, before any X1 or X4 data)
+
+Written after an independent review of the §4 code and before any X1 or X4 collection has started. No result informs it. Items 1–4 change or extend what is written above; items 5–6 bring the code in line with the existing wording and record how it is applied.
+
+1. **Object keys (§2 "New observables", §6).** The object list also leaves out keys containing `_to_robot0` (LIBERO's `<obj>_to_robot0_eef_pos` / `_quat`, the object relative to the gripper). They are functions of the end-effector and object poses, so keeping them would put robot state into C_scene and blur its contrast with C_state. The S0 manifest's `object_keys` is logged as the §6 record.
+2. **Driver reuse (§4 item 4, §6).** The reuse went beyond a plan path and checkpoint keys:
+   - plan fields `wave`, `ckpt_order`, `prereg_markers`, `s2_requires` and `collect_overrides` (plan-wide and per checkpoint), and stages a plan lacks expand to no runs;
+   - the S0 gate adds the §2 and §3 smoke checks (X1: 7 joints, ≥ 1 object pose, eef within 1e-6, vision in every archive; X4: online features within 1e-6 of a recomputation, recovery rows present and never hijacked, all three conditions present, median undo error ≤ 2 cm);
+   - `modal_e4.py stage --wave` routes a call to the wave's plan and data root, and keeps the spend journal of item 4.
+
+   No E4 gate rule changes; E4's plan expands and resolves as before (its tests pass unchanged).
+3. **X4 smoke at 10 envs (§3 "X4 stages and gates").** S0 runs 10 envs, the count S2 locks, instead of `main02_mirror.yaml`'s 20. At 20 the smoke would pad 12 envs, peak near E4's ~79 GB RSS against the 96 GiB container, and not exercise S2's batch shape.
+4. **Spend journal (§1, §5).** The E4 orchestrator's budget gate covers only E4's plan, so X1 and X4 get their own gate in `stage`:
+   - one journal on the Volume, shared by X1 and X4 (session `x_waves`), recording each call's start and end;
+   - an X call is refused without `--budget-usd`, the combined cap, and is started only if committed spend plus the call's worst case fits under it;
+   - a collection's worst case is the watchdog × its expected wall clock (scaled to 50 states for a sized arm) plus the hang grace and a 300 s start-up. A stage command reserves that for each of its runs, plus a pilot probe round per S1b run, and a CPU command reserves 1800 s;
+   - spend is priced at the container's request limits: $3.28/h for a GPU container and $1.52/h for a CPU one. That is above the ~$2.8/h actually billed (logbook, "Pricing correction"), so the gate is conservative.
+
+   The cap value is the operator's to set at launch (§5 registers $8).
+5. **Code brought in line with the wording above.**
+   - **X1 smoke sampled:** X1 S0 samples at T = 1.6, as §1 says of every collection. The first plan had it greedy, copying E4's smoke.
+   - **X4 order:** "GRPO first, then Base-Lora" means all four GRPO seeds before any Base-Lora seed, so a budget stop leaves GRPO's 1000 episodes whole. The runbook issues them in that order.
+   - **Undo accuracy and the S0 undo gate:** computed only on undos whose preceding call was HIJACK, per "before the hijacked call". A false-positive undo has no hijacked call to return to; its cost is the false-positive cost.
+   - **X1-R3 completeness:** "in every X1 run" needs all six planned runs, otherwise "unresolved (k of 6 X1 runs)".
+   - **main02 reproduction check:** implemented as §2 states (P1, P3, P4 and P2r each within 0.04).
+6. **How X1-R7 is marked, and what is added to the reports (descriptive; no rule changes).**
+   - **"Replicates":** each X0 rule is applied to the X1 run with unchanged code. The result is marked "replicates" iff it equals E4's outcome for the same role (SFT or GRPO), as recorded in `x1_report.E4_REFERENCE`.
+   - **F4:** run on the X1 swap pair, through a `pairs` argument to the unchanged F4 code.
+   - **Hijack counts:** X4 reports hijacks per probe episode by condition.
+   - **Labels:** X1 runs are labelled goal-traj1 and GRPO-goal, not with E4's names.

@@ -205,6 +205,7 @@ def _x4_tables(success):
                     "is_probe_episode": probe,
                     "monitor_condition": condition,
                     "censored": False,
+                    "n_hijacks": 3 if probe else 0,
                 }
             )
     rows.append(
@@ -213,6 +214,7 @@ def _x4_tables(success):
             "is_probe_episode": True,
             "monitor_condition": "off",
             "censored": True,
+            "n_hijacks": 3,
         }
     )
     calls = pd.DataFrame(
@@ -253,6 +255,7 @@ def test_x4_readout_applies_rules_m_and_o():
     ] == pytest.approx(0.5)
     assert out["n_censored"] == 1
     assert out["sanity_flag"] is False  # 0.70 is within 0.10 of 0.730
+    assert out["hijacks_per_probe_episode"] == dict.fromkeys(x4.CONDITIONS, 3.0)
 
 
 def test_x4_readout_separates_detection_from_recovery():
@@ -278,6 +281,7 @@ def test_x4_undo_errors_measure_the_return_to_the_pre_chunk_pose():
         {
             "episode_id": [0, 0, 0],
             "call_idx": [4, 5, 6],
+            "label": ["HIJACK", "RECOVERY", "SELF"],
             "is_recovery": [False, True, False],
             "states_before": [np.r_[0.10, 0.20, 0.30, np.zeros(5)]] * 3,
             "states_after": [
@@ -319,3 +323,58 @@ def test_extension_checks_pass_on_harness_output(tmp_path, kind):
     calls, _ = fake._collect(harness)
     checks = wave_mod.extension_checks(harness.out_dir, calls, smoke=True)
     assert checks and all(checks.values()), checks
+
+
+def test_x4_undo_errors_leave_out_undos_of_self_commanded_chunks():
+    """Review R4: a false-positive undo has no hijacked call to return to."""
+    calls = pd.DataFrame(
+        {
+            "episode_id": [0, 0],
+            "call_idx": [4, 5],
+            "label": ["SELF", "RECOVERY"],
+            "is_recovery": [False, True],
+            "states_before": [np.zeros(8)] * 2,
+            "states_after": [np.ones(8)] * 2,
+        }
+    )
+    assert len(x4.undo_errors_cm(calls)) == 0
+
+
+def test_vision_check_needs_vis_for_every_call(tmp_path):
+    hidden = tmp_path / "hidden"
+    hidden.mkdir()
+    np.savez(hidden / "ep00000.npz", h=np.zeros((3, 1, 1, 4)), vis=np.zeros((3, 8)))
+    assert wave_mod._vision_ok(tmp_path)
+    np.savez(hidden / "ep00001.npz", h=np.zeros((2, 1, 1, 4)))
+    assert not wave_mod._vision_ok(tmp_path)
+
+
+def test_checkpoint_labels_follow_the_run_id():
+    from efference_probe import x0_mechanism as x0
+
+    assert x0.checkpoint("e4_grpo_goal_swap_s1") == "GRPO"
+    assert x0.checkpoint("e4_sft_goal_swap_s1") == "Base-Lora"
+    assert x0.checkpoint("x1_grpo_swap") == "GRPO-goal"
+    assert x0.checkpoint("x1_sft_swap") == "goal-traj1"
+    assert x0.checkpoint("x4_grpo_mirror_s3") == "GRPO"
+
+
+def test_x1_r3_stays_unresolved_until_every_planned_run_is_in():
+    small = {"x1_sft_swap": 0.01, "x1_grpo_swap": -0.02}
+    reading = x1.r3_reading(small, _boot(-0.02, -0.05, 0.02), [], n_planned=6)
+    assert reading == "unresolved (2 of 6 X1 runs)"
+
+
+def test_main02_reproduction_compares_the_four_rungs():
+    from efference_probe import e4_report as report
+
+    wave2 = report.read_wave2_report("main02", "goal-traj1", "goal", "swap", 1)
+    ours = report.RunNumbers("goal-traj1", "x1_sft_swap", "goal", "swap", 1, "analysis")
+    ours.families["linear"] = {
+        r: {"bacc": wave2.families["linear"][r]["bacc"] + 0.01}
+        for r in ("P1", "P3", "P4", "P2r")
+    }
+    out = x1.main02_reproduction(ours)
+    assert out["within_0.04"] and out["differences"]["P1"] == pytest.approx(0.01)
+    ours.families["linear"]["P2r"]["bacc"] += 0.05
+    assert not x1.main02_reproduction(ours)["within_0.04"]

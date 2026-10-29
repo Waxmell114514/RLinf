@@ -146,8 +146,15 @@ def r3_reading(
     increments: dict[str, float],
     x1_grpo_swap: Optional[dict[str, Any]],
     e4_grpo: list[dict[str, Any]],
+    n_planned: Optional[int] = None,
 ) -> str:
-    """X1-R3.  Bootstraps are ``x0.a7_bootstrap`` results (P3-P1 entry)."""
+    """X1-R3.  Bootstraps are ``x0.a7_bootstrap`` results (P3-P1 entry).
+
+    "In every X1 run" needs every planned run: a budget-cut wave stays
+    unresolved rather than reading from the runs it happened to finish.
+    """
+    if n_planned is not None and len(increments) < n_planned:
+        return f"unresolved ({len(increments)} of {n_planned} X1 runs)"
     if x1_grpo_swap is None or not x1_grpo_swap.get("reproduced"):
         return "unresolved (no reproduced bootstrap on x1_grpo_swap)"
     ci = x1_grpo_swap["P3-P1"]
@@ -321,7 +328,8 @@ def battery(data_root: Path, run_id: str, out: Path) -> dict[str, str]:
     """A2, A2b, F2, A3, F3 and F5 on one X1 run; A1 is read off its ladder."""
     done = {}
     a2 = x0.a2_outcome_readout(data_root, run_id, n_jobs=1)
-    a2.to_csv(out / f"a2_{run_id}.csv", index=False)
+    # x0_followup's F4 reads A2 from <data-root>/x0/, as in X0.
+    a2.to_csv(x0.out_dir(data_root) / f"a2_{run_id}.csv", index=False)
     state_cell = x0.best_cell(a2[a2["target"] == "s_next"])
     delta_cell = x0.best_cell(a2[a2["target"] == "delta_from_next"])
     steps = {
@@ -336,6 +344,102 @@ def battery(data_root: Path, run_id: str, out: Path) -> dict[str, str]:
         path.write_text(json.dumps(step(), indent=2, default=_json))
         done[name] = str(path)
     return done
+
+
+def battery_pair(data_root: Path, plan: dict[str, Any], out: Path) -> dict[str, Any]:
+    """F4 on the X1 swap pair (needs both runs' battery A2)."""
+    runs = completed(data_root, plan)
+    result = fu.f4_state_rmse(data_root, ((runs["x1_sft_swap"], runs["x1_grpo_swap"]),))
+    (out / "f4_x1_swap.json").write_text(json.dumps(result, indent=2, default=_json))
+    return result
+
+
+# E4's readings under each X0 rule (logbook, X0 and F1-F7 results), per
+# checkpoint role, for the "replicates / does not" marks of X1-R7.
+E4_REFERENCE = {
+    "a1_within_delta": {"sft": True, "grpo": True},
+    "a2_state_readable": {"sft": True, "grpo": True},  # (i) >= 0.5
+    "a2_motion_premise_fails": {"sft": True, "grpo": True},  # (ii) >= 0.3
+    "a2_m1_compatible": {"sft": True, "grpo": True},  # (iii) >= 0.5
+    "f2_no_motion_trace": {"sft": True, "grpo": True},
+    "a3_above_floor": {"sft": True, "grpo": True},  # Base-Lora 5/5, GRPO 3/4
+    "f3_outcome_ok": {"sft": False, "grpo": True},
+    "f3_command_ok": {"sft": False, "grpo": True},
+    "f4_data_effect": {"pair": True},
+}
+
+
+def _read(path: Path) -> Optional[dict[str, Any]]:
+    return json.loads(path.read_text()) if path.is_file() else None
+
+
+def battery_readings(data_root: Path, plan: dict[str, Any]) -> dict[str, Any]:
+    """Each X0 rule applied to each X1 run, marked against E4's reading."""
+    out_path = out_dir(data_root)
+    marks: dict[str, Any] = {}
+    for planned, run_id in completed(data_root, plan).items():
+        role = "grpo" if planned.startswith("x1_grpo") else "sft"
+        flags: dict[str, Optional[bool]] = {}
+        numbers = run_numbers(data_root, run_id).families.get("linear")
+        if numbers:
+            flags["a1_within_delta"] = (
+                abs(numbers["P3"]["bacc"] - numbers["P1"]["bacc"]) < DELTA
+            )
+        a2_path = x0.out_dir(data_root) / f"a2_{run_id}.csv"
+        if a2_path.is_file():
+            best = pd.read_csv(a2_path).groupby("target")["r2_mean"].max()
+            flags["a2_state_readable"] = bool(best["s_next"] >= 0.5)
+            flags["a2_motion_premise_fails"] = bool(best["delta_from_next"] >= 0.3)
+            flags["a2_m1_compatible"] = bool(best["delta_from_both"] >= 0.5)
+        f2 = _read(out_path / f"f2_{run_id}.json")
+        if f2:
+            flags["f2_no_motion_trace"] = (
+                f2["all"]["gain"] < 0.05 and f2["hijack"]["gain"] < 0.05
+            )
+        a3 = _read(out_path / f"a3_{run_id}.json")
+        if a3:
+            flags["a3_above_floor"] = a3["oracle_A"] >= a3["floor"] + DELTA
+        f3 = _read(out_path / f"f3_{run_id}.json")
+        if f3:
+            flags["f3_outcome_ok"] = f3["true_a+decoded_d"] >= f3["p2r_csv"] - 0.10
+            flags["f3_command_ok"] = f3["decoded_a+true_d"] >= f3["p2r_csv"] - 0.10
+        marks[planned] = {
+            name: {
+                "x1": value,
+                "e4": E4_REFERENCE[name][role],
+                "replicates": value == E4_REFERENCE[name][role],
+            }
+            for name, value in flags.items()
+        }
+        f5 = _read(out_path / f"f5_{run_id}.json")
+        if f5:
+            marks[planned]["f5_reading"] = f5["reading"]
+    f4 = _read(out_path / "f4_x1_swap.json")
+    if f4:
+        data_effect = all(
+            r["reading"] == "data effect" for r in f4["readings"].values()
+        )
+        marks["pair"] = {
+            "f4_data_effect": {
+                "x1": data_effect,
+                "e4": True,
+                "replicates": data_effect,
+            }
+        }
+    return marks
+
+
+def main02_reproduction(numbers: report.RunNumbers) -> dict[str, Any]:
+    """X1's SFT swap against main02's wave-2 ladder, each within 0.04."""
+    wave2 = report.read_wave2_report("main02", "goal-traj1", "goal", "swap", 1)
+    ours, theirs = numbers.families.get("linear"), wave2.families.get("linear")
+    if not ours or not theirs:
+        return {"status": "missing"}
+    diffs = {r: ours[r]["bacc"] - theirs[r]["bacc"] for r in ("P1", "P3", "P4", "P2r")}
+    return {
+        "differences": diffs,
+        "within_0.04": all(abs(d) <= 0.04 for d in diffs.values()),
+    }
 
 
 def _json(value: Any) -> Any:
@@ -366,6 +470,7 @@ def readout(
             fam = numbers.families["linear"]
             entry["R1"] = report.ladder_verdict(numbers, "linear")
             entry["increment"] = fam["P3"]["bacc"] - fam["P1"]["bacc"]
+            entry["d_int"] = fam["P4"]["bacc"] - fam["P1"]["bacc"]  # A1's other half
             control_path = readout_dir / f"controls_{planned}.json"
             if control_path.is_file():
                 entry["R2"] = r2_beyond(fam, json.loads(control_path.read_text()))
@@ -399,8 +504,16 @@ def readout(
         "increments": increments,
         "x1_grpo_swap_bootstrap": x1_boot,
         "e4_grpo_bootstraps": e4_boots,
-        "reading": r3_reading(increments, x1_boot, e4_boots),
+        "reading": r3_reading(
+            increments, x1_boot, e4_boots, len(common.planned_runs(plan, "s2"))
+        ),
     }
+    swap = out["runs"].get("x1_sft_swap", {}).get("run_id")
+    if swap:
+        out["main02_reproduction"] = main02_reproduction(run_numbers(data_root, swap))
+    battery_dir = readout_dir
+    if any(battery_dir.glob("a3_*.json")):
+        out["R7"] = battery_readings(data_root, plan)
     return out
 
 
@@ -411,6 +524,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("controls", "resid", "increment", "battery"):
         sub.add_parser(name).add_argument("runs", nargs="+")
+    sub.add_parser("battery-pair")
     p = sub.add_parser("fixed-cell")
     p.add_argument("--e4-root", type=Path, required=True)
     p = sub.add_parser("report")
@@ -436,6 +550,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 json.dumps(result, indent=2, default=_json)
             )
             print(json.dumps(result, indent=2, default=_json))
+        return 0
+    if args.command == "battery-pair":
+        print(json.dumps(battery_pair(root, plan, out), indent=2, default=_json))
         return 0
     if args.command == "fixed-cell":
         runs = completed(root, plan)

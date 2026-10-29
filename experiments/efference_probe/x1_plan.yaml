@@ -54,11 +54,11 @@ checkpoints:
 # Planning numbers for the budget gate and watchdog, not readout rules.
 stages:
   s0:
-    # PREREG S0: 1 task x 8 states, new logging on (collect_overrides).
+    # PREREG S0: 1 task x 8 states, new logging on (collect_overrides), and
+    # sampled decoding like every X1 collection (PREREG §1; Amendment 1).
     - key: smoke
       config: smoke.yaml
       expected_s: 300
-      decoding: false
       overrides: [env.init_states_per_task=8]
   s1b:
     - key: pilot2

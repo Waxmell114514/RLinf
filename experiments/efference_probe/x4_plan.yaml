@@ -11,8 +11,9 @@ wave: x4
 unnorm_key: libero_130_no_noops_trajall
 prereg_markers: ["X1 / X4 PRE-REGISTRATION", "X4 monitors frozen"]
 s2_requires: [s0]
-# PREREG: GRPO first (larger G, better power).  Interleaved per seed, so a
-# budget stop cuts Base-Lora's last seed before GRPO's.
+# PREREG: GRPO first (larger G, better power).  The runbook collects every
+# GRPO seed before any Base-Lora seed (Amendment 1); this order only sets how
+# the driver lists them.
 ckpt_order: [grpo, sft]
 
 budget:
@@ -70,6 +71,8 @@ stages:
       overrides:
         - "env.task_ids=[2]"
         - env.init_states_per_task=8
+        # S2's locked env count, not main02_mirror's 20 (Amendment 1).
+        - env.num_envs=10
         - monitor.assignment=cycle
   s2:
     - {key: mirror_s3, suite: goal, transform: mirror, seed: 3, config: main02_mirror.yaml, expected_s: 900}

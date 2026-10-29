@@ -75,12 +75,17 @@ def recompute_gap(
 
 
 def undo_errors_cm(calls: pd.DataFrame) -> np.ndarray:
-    """Per undo: |eef pos after the undo - eef pos before the undone chunk|, cm."""
+    """Per undo of a hijacked chunk: |eef pos after the undo - eef pos before
+    the hijacked call|, in cm (PREREG X4, "undo accuracy").
+
+    Undos of self-commanded chunks (monitor false positives) have no hijacked
+    call to return to and are left out.
+    """
     errors = []
     for _, episode in calls.groupby("episode_id"):
         episode = episode.sort_values("call_idx").reset_index(drop=True)
         for i in np.flatnonzero(episode["is_recovery"].astype(bool).to_numpy()):
-            if i == 0:
+            if i == 0 or episode.loc[i - 1, "label"] != "HIJACK":
                 continue
             after = np.asarray(episode.loc[i, "states_after"])[:3]
             target = np.asarray(episode.loc[i - 1, "states_before"])[:3]
@@ -145,6 +150,13 @@ def readout(
         float(success(probe, "off").mean()) if len(success(probe, "off")) else None
     )
     errors = undo_errors_cm(calls)
+    # Descriptive: a monitor false positive spends a call that could have been
+    # hijacked, so monitor-arm probe episodes can carry slightly fewer hijacks.
+    hijacks = {
+        c: float(probe.loc[probe["monitor_condition"] == c, "n_hijacks"].mean())
+        for c in CONDITIONS
+        if "n_hijacks" in probe
+    }
     return {
         "ckpt": ckpt,
         "G": g,
@@ -170,6 +182,7 @@ def readout(
         "e4_probe_success": E4_PROBE_SUCCESS[ckpt],
         "sanity_flag": off_success is None
         or abs(off_success - E4_PROBE_SUCCESS[ckpt]) > SANITY_TOLERANCE,
+        "hijacks_per_probe_episode": hijacks,
         "n_episodes": int(len(episodes)),
         "n_censored": n_censored,
     }

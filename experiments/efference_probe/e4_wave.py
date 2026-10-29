@@ -559,6 +559,9 @@ def extension_checks(
     checks: dict[str, bool] = {"calls_present": calls is not None and len(calls) > 0}
     if not checks["calls_present"]:
         return checks
+    if config.get("capture", {}).get("capture_vision"):
+        # The capture silently drops vision on a model without a projector.
+        checks["vision_in_every_archive"] = _vision_ok(run_dir)
     if extra:
         columns = {
             "joint_pos_before",
@@ -597,6 +600,18 @@ def extension_checks(
                     len(errors) > 0 and float(np.median(errors)) <= 2.0
                 )
     return checks
+
+
+def _vision_ok(run_dir: Path) -> bool:
+    """Every hidden archive holds a vision vector for each of its calls."""
+    archives = sorted((run_dir / "hidden").glob("ep*.npz"))
+    if not archives:
+        return False
+    for path in archives:
+        with np.load(path) as archive:
+            if "vis" not in archive or len(archive["vis"]) != len(archive["h"]):
+                return False
+    return True
 
 
 def collect_overrides(

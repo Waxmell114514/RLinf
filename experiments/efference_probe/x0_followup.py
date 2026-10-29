@@ -449,10 +449,13 @@ def _nrmse(truth, predicted, scale) -> float:
     return float(np.mean(rmse / scale))
 
 
-def f4_state_rmse(data_root: Path) -> dict[str, Any]:
+def f4_state_rmse(
+    data_root: Path, pairs: tuple[tuple[str, str], ...] = MATCHED[:2]
+) -> dict[str, Any]:
+    """F4 on (SFT, GRPO) run pairs; E4's two goal-swap pairs by default."""
     cells: dict[str, dict[str, Any]] = {}
     pairs_out = []
-    for sft, grpo in MATCHED[:2]:
+    for sft, grpo in pairs:
         readouts = {}
         for run_id in (sft, grpo):
             a2 = pd.read_csv(x0.out_dir(data_root) / f"a2_{run_id}.csv")

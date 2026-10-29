@@ -82,7 +82,8 @@ def planned_runs(plan: dict[str, Any], stage: str) -> list[PlannedRun]:
     order = plan.get("ckpt_order", CKPTS)
     if sorted(order) != sorted(CKPTS):
         raise ValueError(f"ckpt_order must be a permutation of {CKPTS}: {order}")
-    for entry in plan["stages"][stage]:
+    # A later wave's plan may skip stages (X4 has no pilot): no runs there.
+    for entry in plan["stages"].get(stage, []):
         for ckpt in order:
             runs.append(
                 PlannedRun(
