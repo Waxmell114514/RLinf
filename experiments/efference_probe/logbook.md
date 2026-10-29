@@ -2031,3 +2031,8 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Spend journal:** $5.05 at limit rates against the $9.5 cap.
   - **Modal billing:** metered this month went from $18.79 before X1 to $22.93, so X1 cost ≈ $4.1 billed (billing may lag). That leaves ≈ $7.1 of the $30 credit.
   - **Next:** the linear probe rounds run on this container ($0), with `--jobs 4 --speed-factor 6` (24 / 4 workers, as in E4 Operational Amendment 2).
+- `2026-10-29 09:28:50` **E4 (driver)** probe `x1_sft_swap` linear ok: rc=0 86.5 min, plumbing.passed=True
+- `2026-10-29 09:29:05` **E4 (driver)** probe `x1_grpo_swap` linear (--jobs 4, speed factor 6); stop at 2.7 h
+- `2026-10-29 09:29` **X1: `x1_sft_swap` linear round done (local, 86.5 min); the main02 reproduction check passes (PREREG §2).**
+  - **Ladder (balanced accuracy):** P0 floor 0.527 (perm p95 0.522); P1 0.538, P3 0.532, P4 0.545, P2r 0.683; C_dstates 0.481, C_cmd 0.486. R1: "at" floor, with no rung above floor + δ.
+  - **Reproduction:** x1_sft_swap − main02 (wave-2 report) is P1 −0.005, P3 −0.000, P4 +0.009, P2r −0.028. All are within ±0.04, so the reproduction holds.
