@@ -2042,3 +2042,5 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Ladder:** floor 0.549; P1 0.588 (margin +0.039), P3 0.590 (+0.041), P4 0.578 (+0.029), P2r 0.691; C_dstates 0.521, C_cmd 0.509.
   - **R1:** "above" for P3 only, and beyond the 8-dim observables. P1 is 0.001 short of δ.
   - **Still to come:** X1-R2 (full observables: C_scene, C_joint, C_obs) and X1-R3 (bootstrap) need `controls` and `increment`, after all six rounds. The raw P3 − P1 is +0.002.
+- `2026-10-29 10:21:26` **E4 (driver)** probe `x1_sft_mirror` linear ok: rc=0 26.4 min, plumbing.passed=True
+- `2026-10-29 10:21:48` **E4 (driver)** probe `x1_grpo_mirror` linear (--jobs 4, speed factor 6); stop at 2.7 h
