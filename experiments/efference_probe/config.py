@@ -96,6 +96,9 @@ class CaptureConfig:
     pools: list[str] = field(default_factory=lambda: list(POOL_NAMES))
     # P5 stretch: projector (vision -> LM) features.
     capture_vision: bool = False
+    # X1: also log joint positions and object poses from the raw robosuite
+    # observation (observables.py).
+    extra_observables: bool = False
     # One-time check that our sequence indexing reproduces the model's own
     # action logprobs.  Cheap; leave on.
     verify_indexing: bool = True
@@ -122,6 +125,23 @@ class BudgetConfig:
 
 
 @dataclass
+class MonitorConfig:
+    """X4: an external comparator in the loop (monitor.py, PREREG_X1_X4.md)."""
+
+    enabled: bool = False
+    # Frozen artifact written by x4_monitor.py; relative paths resolve
+    # against the repository root.
+    artifact: str = ""
+    # Its sha256 as logged before collection; loading refuses any other.
+    artifact_sha256: str = ""
+    # P(off), P(monitor), P(oracle), drawn once per episode.
+    condition_probs: list[float] = field(default_factory=lambda: [1 / 3, 1 / 3, 1 / 3])
+    # Policy calls before this index are never scored.
+    score_from_call: int = 4
+    recovery: str = "undo"
+
+
+@dataclass
 class RunConfig:
     """Top-level collection config."""
 
@@ -134,6 +154,7 @@ class RunConfig:
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     frames: FramesConfig = field(default_factory=FramesConfig)
     budget: BudgetConfig = field(default_factory=BudgetConfig)
+    monitor: MonitorConfig = field(default_factory=MonitorConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -143,6 +164,12 @@ class RunConfig:
         payload = self.to_dict()
         payload.pop("run_id", None)
         payload.pop("notes", None)
+        # X1/X4 settings at their defaults leave the hash of every earlier
+        # config unchanged.
+        if not self.monitor.enabled:
+            payload.pop("monitor", None)
+        if not self.capture.extra_observables:
+            payload["capture"].pop("extra_observables", None)
         blob = json.dumps(payload, sort_keys=True, default=str).encode()
         return hashlib.sha256(blob).hexdigest()[:12]
 
@@ -182,6 +209,18 @@ class RunConfig:
             raise ValueError(
                 "env.max_calls_per_episode leaves no eligible calls after warm-up"
             )
+        if self.monitor.enabled:
+            if not self.monitor.artifact or not self.monitor.artifact_sha256:
+                raise ValueError("monitor.enabled needs artifact and artifact_sha256")
+            probs = self.monitor.condition_probs
+            if len(probs) != 3 or min(probs) < 0 or abs(sum(probs) - 1.0) > 1e-9:
+                raise ValueError(
+                    f"monitor.condition_probs must be 3 probabilities: {probs}"
+                )
+            if self.monitor.recovery != "undo":
+                raise ValueError(f"unknown monitor.recovery: {self.monitor.recovery!r}")
+            if self.monitor.score_from_call < 0:
+                raise ValueError("monitor.score_from_call must be >= 0")
 
 
 def _build(cls, data: Any):
@@ -205,6 +244,7 @@ def _build(cls, data: Any):
             "CaptureConfig": CaptureConfig,
             "FramesConfig": FramesConfig,
             "BudgetConfig": BudgetConfig,
+            "MonitorConfig": MonitorConfig,
         }.get(
             field_type
             if isinstance(field_type, str)
