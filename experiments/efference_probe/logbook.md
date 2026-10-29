@@ -1899,3 +1899,10 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Eef check:** the harness raises when the raw-observation eef position differs from `states_after[:3]` by more than 1e-6; neither run raised.
   - **Object keys** (task 0, identical for both checkpoints): `akita_black_bowl_1_pos`, `akita_black_bowl_1_quat`, `cream_cheese_1_pos`, `cream_cheese_1_quat`, `plate_1_pos`, `plate_1_quat`, `wine_bottle_1_pos`, `wine_bottle_1_quat`. The pilot2 manifests will show the other tasks' lists.
   - **Lock:** num_envs = 10, MUJOCO_GL = egl, speed factor 1.0, as in E4.
+- `2026-10-29 07:32` **X1 S1b passed for both checkpoints; GRPO's S2 sizing frozen (E4 Amendment 1's rule).**
+  - **pilot2:** 10 tasks × 8 states each; plumbing integrity and pilot probes passed.
+    - `x1_sft_pilot2`: 2322 calls, 6.7 min, peak RSS 62.4 GB. Low-competence task flags [0, 5, 7]. Positives per episode 2.763.
+    - `x1_grpo_pilot2`: 1731 calls, 5.8 min, peak RSS 61.3 GB. Low-competence task flags [0, 2, 5, 7]. Positives per episode 1.900.
+  - **Sizing:** r = 1.45, so the GRPO S2 states per task are swap 30, mirror 44 and freeze 44 (cap 50). The SFT arms are unchanged (20 / 30 / 30).
+  - **Spend:** $1.08 at the journal's limit rates before S2; collection GPU time 0.25 of 1.6 h.
+  - **Operational:** one S2 launch was interrupted on the client before any remote call. There was no journal entry, and its app had 0 tasks, so $0; that empty app was stopped.
