@@ -1842,3 +1842,7 @@ produced data, so a number in `results.md` can always be traced back to a run.
 
   Descriptive: P1's hits do not concentrate on low-competence tasks, except Base-Lora long. A magnitude/gripper dependence appears only on object, where a wrong gripper action is visible in the scene.
 - `2026-10-28 16:01` **F3, GRPO spatial (fills the [pending] row above).** True a + decoded Δŝ 0.594; decoded â + true Δs 0.586; P2r (true) 0.647, reproduced exactly; P2r - 0.10 = 0.547. Both mixed pairs are within 0.10, as on the other GRPO runs. The F3 reading ("both decodes lossy", made on Base-Lora) is unchanged. F1-F7 are complete.
+- `2026-10-29 02:58` **X1 / X4 PRE-REGISTRATION.** `PREREG_X1_X4.md` (sha256 `2054a71c329dba5df565ea422794b3b5254d0228ff5097d9e1e00329fcdfc6bd`) is committed before any X1/X4 code change, collection or number.
+  - **X1:** a second SFT→GRPO pair (goal-traj1 → RLinf-OpenVLAOFT-GRPO-LIBERO-goal). It runs swap, mirror and freeze with new joint, object and vision logging, readouts X1-R1 to R7, and a fixed cell L12/`ctx_mean`. Its primary family is linear.
+  - **X4:** a P2r monitor on true command and state, with undo recovery, on mirror for both E4 checkpoints. Off/monitor/oracle conditions are randomised per episode over 1000 episodes per checkpoint, with G fixed at 0.167 (Base-Lora) and 0.219 (GRPO).
+  - **Status:** it supersedes the never-run wave-3 E2 (`PREREG_wave3.md` on `main`). No Modal spend is approved by it; the user approves X1 and X4 separately, after the §4 code passes offline tests.
