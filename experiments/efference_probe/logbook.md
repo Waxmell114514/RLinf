@@ -1846,3 +1846,11 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **X1:** a second SFT→GRPO pair (goal-traj1 → RLinf-OpenVLAOFT-GRPO-LIBERO-goal). It runs swap, mirror and freeze with new joint, object and vision logging, readouts X1-R1 to R7, and a fixed cell L12/`ctx_mean`. Its primary family is linear.
   - **X4:** a P2r monitor on true command and state, with undo recovery, on mirror for both E4 checkpoints. Off/monitor/oracle conditions are randomised per episode over 1000 episodes per checkpoint, with G fixed at 0.167 (Base-Lora) and 0.219 (GRPO).
   - **Status:** it supersedes the never-run wave-3 E2 (`PREREG_wave3.md` on `main`). No Modal spend is approved by it; the user approves X1 and X4 separately, after the §4 code passes offline tests.
+- `2026-10-29 04:02` **X4 monitors frozen (PREREG_X1_X4.md, X4 "The monitor"; `x4_monitor.py`).**
+  - GRPO: `x4/monitor_grpo.json` sha256 `cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b`; fit on `e4_grpo_goal_mirror_s1` (1090 probe samples, C = 1.0); τ = 0.9300 from 3952 held-out SELF calls of `e4_grpo_goal_mirror_s2`; replay FPR 0.020, replay TPR 0.746 on 674 HIJACK calls.
+  - Base-Lora: `x4/monitor_sft.json` sha256 `a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152`; fit on `e4_sft_goal_mirror_s1` (968 probe samples, C = 1.0); τ = 1.1316 from 3106 held-out SELF calls of `e4_sft_goal_mirror_s2`; replay FPR 0.020, replay TPR 0.748 on 492 HIJACK calls.
+
+  **Replay gate (TPR >= 0.5): passed for both checkpoints**, so X4 keeps all three conditions.
+  - The online features equal the probe `mismatch` block exactly on every training sample; the run aborts otherwise.
+  - The exported numbers reproduce the scikit-learn pipeline's decision function within 7e-6.
+  - The harness loads only these digests.

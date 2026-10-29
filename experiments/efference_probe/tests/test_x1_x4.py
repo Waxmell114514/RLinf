@@ -274,3 +274,38 @@ def test_x1_x4_settings_change_the_hash_only_when_used(tmp_path):
 def test_monitor_config_is_validated(overrides, message):
     with pytest.raises(ValueError, match=message):
         load_config(str(CONFIG_DIR / "main02_mirror.yaml"), overrides)
+
+
+# -- x4_monitor: fit, threshold, replay gate ------------------------------------
+
+
+def test_x4_monitor_freezes_a_fitted_thresholded_artifact(tmp_path):
+    from efference_probe import x4_monitor
+
+    root = tmp_path / "data"
+    for seed, name in ((21, "e4_sft_goal_mirror_s1"), (22, "e4_sft_goal_mirror_s2")):
+        run_dir = make_synthetic_run(
+            root / name,
+            n_tasks=2,
+            episodes_per_task=10,
+            n_calls=24,
+            transform="mirror",
+            seed=seed,
+        )
+        run = load_run(run_dir)
+        (run_dir / "analysis").mkdir()
+        make_samples(run, AnalysisConfig()).to_csv(
+            run_dir / "analysis" / "probe_samples.csv", index=False
+        )
+    result = x4_monitor.build(root, "sft", out_dir=tmp_path / "x4")
+    monitor = mon.LinearMonitor.load(result["artifact"], expect_sha256=result["sha256"])
+    assert monitor.threshold == result["threshold"]
+    assert result["train_run"].endswith("_s1") and result["holdout_run"].endswith("_s2")
+    assert result["export_max_abs_diff"] < 1e-5
+    assert result["replay_fpr"] <= 0.03
+    assert 0.0 <= result["replay_tpr"] <= 1.0
+    assert result["gate_passed"] == (result["replay_tpr"] >= 0.5)
+    # tau is the 98th percentile of the held-out SELF scores.
+    scored = x4_monitor.scored_calls(root / "e4_sft_goal_mirror_s2", monitor)
+    selfs = scored.loc[scored["label"] == "SELF", "score"]
+    assert monitor.threshold == pytest.approx(np.quantile(selfs, 0.98))
