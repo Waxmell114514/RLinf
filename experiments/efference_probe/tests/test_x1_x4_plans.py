@@ -258,3 +258,22 @@ def test_stage_gate_holds_a_call_that_does_not_fit_the_cap():
     running = journal[:1]  # no end entry: its full reservation stays committed
     _, committed, _ = modal_e4.stage_gate(running, 60.0, 8.0, rate, 0)
     assert committed == pytest.approx(3.6)
+
+
+def test_launcher_imports_the_package_as_modal_run_loads_it(tmp_path):
+    """``modal run`` puts only the launcher's directory on sys.path."""
+    pytest.importorskip("modal")
+    import subprocess
+
+    code = (
+        "import sys; sys.path[:] = [p for p in sys.path if not p.endswith('experiments')]; "
+        f"sys.path.insert(0, {str(common.PROBE_DIR)!r}); "
+        "import modal_e4; "
+        "plan = {'budget': {'watchdog_factor': 2.0, 'hang_grace_s': 900}}; "
+        "print(modal_e4.stage_reserve_s(plan, ['size']))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert float(result.stdout.split()[-1]) == 1800.0

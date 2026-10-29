@@ -38,6 +38,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -587,6 +588,17 @@ X_SESSION = "x_waves"
 CPU_COMMAND_RESERVE_S = 1800
 
 
+def _import_package() -> None:
+    """Make ``efference_probe`` importable on the client.
+
+    ``modal run`` puts only this file's directory on ``sys.path``, so the
+    package's own absolute imports need its parent directory too.
+    """
+    parent = str(REPO_LOCAL / "experiments")
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+
+
 def stage_reserve_s(plan: dict[str, Any], args: list[str]) -> float:
     """Worst-case container seconds of one driver command, from its plan.
 
@@ -595,6 +607,7 @@ def stage_reserve_s(plan: dict[str, Any], args: list[str]) -> float:
     stage reserves that for each of its runs, plus a pilot probe round per run
     of S1/S1b.  Every other command is a short CPU job.
     """
+    _import_package()
     from efference_probe import e4_common as common
     from efference_probe import e4_wave as wave_mod
 
@@ -674,6 +687,7 @@ def stage(cmd: str, mujoco_gl: str = "egl", wave: str = "e4", budget_usd: float 
     if wave != "e4":
         if budget_usd <= 0:
             raise SystemExit(f"--wave {wave} needs --budget-usd (PREREG_X1_X4.md §5)")
+        _import_package()
         from efference_probe import e4_common as common
 
         plan = common.load_plan(common.PROBE_DIR / f"{wave}_plan.yaml")
