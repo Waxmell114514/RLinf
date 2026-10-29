@@ -2084,3 +2084,8 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **F4 on the swap pair:** "representation effect" under the unchanged rule, but the all-calls nRMSE gap is only 0.006 (0.337 vs 0.332). There is almost no RL readout advantage to attribute.
 
   **main02 reproduction** (`x1_sft_swap`): P1 −0.005, P3 −0.000, P4 +0.009, P2r −0.028; all within 0.04.
+- `2026-10-29 14:12` **Correction to the X1 READOUT entry above (two transcription errors, found re-reading it against `reports/x1_report.md`):**
+  - **SFT swap margin:** the largest SFT swap margin is P4 +0.018, not +0.011 (+0.011 is P1's).
+  - **A2b:** "A2b everywhere" is withdrawn. A2b is computed for every X1 run, but X1-R7 has no replicate mark for it (`x1_report.E4_REFERENCE` has none), so no replicate claim is made.
+
+  Nothing else in the entry changes.
