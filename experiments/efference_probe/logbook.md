@@ -2049,3 +2049,38 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-29 11:46:20` **E4 (driver)** probe `x1_sft_freeze` linear ok: rc=0 28.6 min, plumbing.passed=True
 - `2026-10-29 11:46:20` **E4 (driver)** probe `x1_grpo_freeze` linear (--jobs 4, speed factor 6); stop at 2.7 h
 - `2026-10-29 12:14:37` **E4 (driver)** probe `x1_grpo_freeze` linear ok: rc=0 28.3 min, plumbing.passed=True
+- `2026-10-29 14:12` **X1 READOUT (PREREG_X1_X4.md, X1-R1 to R7). Numbers are from `reports/x1_report.md`, built from `data/x1/x1_readout/`.**
+  - **BLAS (§1):** local refits reproduce the local probe CSVs exactly (every fold difference 0) under autodetected OpenBLAS kernels with one thread, which is what joblib's workers ran at. All readouts use that setting. Forced SkylakeX, or 4 threads, missed by one or two samples in a fold.
+
+  **R1, ladder:**
+  - SFT is "at" floor on swap, mirror and freeze (largest margins +0.011, +0.035, +0.013).
+  - GRPO is "above" on all three: swap P3 +0.041 (P1 +0.039); mirror P1/P3/P4; freeze P1/P3/P4.
+  - All arms are informative (P2r − floor ≥ 0.14).
+
+  **R2, beyond full observables** (bar = max(C_dstates, C_state+d, C_scene, C_joint, C_obs) + δ; C_cmd in band everywhere):
+  - only `x1_grpo_swap`: P1 0.588 and P3 0.590 against a bar of 0.587 (C_obs 0.547). P1 is beyond by 0.001 but 0.001 short of floor + δ.
+  - mirror and freeze: no rung beyond; the bar is 0.715 and 0.738, set by C_obs / C_dstates.
+
+  **R3: "no efference increment on two pairs".**
+  - |P3 − P1| ≤ 0.006 in all six runs.
+  - `x1_grpo_swap` paired bootstrap (reproduced): P3 − P1 = +0.003 [−0.014, +0.020]; P1 − C_dstates = +0.066 [+0.028, +0.106].
+
+  **R4: "no RL effect at the fixed cell"** (L12/`ctx_mean`, GRPO − SFT):
+  - X1 +0.035 [−0.004, +0.074];
+  - E4 s1 +0.050 [+0.002, +0.097] and s2 +0.064 [+0.021, +0.110], post hoc as registered.
+
+  **R5:** F5 on `x1_grpo_swap` is "state-explained": residualised P1 0.559 against floor 0.549, at L20/`ctx_last`.
+
+  **R6, hijack cost** (clean − probe success, GRPO − SFT; descriptive):
+  - swap −0.004 [−0.200, +0.194];
+  - mirror +0.275 [+0.050, +0.488];
+  - freeze +0.091 [−0.129, +0.302].
+
+  **R7, X0 battery, marked against E4's outcome for the same role.** Replicates: A1, A2 (i)-(iii) and A2b everywhere; F2 on swap and SFT runs; A3 on five of six runs. Does not replicate:
+  - **F2 on GRPO mirror and freeze HIJACK calls:** gain 0.057 and 0.104 (≥ 0.05), so a motion trace beyond the state appears there.
+  - **A3 on `x1_sft_swap`:** oracle 0.539, floor 0.527.
+  - **F3 on SFT runs:** command-side OK, where E4 Base-Lora was not.
+  - **F3 outcome on GRPO mirror and freeze:** not OK.
+  - **F4 on the swap pair:** "representation effect" under the unchanged rule, but the all-calls nRMSE gap is only 0.006 (0.337 vs 0.332). There is almost no RL readout advantage to attribute.
+
+  **main02 reproduction** (`x1_sft_swap`): P1 −0.005, P3 −0.000, P4 +0.009, P2r −0.028; all within 0.04.
