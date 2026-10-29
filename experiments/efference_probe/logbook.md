@@ -1891,3 +1891,11 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Versus the credit:** the full plan does not fit the ~$12 credit [TO VERIFY] under this gate. Before launch, the operator chooses the cap and whether X4 is cut (e.g. fewer seeds or GRPO only).
 - `2026-10-29 07:04` **X1 launch approved by the operator: X1 only, combined spend cap $9.5.** The cap is passed as `--budget-usd 9.5` on every X1 `stage` call (journal session `x_waves`). PREREG §5's registered $8 is raised by the operator under Amendment 1, item 4. X4 is not approved.
   - **Modal balance (PREREG §6):** `modal billing summary` on the new workspace shows $18.79 metered and $18.79 credited this month, and $0 last month. ~$11.2 of the $30 credit is left, above the cap.
+- `2026-10-29 07:14` **X1 S0 passed for both checkpoints; object keys recorded (PREREG §6; Amendment 1, item 1).**
+  - **Checkpoints:** both downloaded at their pinned revisions; every shard sha256 matches `x1_plan.yaml`; registered by `init` with hashes verified.
+  - **S0 smoke:** 1 task × 8 states each, sampled at T = 1.6, all gate checks true: indexing, hidden shape, vision in every archive, 7 joint positions, objects logged, object keys in the manifest. Max |Δlogprob| was 2.4e-7.
+    - `x1_sft_smoke`: 48 calls, 1.3 min, peak RSS 25.7 GB.
+    - `x1_grpo_smoke`: 48 calls, 1.1 min, peak RSS 22.4 GB.
+  - **Eef check:** the harness raises when the raw-observation eef position differs from `states_after[:3]` by more than 1e-6; neither run raised.
+  - **Object keys** (task 0, identical for both checkpoints): `akita_black_bowl_1_pos`, `akita_black_bowl_1_quat`, `cream_cheese_1_pos`, `cream_cheese_1_quat`, `plate_1_pos`, `plate_1_quat`, `wine_bottle_1_pos`, `wine_bottle_1_quat`. The pilot2 manifests will show the other tasks' lists.
+  - **Lock:** num_envs = 10, MUJOCO_GL = egl, speed factor 1.0, as in E4.
