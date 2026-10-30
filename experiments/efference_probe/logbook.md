@@ -2263,3 +2263,20 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-30 05:12:47` done: 7324 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s5/calls.parquet (0.06 GB)
 - `2026-10-30 05:12:47` **DONE** run_id=`x4_sft_mirror_s5` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s5/calls.parquet`
 - `2026-10-30 05:12:50` **E4 (driver)** collect `x4_sft_mirror_s5` ok: rc=0 12.2 min (expected 15), calls=7324, peak RSS 63.31 GB, peak VRAM 25467 MiB
+- `2026-10-30 06:50` **EC0 PRE-REGISTRATION: label-free efference-comparator pre-check (free, local; written before any EC0 number exists).**
+  - **Question:** given an efference copy (the commanded chunk a_cmd(c)) and a forward model learned only from the policy's own unperturbed transitions, can overrides be detected from frozen VLA features, with no hijack label in any fit? This is a $0 proxy for the "efference token + self-supervised forward loss" training experiment the operator may fund.
+  - **Data:** every (episode, c) with call c+1 present and post-success calls excluded (`x0_mechanism.readout_pairs`, no cap). The label is call c's executed-chunk label (SELF / HIJACK).
+    - **Primary:** the six X1 runs.
+    - **Secondary:** the four E4 goal-swap runs held locally.
+  - **Folds:** `GroupKFold(5)` by episode. Every fit uses only SELF pairs of the training episodes, which is equivalent to training on clean rollouts. No HIJACK transition enters any fit.
+  - **Variants:**
+    - **V_feat (primary):** ŝ(c) and ŝ(c+1) come from one ridge state decoder on h at the run's A2 (i) best `s_next` cell (`x0` A2 CSV), applied to h(c) and h(c+1); alpha by `x0_mechanism._ridge_alpha`. Observed Δŝ = `compose_delta(ŝ(c), ŝ(c+1))`.
+    - **V_true (upper bound, simulator proprio):** the same with the true 8-dim states.
+  - **Forward model:** ridge F: [ŝ(c), a_cmd(c) flattened (56), task one-hot] → Δs, fit on the training SELF pairs (true Δs as the target in V_true, decoded Δŝ in V_feat).
+    - **Score:** Σ_d (r_d/σ_d)² over the 8 dims, with r = observed Δ − F(·) and σ_d the per-dim SD of the training SELF residuals.
+  - **Metrics per run, on out-of-fold scores:**
+    - **TPR at 2% FPR:** τ = 98th percentile of the run's OOF SELF scores; TPR = share of OOF HIJACK scores above τ.
+    - **AUROC.**
+  - **Decision rule (V_feat, primary):** **"go"** iff TPR ≥ 0.5 on all four X1 mirror/freeze runs (the X4 replay-gate standard); **"mixed"** on 2–3 of 4; **"no-go"** on ≤ 1. Swap and E4 runs are reported, not gated.
+  - **Comparison points (descriptive):** V_true, and the supervised X4 monitors' replay TPR (0.746 / 0.748 at FPR 0.02, logbook "X4 monitors frozen").
+  - **BLAS:** autodetected kernels, 1 thread. These are new fits, not compared with any CSV. Code: new `ec0_precheck.py`, with a synthetic-run test first.
