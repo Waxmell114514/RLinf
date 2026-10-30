@@ -2110,3 +2110,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Unchanged:** the recovery, conditions, monitors, G, Rules M/O, readings and sizes.
   - **Reporting:** GRPO results are reported with this deviation, and undo accuracy is reported per checkpoint from S2.
   - **Tests:** two cover the waiver, including that it never admits an unnamed check and does not apply to E4 or Base-Lora.
+- `2026-10-30 04:00` **X4 GRPO S2 complete (mirror s3–s6, 1000 episodes); cap recomputed before the Base-Lora seeds.**
+  - **Seeds:**
+    - `x4_grpo_mirror_s3`: 11.8 min, 5181 calls;
+    - `x4_grpo_mirror_s4`: 10.8 min, 5138 calls;
+    - `x4_grpo_mirror_s5`: 10.1 min, 4920 calls;
+    - `x4_grpo_mirror_s6`: 11.6 min, 5198 calls.
+
+    Every seed had peak RSS ≈ 63 GB.
+  - **Spend:** journal $7.76; billing summary $25.19 metered, so ≈ $4.81 of credit is left.
+  - **Cap:** by the rule logged at launch, journal + remaining credit − $0.50 = $12.07.
+  - **Base-Lora:** mirror s3–s6 run in order. A seed the gate refuses is a budget stop on the tail, and is reported.
