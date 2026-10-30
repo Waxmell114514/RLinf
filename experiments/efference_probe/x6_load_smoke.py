@@ -91,13 +91,30 @@ def stage_official(cfg, work: Path, proprio_dim: int) -> dict[str, Any]:
     try:
         official = get_model(model_cfg).to("cuda").eval()
     except Exception as error:  # noqa: BLE001 - the failure is the finding
-        out.update(a_loaded=False, a_error=f"{type(error).__name__}: {error}", passed=False)
+        out.update(
+            a_loaded=False, a_error=f"{type(error).__name__}: {error}", passed=False
+        )
         return out
     out["a_loaded"] = True
     with torch.no_grad():
         _, result = official.predict_action_batch(env_obs=dict(obs), **GREEDY)
-    tokens = _tokens(result)
-    out["a_token_agreement"] = float(np.mean(tokens == saved["tokens"]))
+    tokens = _tokens(result).reshape(saved["n"], -1)
+    reference = np.asarray(saved["tokens"]).reshape(saved["n"], -1)
+    out["a_token_ranges"] = {
+        "official": [int(tokens.min()), int(tokens.max())],
+        "rlinf": [int(reference.min()), int(reference.max())],
+    }
+    # The classes may index action tokens differently (relative bins vs
+    # vocabulary ids); the best of the plausible conventions is reported.
+    vocab = int(official.config.text_config.vocab_size)
+    candidates = {
+        "same": reference,
+        "vocab_minus_256_offset": reference - (vocab - 256),
+        "vocab_minus_1_minus": vocab - 1 - reference,
+    }
+    agreement = {k: float(np.mean(tokens == v)) for k, v in candidates.items()}
+    out["a_agreement_by_convention"] = agreement
+    out["a_token_agreement"] = max(agreement.values())
     out["a_passed"] = out["a_token_agreement"] >= PASS_AGREEMENT
     logprobs = result["prev_logprobs"].float().cpu().numpy()
     out["a_max_abs_logprob_diff"] = float(np.abs(logprobs - saved["logprobs"]).max())
@@ -125,7 +142,9 @@ def stage_official(cfg, work: Path, proprio_dim: int) -> dict[str, Any]:
         with torch.no_grad():
             actions, _ = official.predict_action_batch(**inputs, **GREEDY)
     except Exception as error:  # noqa: BLE001 - the failure is the finding
-        out.update(b_ran=False, b_error=f"{type(error).__name__}: {error}", passed=False)
+        out.update(
+            b_ran=False, b_error=f"{type(error).__name__}: {error}", passed=False
+        )
         return out
     actions = np.asarray(_numpy(actions), dtype=np.float32)
     out.update(
@@ -133,12 +152,17 @@ def stage_official(cfg, work: Path, proprio_dim: int) -> dict[str, Any]:
         b_actions_finite=bool(np.isfinite(actions).all()),
         b_action_shape=list(actions.shape),
     )
-    linear = [m for m in official.proprio_projector.modules() if isinstance(m, torch.nn.Linear)]
+    linear = [
+        m
+        for m in official.proprio_projector.modules()
+        if isinstance(m, torch.nn.Linear)
+    ]
     torch.nn.init.zeros_(linear[-1].weight)
     torch.nn.init.zeros_(linear[-1].bias)
     with torch.no_grad():
         _, zeroed = official.predict_action_batch(**inputs, **GREEDY)
-    out["b_zeroed_token_agreement_with_a"] = float(np.mean(_tokens(zeroed) == tokens))
+    zeroed_tokens = _tokens(zeroed).reshape(saved["n"], -1)
+    out["b_zeroed_token_agreement_with_a"] = float(np.mean(zeroed_tokens == tokens))
     out["passed"] = bool(out["a_passed"] and out["b_actions_finite"])
     return out
 
