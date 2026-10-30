@@ -2366,3 +2366,21 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **(b) A fresh ProprioProjector(136) attached outside `rlinf/`:** the forward pass runs, and actions are finite with shape (10, 8, 7). With the projector's last layer zeroed (a zero-embedding token), 93.6% of tokens match the no-projector prediction.
   - **Process:** three smoke calls failed on bugs in my comparison and call code before this result (token shapes, the `use_proprio` flag, the padded vocabulary size). Each cost about a minute of GPU.
   - **Spend:** the journal reads $10.41 before the pilot.
+- `2026-10-30 11:13` **X6 stage 0, step 3 RESULT: Rule P pilot (`/vol/data/x6/x6_pilot_grpo`, local copy in `data/x6/`).** Frozen GRPO-130, tasks {2, 8} × the same 8 reset states per fault, T = 1.6, hijack off, 96 episodes, none censored.
+
+  | fault | success (n = 16) | task 2 / task 8 | mean calls | Rule P (≤ 0.6) |
+  |---|---|---|---|---|
+  | clean | 0.938 | 0.875 / 1.000 | 12.5 | — (≥ 0.8, so the pilot is informative) |
+  | bias_x 0.15 | 0.562 | 0.375 / 0.750 | 22.9 | met |
+  | bias_x 0.30 | 0.000 | 0 / 0 | 40.0 (all time out) | met |
+  | invert_x | 0.000 | 0 / 0 | 40.0 (all time out) | met |
+  | gain 0.6 | 0.875 | 0.875 / 0.875 | 20.1 | not met (absorbed) |
+  | gain 0.4 | 0.562 | 0.500 / 0.625 | 31.1 | met |
+
+  - **Reading:** all three families are carried into X6-EC, as registered.
+    - **Bias and inversion:** the frozen closed-loop VLA does not absorb a persistent bias or an axis inversion.
+    - **Gain:** loss is absorbed at 0.6 and not at 0.4, so gain is the boundary.
+  - **Under bias 0.30:** the policy's mean commanded x is −0.232 (−0.051 at bias 0.15), so it does react visually. It never cancels the +0.30, and every episode reaches the 40-call cap.
+  - **Clipping:** at most 0.57% of executed dims 0–5 are clipped.
+  - **Caveat:** n = 16 per setting, so the 300-episode stage-0 collection would firm these numbers up.
+  - **Spend:** the pilot took 307 s; journal $10.69 (+$0.57 for the three steps, against the +$1.60 cap); billing summary $27.38 metered, ≈ $2.6 of credit left.
