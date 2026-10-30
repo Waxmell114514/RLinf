@@ -2291,3 +2291,17 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **EC0b (exploratory, registered here before any EC0b number; does not change the reading):** is the gap linearity or the label-free design? Both variants use V_true on the same folds and the same SELF-only fits.
     - (a) an MLP forward model: sklearn `MLPRegressor(hidden_layer_sizes=(256, 256), alpha=1e-3, early_stopping=True, random_state=0)` on standardised inputs and targets;
     - (b) the linear forward model scored on translation dims 0–2 only.
+- `2026-10-30 07:37` **EC0b RESULT (exploratory; EC0's "no-go" stands). Files: `ec0b_<run>.json` next to the EC0 files.** V_true, TPR at FPR 0.02 / AUROC:
+
+  | variant | X1 | E4 swap |
+  |---|---|---|
+  | linear forward model (EC0's V_true) | 0.279–0.455 / 0.824–0.924 | 0.200–0.509 / 0.777–0.922 |
+  | (a) MLP forward model | 0.342–0.492 / 0.836–0.943 | 0.224–0.511 / 0.827–0.916 |
+  | (b) translation-only score | 0.271–0.620 / 0.765–0.916 | 0.206–0.344 / 0.739–0.848 |
+
+  - **Translation-only:** mirror reaches 0.502 (SFT) and 0.620 (GRPO); swap and freeze drop.
+  - **No variant reaches** the supervised monitors' 0.746 / 0.748.
+  - **Reading (descriptive):**
+    - Linearity is not the bottleneck: a forward model learned only from unperturbed transitions, scored by prediction error, separates overrides moderately (AUROC 0.8–0.9) but catches at most about half of them at a 2% false-alarm rate, even with true states.
+    - The natural spread of the policy's own transitions (contact, gripper, controller lag) overlaps most overrides. A detector that knows what an override looks like does markedly better.
+    - For the proposed training experiment (efference token + self-supervised forward loss), detection at this operating point is bounded near the V_true numbers, and far below them from the VLA's own features (V_feat 0.03–0.16).
