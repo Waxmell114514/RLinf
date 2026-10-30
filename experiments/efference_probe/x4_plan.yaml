@@ -11,6 +11,13 @@ wave: x4
 unnorm_key: libero_130_no_noops_trajall
 prereg_markers: ["X1 / X4 PRE-REGISTRATION", "X4 monitors frozen"]
 s2_requires: [s0]
+# PREREG_X1_X4.md Amendment 2: GRPO's S0 failed only the 2 cm undo check
+# (median 2.23 cm over 4 undos); the operator continued with that deviation
+# recorded.  Every other S0 check must still pass.
+gate_waivers:
+  marker: "X4 AMENDMENT 2"
+  s0:
+    grpo: [undo_error_median_at_most_2cm]
 # PREREG: GRPO first (larger G, better power).  The runbook collects every
 # GRPO seed before any Base-Lora seed (Amendment 1); this order only sets how
 # the driver lists them.

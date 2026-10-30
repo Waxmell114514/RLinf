@@ -1224,7 +1224,7 @@ def cmd_s0(wave: Wave, args, stage: str = "s0") -> int:
 
 def cmd_lock(wave: Wave, args) -> int:
     gates = {ckpt: wave.gate("s0", ckpt) for ckpt in common.CKPTS}
-    if not all(g and g["passed"] for g in gates.values()):
+    if not all(gate_ok(wave, "s0", ckpt) for ckpt in common.CKPTS):
         raise StageError("both S0 gates must pass before the wave constants are locked")
     started = [
         p.name
@@ -1301,12 +1301,38 @@ def _missing_markers(plan: dict[str, Any]) -> list[str]:
     return [m for m in markers if m not in text]
 
 
+def gate_ok(wave: Wave, stage: str, ckpt: str) -> bool:
+    """A gate passed, or failed only on checks a registered amendment waives.
+
+    ``gate_waivers`` in the plan names the waived checks per stage and
+    checkpoint, and the logbook entry (``marker``) that registers them.  The
+    gate file itself keeps its FAILED verdict; a waiver never hides a check
+    it does not name.
+    """
+    gate = wave.gate(stage, ckpt)
+    if not gate:
+        return False
+    if gate["passed"]:
+        return True
+    waivers = wave.plan.get("gate_waivers") or {}
+    waived = set(waivers.get(stage, {}).get(ckpt, ()))
+    failed = {name for name, ok in gate["checks"].items() if ok is False}
+    if not failed or not failed <= waived:
+        return False
+    if _missing_markers({"prereg_markers": [waivers["marker"]]}):
+        return False
+    wave.log(
+        f"{stage.upper()} {ckpt} gate FAILED on {sorted(failed)}, waived by "
+        f"`{waivers['marker']}`"
+    )
+    return True
+
+
 def require_s2_ready(wave: Wave) -> None:
     """S2 starts only after the S1b gates, the sizing, and their registration."""
     for stage in wave.plan.get("s2_requires", ["s1b"]):
         for ckpt in common.CKPTS:
-            gate = wave.gate(stage, ckpt)
-            if not (gate and gate["passed"]):
+            if not gate_ok(wave, stage, ckpt):
                 label = {"s1b": "S1b (pilot2)"}.get(stage, stage.upper())
                 raise StageError(
                     f"{label} gate for {ckpt} has not passed; S2 does not start"

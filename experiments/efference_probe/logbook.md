@@ -2105,3 +2105,8 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - **Small sample:** S0 had only 4 GRPO undos.
   - **Spend:** journal $5.27 (X4 so far $0.22 at limit rates); billing summary $23.18 metered. Nothing is running.
   - **Pending:** proceeding needs an operator decision and an amendment written before any S2 data. The options are reported to the operator.
+- `2026-10-30 03:11` **X4 AMENDMENT 2 (PREREG_X1_X4.md Amendment 2; operator decision "照原设计继续"; before any X4 S2 data).** The GRPO S0 failure on `undo_error_median_at_most_2cm` (median 2.23 cm over 4 undos) is recorded as a deviation.
+  - **Waiver:** `x4_plan.yaml` `gate_waivers` waives exactly that check, and only for GRPO S0. The driver's `gate_ok` admits a failed gate only when every failed check is named there and this entry exists; the gate file stays FAILED.
+  - **Unchanged:** the recovery, conditions, monitors, G, Rules M/O, readings and sizes.
+  - **Reporting:** GRPO results are reported with this deviation, and undo accuracy is reported per checkpoint from S2.
+  - **Tests:** two cover the waiver, including that it never admits an unnamed check and does not apply to E4 or Base-Lora.

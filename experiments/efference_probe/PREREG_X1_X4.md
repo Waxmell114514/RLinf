@@ -245,3 +245,18 @@ Written after an independent review of the §4 code and before any X1 or X4 coll
    - **F4:** run on the X1 swap pair, through a `pairs` argument to the unchanged F4 code.
    - **Hijack counts:** X4 reports hijacks per probe episode by condition.
    - **Labels:** X1 runs are labelled goal-traj1 and GRPO-goal, not with E4's names.
+
+### Amendment 2 (2026-10-30, after X4 S0, before any X4 S2 data)
+
+**What happened.** X4 S0 passed for Base-Lora: median undo error 1.60 cm over 6 hijacked undos, and every check true. GRPO failed only `undo_error_median_at_most_2cm`:
+- 4 hijacked undos, with errors of 1.47, 1.71, 2.75 and 2.76 cm (median 2.23 cm);
+- every other check (recovery rows, never hijacked, all conditions, online scores within 1e-6) passed.
+
+As registered, X4 stopped and the failure was reported (logbook).
+
+**Diagnosis.** The open-loop undo returns 71–84% of the hijack's displacement (GRPO: 5.8–10.9 cm displaced, 1.5–2.8 cm left). The residual grows with the displacement, so the absolute 2 cm bound binds on GRPO's larger motions. A sign or indexing error would leave about twice the displacement, so this is not an implementation error.
+
+**Decision (operator).** Continue with the registered design and record the GRPO S0 undo failure as a deviation.
+- **Waiver:** `x4_plan.yaml` waives exactly that check (`gate_waivers`: S0, GRPO, `undo_error_median_at_most_2cm`). The waiver applies only once this amendment's logbook entry ("X4 AMENDMENT 2") exists. The gate file keeps its FAILED verdict.
+- **Unchanged:** the recovery (undo), the conditions and their RNG, the frozen monitors, G, Rules M and O, the readings, the sanity flag and the S2 sizes.
+- **Reporting:** undo accuracy is reported per checkpoint from the S2 data (median, as registered). Every GRPO X4 result is reported with this deviation stated: the GRPO S0 undo accuracy missed the registered 2 cm bound. Rule O remains the outcome test of whether the undo recovers the hijack cost.

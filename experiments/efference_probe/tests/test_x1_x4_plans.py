@@ -277,3 +277,49 @@ def test_launcher_imports_the_package_as_modal_run_loads_it(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert float(result.stdout.split()[-1]) == 1800.0
+
+
+def _write_s0(wave, ckpt, failed=()):
+    checks = {"collection_ok": True, "undo_error_median_at_most_2cm": True}
+    checks.update(dict.fromkeys(failed, False))
+    common.write_json_atomic(
+        wave.gate_path("s0", ckpt),
+        {
+            "passed": not failed,
+            "mujoco_gl": "egl",
+            "run_id": f"smoke_{ckpt}",
+            "checks": checks,
+        },
+    )
+
+
+def test_x4_waiver_admits_only_the_check_it_names(tmp_path, monkeypatch):
+    """Amendment 2: GRPO's S0 undo check is waived, and nothing else."""
+    monkeypatch.setattr(wave_mod, "_missing_markers", lambda plan: [])
+    wave = wave_mod.Wave(tmp_path / "x4", tmp_path / "log.md", X4)
+    wave.data_root.mkdir()
+    _write_s0(wave, "sft")
+    _write_s0(wave, "grpo", ["undo_error_median_at_most_2cm"])
+    assert wave_mod.gate_ok(wave, "s0", "grpo")
+    wave_mod.require_s2_ready(wave)
+    args = wave_mod.build_parser().parse_args(["lock", "--num-envs", "10"])
+    assert wave_mod.cmd_lock(wave, args) == 0
+    assert wave.gate("s0", "grpo")["passed"] is False  # the record is unchanged
+    _write_s0(wave, "grpo", ["undo_error_median_at_most_2cm", "recovery_rows_present"])
+    assert not wave_mod.gate_ok(wave, "s0", "grpo")
+    _write_s0(wave, "sft", ["undo_error_median_at_most_2cm"])  # no Base-Lora waiver
+    assert not wave_mod.gate_ok(wave, "s0", "sft")
+
+
+def test_waiver_needs_its_logbook_entry_and_e4_has_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        wave_mod, "_missing_markers", lambda plan: list(plan["prereg_markers"])
+    )
+    wave = wave_mod.Wave(tmp_path / "x4", tmp_path / "log.md", X4)
+    wave.data_root.mkdir()
+    _write_s0(wave, "grpo", ["undo_error_median_at_most_2cm"])
+    assert not wave_mod.gate_ok(wave, "s0", "grpo")
+    e4 = wave_mod.Wave(tmp_path / "e4", tmp_path / "log.md", E4)
+    e4.data_root.mkdir()
+    _write_s0(e4, "grpo", ["undo_error_median_at_most_2cm"])
+    assert "gate_waivers" not in E4 and not wave_mod.gate_ok(e4, "s0", "grpo")
