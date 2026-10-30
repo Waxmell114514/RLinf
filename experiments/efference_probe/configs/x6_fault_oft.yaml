@@ -1,0 +1,41 @@
+# X6 fault benchmark, OpenVLA-OFT (PREREG_X6.md).  Behaviour only: hijack,
+# capture and frames off; every fault of the sweep runs the same 10 goal tasks
+# x 30 reset states.  320 sim steps per episode for every architecture
+# (40 calls x 8 here), the LIBERO env yaml's own budget.  Decoding as in the
+# repo's OFT LIBERO eval (sampled, T = 1.6).
+run_id: x6_fault_oft
+out_root: experiments/efference_probe/data
+notes: "X6 fault benchmark, OFT"
+
+model:
+  model_path: /path/to/RLinf-OpenVLAOFT-LIBERO-130/
+  unnorm_key: libero_130_no_noops_trajall
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  init_states_per_task: 30
+  num_envs: 10
+  max_calls_per_episode: 40
+  seed: 3
+
+hijack:
+  enabled: false
+
+capture:
+  enabled: false
+  verify_indexing: false
+
+frames:
+  mode: none
+
+fault:
+  enabled: true
+  sweep: [clean, "bias_x:0.15", "bias_x:0.3", invert_x, "gain:0.6", "gain:0.4"]
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

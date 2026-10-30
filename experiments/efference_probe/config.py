@@ -44,6 +44,12 @@ class ModelConfig:
     temperature: float = 1.6
     top_k: int = -1
     top_p: float = 1.0
+    # X6 fault benchmark, other architectures: the repo model yaml when its
+    # name differs from model_type (pi0.yaml holds model_type "openpi"), and
+    # the `mode` their predict_action_batch takes instead of OFT's sampling
+    # arguments.  None for OFT, which leaves every earlier hash unchanged.
+    base_yaml: Optional[str] = None
+    predict_mode: Optional[str] = None
 
 
 @dataclass
@@ -102,6 +108,9 @@ class CaptureConfig:
     # One-time check that our sequence indexing reproduces the model's own
     # action logprobs.  Cheap; leave on.
     verify_indexing: bool = True
+    # X6 fault benchmark: no hidden-state capture at all (behaviour only, and
+    # the hooks are OFT-specific).  Needs verify_indexing off.
+    enabled: bool = True
 
 
 @dataclass
@@ -186,6 +195,11 @@ class RunConfig:
             payload.pop("fault", None)
         if not self.capture.extra_observables:
             payload["capture"].pop("extra_observables", None)
+        if self.capture.enabled:
+            payload["capture"].pop("enabled", None)
+        for key in ("base_yaml", "predict_mode"):
+            if getattr(self.model, key) is None:
+                payload["model"].pop(key, None)
         blob = json.dumps(payload, sort_keys=True, default=str).encode()
         return hashlib.sha256(blob).hexdigest()[:12]
 
@@ -251,6 +265,12 @@ class RunConfig:
                 raise ValueError(f"unknown monitor.recovery: {self.monitor.recovery!r}")
             if self.monitor.score_from_call < 0:
                 raise ValueError("monitor.score_from_call must be >= 0")
+        if not self.capture.enabled and self.capture.verify_indexing:
+            raise ValueError(
+                "capture.enabled=false needs capture.verify_indexing=false"
+            )
+        if self.model.model_type != "openvla_oft" and self.capture.enabled:
+            raise ValueError("hidden-state capture supports openvla_oft only")
         if self.fault.enabled:
             from .faults import parse
 
@@ -284,6 +304,7 @@ def _build(cls, data: Any):
             "FramesConfig": FramesConfig,
             "BudgetConfig": BudgetConfig,
             "MonitorConfig": MonitorConfig,
+            "FaultConfig": FaultConfig,
         }.get(
             field_type
             if isinstance(field_type, str)

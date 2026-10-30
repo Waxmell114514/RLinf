@@ -1,0 +1,40 @@
+# X6 fault benchmark, pi0 (PREREG_X6.md).  Same protocol as x6_fault_oft.yaml;
+# the model block follows the repo's pi0 LIBERO-Goal eval
+# (evaluations/libero/libero_goal_openpi_eval.yaml: pi0.yaml, 5 actions per
+# call, eval mode), so 64 calls x 5 = the same 320 sim steps.
+run_id: x6_fault_pi0
+out_root: experiments/efference_probe/data
+notes: "X6 fault benchmark, pi0"
+
+model:
+  model_type: openpi
+  base_yaml: pi0
+  model_path: /path/to/RLinf-Pi0-LIBERO-Spatial-Object-Goal-SFT/
+  num_action_chunks: 5
+  predict_mode: eval
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  init_states_per_task: 30
+  num_envs: 10
+  max_calls_per_episode: 64
+  seed: 3
+
+hijack:
+  enabled: false
+
+capture:
+  enabled: false
+  verify_indexing: false
+
+frames:
+  mode: none
+
+fault:
+  enabled: true
+  sweep: [clean, "bias_x:0.15", "bias_x:0.3", invert_x, "gain:0.6", "gain:0.4"]
+
+budget:
+  max_gpu_hours: 4.0
+  max_disk_gb: 30.0

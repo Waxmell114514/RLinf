@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -94,3 +95,109 @@ def test_sweep_runs_every_fault_on_the_same_states(tmp_path):
         and len(states) == 3
     )
     assert set(calls["label"]) == {"SELF"}
+
+
+# -- X6 fault benchmark across architectures ---------------------------------
+
+CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+
+
+def test_benchmark_configs_build_their_fault_and_model_sections():
+    from efference_probe.harness import build_model_config
+
+    oft = load_config(str(CONFIGS / "x6_fault_oft.yaml"))
+    pi0 = load_config(str(CONFIGS / "x6_fault_pi0.yaml"))
+    for cfg in (oft, pi0):
+        assert cfg.fault.enabled and len(cfg.fault.sweep) == 6
+        assert not cfg.capture.enabled and not cfg.hijack.enabled
+        # Every architecture gets the env yaml's 320 sim steps.
+        assert cfg.env.max_calls_per_episode * cfg.model.num_action_chunks == 320
+    model = build_model_config(pi0)
+    assert model.model_type == "openpi" and model.num_action_chunks == 5
+    assert model.openpi.action_chunk == 5
+    assert "implement_version" not in model  # no OFT fields leak in
+    assert build_model_config(oft).implement_version == "rlinf"
+
+
+def test_capture_off_rules():
+    with pytest.raises(ValueError, match="verify_indexing"):
+        load_config(str(CONFIG), ["capture.enabled=false"])
+    with pytest.raises(ValueError, match="openvla_oft only"):
+        load_config(str(CONFIG), ["model.model_type=openpi"])
+
+
+def test_capture_off_loop_logs_behaviour_without_logprobs(tmp_path):
+    pytest.importorskip("torch")
+    pytest.importorskip("omegaconf")
+    from efference_probe.tests import test_x1_x4_harness as fake
+
+    class ModeOnlyModel(fake.FakeModel):
+        """Another architecture: takes `mode`, returns no logprobs."""
+
+        seen: list = []
+
+        def predict_action_batch(self, env_obs, **kwargs):
+            ModeOnlyModel.seen.append(kwargs)
+            actions, _ = super().predict_action_batch(env_obs)
+            return actions, {}
+
+    harness = fake._harness(
+        tmp_path,
+        [
+            "hijack.enabled=false",
+            "capture.enabled=false",
+            "capture.verify_indexing=false",
+            "model.predict_mode=eval",
+            "fault.enabled=true",
+            "fault.sweep=[bias_x:0.3]",
+        ],
+    )
+    harness.model, harness.capture = ModeOnlyModel(), None
+    harness._fault = faults.parse("bias_x:0.3")
+    calls, _ = fake._collect(harness)
+    assert ModeOnlyModel.seen and all(k == {"mode": "eval"} for k in ModeOnlyModel.seen)
+    assert calls["logprob_sum"].isna().all() and calls["entropy_mean"].isna().all()
+    assert not (harness.out_dir / "hidden").exists() or not any(
+        (harness.out_dir / "hidden").iterdir()
+    )
+    assert (calls["fault"] == "bias_x:0.3").all()
+
+
+def test_fault_readout_pairs_states_and_counts_failures_at_the_budget(tmp_path):
+    from efference_probe import x6_fault_report as report
+
+    run = tmp_path / "run"
+    run.mkdir()
+    episodes, rows = [], []
+    for i, (fault, success) in enumerate(
+        [("clean", True), ("clean", True), ("bias_x:0.3", False), ("bias_x:0.3", True)]
+    ):
+        state = i % 2
+        episodes.append(
+            {
+                "episode_id": i,
+                "task_id": 2,
+                "fault": fault,
+                "success": success,
+                "first_success_call": 4 if success else -1,
+            }
+        )
+        for call in range(3):
+            rows.append(
+                {
+                    "episode_id": i,
+                    "call_idx": call,
+                    "reset_state_id": state,
+                    "task_id": 2,
+                    "a_cmd_env": np.full(5 * 7, 0.1 * call, np.float32),
+                }
+            )
+    (run / "manifest.json").write_text(json.dumps({"episodes": episodes}))
+    pd.DataFrame(rows).to_parquet(run / "calls.parquet")
+    out = report.readout(run)
+    assert out["chunk"] == 5
+    clean, biased = out["faults"]["clean"], out["faults"]["bias_x:0.3"]
+    assert clean["rmst_steps"]["point"] == 25  # (4 + 1) x 5 steps
+    assert biased["rmst_steps"]["point"] == (320 + 25) / 2
+    assert biased["drop"]["point"] == 0.5 and biased["drop"]["n_states"] == 2
+    np.testing.assert_allclose(clean["reaction_x"], [0.0, 0.1, 0.2], atol=1e-6)

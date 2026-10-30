@@ -63,10 +63,20 @@ def build_model_config(cfg: RunConfig) -> DictConfig:
     Loading the shipped yaml rather than hand-writing the fields means a future
     change to ``model/openvla_oft.yaml`` reaches this harness too.
     """
-    base_path = MODEL_CONFIG_DIR / f"{cfg.model.model_type}.yaml"
+    base_path = MODEL_CONFIG_DIR / f"{cfg.model.base_yaml or cfg.model.model_type}.yaml"
     if not base_path.is_file():
         raise FileNotFoundError(f"no model config at {base_path}")
     model_cfg = OmegaConf.load(base_path)
+    if cfg.model.model_type != "openvla_oft":
+        # X6 fault benchmark: other architectures keep their own yaml and take
+        # only the checkpoint and the chunk shape from the run config.
+        with open_dict(model_cfg):
+            model_cfg.model_path = cfg.model.model_path
+            model_cfg.action_dim = cfg.model.action_dim
+            model_cfg.num_action_chunks = cfg.model.num_action_chunks
+            model_cfg.add_value_head = False
+            model_cfg.is_lora = False
+        return model_cfg
     with open_dict(model_cfg):
         model_cfg.model_path = cfg.model.model_path
         model_cfg.implement_version = cfg.model.implement_version
@@ -172,14 +182,15 @@ class EfferenceHarness:
                 f"threshold={self.monitor.threshold:.4f}"
             )
 
-        self.capture = HiddenStateCapture(
-            self.model,
-            layers=self.cfg.capture.layers,
-            pools=self.cfg.capture.pools,
-            capture_vision=self.cfg.capture.capture_vision,
-        )
-        if self.cfg.capture.capture_vision and not self.capture.vision_available:
-            self.log(f"WARNING: {self.capture.vision_warning}")
+        if self.cfg.capture.enabled:
+            self.capture = HiddenStateCapture(
+                self.model,
+                layers=self.cfg.capture.layers,
+                pools=self.cfg.capture.pools,
+                capture_vision=self.cfg.capture.capture_vision,
+            )
+            if self.cfg.capture.capture_vision and not self.capture.vision_available:
+                self.log(f"WARNING: {self.capture.vision_warning}")
 
         self.log(f"building LiberoEnv ({self.cfg.env.num_envs} parallel envs)")
         self.env = LiberoEnv(
@@ -382,6 +393,8 @@ class EfferenceHarness:
                 break
 
             commanded, result, captured = self._policy_step(obs, sampling, call_idx)
+            # Absent for some architectures (X6 fault benchmark).
+            logprobs = (result or {}).get("prev_logprobs")
             commanded_env = self._to_env_action_space(commanded)
             # Clean episodes are never hijacked, but stay eligible as swap
             # donors: their commanded chunks are ordinary policy output.
@@ -500,12 +513,22 @@ class EfferenceHarness:
                     "a_exec": flatten(executed[slot]),
                     "states_before": flatten(states_before[slot]),
                     "states_after": flatten(states_after[slot]),
-                    "logprob_sum": float(result["prev_logprobs"][slot].sum().item()),
-                    "logprobs": flatten(
-                        result["prev_logprobs"][slot].float().cpu().numpy()
+                    "logprob_sum": (
+                        float(logprobs[slot].sum().item())
+                        if logprobs is not None
+                        else np.nan
                     ),
-                    "entropy_mean": float(captured.entropy_mean[slot]),
-                    "entropy_tokens": flatten(captured.entropy_tokens[slot]),
+                    "logprobs": flatten(_slot_logprobs(logprobs, slot)),
+                    "entropy_mean": (
+                        float(captured.entropy_mean[slot])
+                        if captured is not None
+                        else np.nan
+                    ),
+                    "entropy_tokens": flatten(
+                        captured.entropy_tokens[slot]
+                        if captured is not None
+                        else np.zeros(0)
+                    ),
                     # env/libero_*.yaml sets use_rel_reward, so per-substep
                     # rewards telescope: this sums to (reward at the end of
                     # this chunk - reward at the end of the previous one), not
@@ -532,12 +555,13 @@ class EfferenceHarness:
                 if decision.hijacked:
                     n_hijacks[episode_id] += 1
 
-                self.writer.add_hidden(
-                    episode_id,
-                    call_idx,
-                    captured.hidden[slot],
-                    captured.vision[slot] if captured.vision is not None else None,
-                )
+                if captured is not None:
+                    self.writer.add_hidden(
+                        episode_id,
+                        call_idx,
+                        captured.hidden[slot],
+                        captured.vision[slot] if captured.vision is not None else None,
+                    )
                 if self._should_save_frames(episode_id):
                     self.writer.save_frames(
                         episode_id,
@@ -636,6 +660,9 @@ class EfferenceHarness:
     # -- policy ----------------------------------------------------------
 
     def _sampling_params(self) -> dict[str, Any]:
+        if self.cfg.model.predict_mode is not None:
+            # X6: architectures whose predict_action_batch takes a mode.
+            return {"mode": self.cfg.model.predict_mode}
         params: dict[str, Any] = {"do_sample": self.cfg.model.do_sample}
         if self.cfg.model.do_sample:
             params["temperature"] = self.cfg.model.temperature
@@ -650,6 +677,12 @@ class EfferenceHarness:
         # predict_action_batch unsqueezes `main_images` in place; hand it a
         # shallow copy so our logged observation keeps its [B, H, W, C] shape.
         model_obs = dict(obs)
+        if self.capture is None:
+            with torch.no_grad():
+                actions, result = self.model.predict_action_batch(
+                    env_obs=model_obs, **sampling
+                )
+            return _as_numpy(actions).astype(np.float32), result, None
         verify = self.cfg.capture.verify_indexing and not self._verification
         if verify:
             self.capture.arm_verification()
@@ -721,6 +754,15 @@ class EfferenceHarness:
                 "pools": list(self.cfg.capture.pools),
             },
         }
+
+
+def _slot_logprobs(logprobs: Any, slot: int) -> np.ndarray:
+    """One slot's action logprobs as float32; empty when the model has none."""
+    if logprobs is None:
+        return np.zeros(0, np.float32)
+    if isinstance(logprobs, torch.Tensor):
+        return logprobs[slot].float().cpu().numpy()
+    return np.asarray(logprobs[slot], dtype=np.float32)
 
 
 def _as_numpy(value: Any) -> Optional[np.ndarray]:
