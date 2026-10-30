@@ -2089,3 +2089,8 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **A2b:** "A2b everywhere" is withdrawn. A2b is computed for every X1 run, but X1-R7 has no replicate mark for it (`x1_report.E4_REFERENCE` has none), so no replicate claim is made.
 
   Nothing else in the entry changes.
+- `2026-10-30 02:46` **X4 launch approved by the operator ("跑X4吧"). Cap set so the remaining Modal credit cannot be exceeded.**
+  - **Balance:** `modal billing summary` shows $22.87 metered and credited this month, so ≈ $7.13 of the $30 credit is left. The `x_waves` journal stands at $5.05 (X1, limit rates).
+  - **Cap (Amendment 1, item 4):** combined cap = journal committed + remaining credit − $0.50 = $11.68. The journal prices at container limits (≥ billed), and the gate starts a call only if its worst case fits, so X4's billed spend cannot pass the credit.
+  - **Order (PREREG §3; Amendment 1, item 5):** init on E4's registered checkpoints → S0 → lock (10 envs) → GRPO mirror s3–s6 → Base-Lora mirror s3–s6.
+  - **Recompute:** before the Base-Lora seeds, the cap is recomputed from the billing summary by the same rule. A call the gate refuses is a budget stop: it is reported, and the tail (Base-Lora seeds) is cut.
