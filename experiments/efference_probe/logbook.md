@@ -2094,3 +2094,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Cap (Amendment 1, item 4):** combined cap = journal committed + remaining credit − $0.50 = $11.68. The journal prices at container limits (≥ billed), and the gate starts a call only if its worst case fits, so X4's billed spend cannot pass the credit.
   - **Order (PREREG §3; Amendment 1, item 5):** init on E4's registered checkpoints → S0 → lock (10 envs) → GRPO mirror s3–s6 → Base-Lora mirror s3–s6.
   - **Recompute:** before the Base-Lora seeds, the cap is recomputed from the billing summary by the same rule. A call the gate refuses is a budget stop: it is reported, and the tail (Base-Lora seeds) is cut.
+- `2026-10-30 02:55` **X4 S0 FAILED for GRPO (undo gate); X4 stopped as registered ("Fail: stop and report").** No S2 collection was started.
+  - **Base-Lora (`x4_sft_smoke`): PASSED.** 177 calls; all three conditions occurred; recovery rows are present and never hijacked; online scores recompute within 1e-6; median undo error 1.60 cm over 6 hijacked undos.
+  - **GRPO (`x4_grpo_smoke`): FAILED, on `undo_error_median_at_most_2cm` only.** 109 calls (GRPO episodes are short); every other check passed.
+    - **Undo errors:** 4 hijacked undos, at 1.47, 1.71, 2.75 and 2.76 cm (median 2.23 cm).
+    - **Monitor:** fired on all four.
+  - **Diagnosis (descriptive; changes no rule):**
+    - **Pattern:** the open-loop undo removes most of the hijack's displacement but not all. GRPO's displacements of 8.2 / 10.8 / 10.9 / 5.8 cm are left at 1.5 / 2.8 / 2.8 / 1.7 cm (16–29%). Base-Lora shows the same pattern on its monitor-condition undos (9.2 / 10.2 / 4.8 cm → 1.3 / 2.6 / 1.3 cm).
+    - **Undo is not broken:** a sign error would leave about twice the displacement. The residual grows with the displacement, so the absolute 2 cm bound binds on GRPO's larger motions.
+    - **Small sample:** S0 had only 4 GRPO undos.
+  - **Spend:** journal $5.27 (X4 so far $0.22 at limit rates); billing summary $23.18 metered. Nothing is running.
+  - **Pending:** proceeding needs an operator decision and an amendment written before any S2 data. The options are reported to the operator.
