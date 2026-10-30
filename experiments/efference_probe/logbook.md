@@ -2357,3 +2357,12 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - **Gate:** each is started only if committed + worst case ≤ journal-at-launch + $1.60.
     - **Pilot run:** the pilot is `run_collect.py` (the harness CLI) with the fault sweep, not `e4_wave.py collect`. The analysis is unchanged.
   - **Code:** `faults.py` (+ `FaultConfig`, harness sweep wiring; flags-off hashes unchanged) and `x6_load_smoke.py`, with offline tests.
+- `2026-10-30 11:08` **X6 stage 0, step 2 RESULT: loading smoke (a) FAILED its 99% bar; (b) passed (`/vol/data/x6/load_smoke.json`).** GRPO-130, task 2, 10 reset states, greedy decoding.
+  - **(a) Official class vs rlinf class:**
+    - The official class loads our checkpoint (no missing-weight error) and predicts.
+    - Greedy action tokens agree on 95.7% of 560 tokens, once rlinf's vocabulary ids (31744–31923) are mapped to the official class's bins (0–179) by the 32,000-token base offset. Max |Δ logprob| is 0.54.
+    - **Below the registered 99%:** the two classes are close but not identical on the same observations; the likely cause (preprocessing, e.g. center-crop) is `[TO VERIFY]`.
+    - **Consequence, as registered:** X6-EC cannot take the frozen rlinf-path policy as the official-path model's twin. Every X6-EC arm (frozen baseline included) must run through one class: either the official class throughout, or a wrapper that adds a proprio token to the rlinf class.
+  - **(b) A fresh ProprioProjector(136) attached outside `rlinf/`:** the forward pass runs, and actions are finite with shape (10, 8, 7). With the projector's last layer zeroed (a zero-embedding token), 93.6% of tokens match the no-projector prediction.
+  - **Process:** three smoke calls failed on bugs in my comparison and call code before this result (token shapes, the `use_proprio` flag, the padded vocabulary size). Each cost about a minute of GPU.
+  - **Spend:** the journal reads $10.41 before the pilot.
