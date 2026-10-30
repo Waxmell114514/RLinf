@@ -2121,3 +2121,9 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Spend:** journal $7.76; billing summary $25.19 metered, so ≈ $4.81 of credit is left.
   - **Cap:** by the rule logged at launch, journal + remaining credit − $0.50 = $12.07.
   - **Base-Lora:** mirror s3–s6 run in order. A seed the gate refuses is a budget stop on the tail, and is reported.
+- `2026-10-30 04:33` **X4 budget stop after Base-Lora s4 (reported, not routed around).**
+  - **Completed:** `x4_sft_mirror_s3` (11.3 min, 6961 calls) and `x4_sft_mirror_s4` (12.4 min, 6925 calls).
+  - **Refused:** the gate refused `x4_sft_mirror_s5` ("committed $9.44 + this call's worst case $2.74 > $12.07; not started"). `x4_sft_mirror_s6` was not attempted.
+  - **Collected:** GRPO 4 seeds (1000 episodes); Base-Lora 2 seeds (500 episodes).
+  - **Spend:** billing summary $26.38 metered, so ≈ $3.62 of credit is left. Nothing is running.
+  - **Pending:** whether to collect s5–s6 is the operator's call. It is asked before any X4 outcome is computed, so the decision cannot depend on the results.
