@@ -123,11 +123,13 @@ def stage_official(cfg, work: Path, proprio_dim: int) -> dict[str, Any]:
     from prismatic.models.projectors import ProprioProjector
 
     dtype = next(official.parameters()).dtype
+    # prepare_inputs keys its proprio list on config.use_proprio and appends
+    # on self.use_proprio; we hand the proprio tensor in directly, and the
+    # forward pass uses it whenever a projector is attached.
+    input_ids, attention_mask, pixel_values, _ = official.prepare_inputs(dict(obs))
     official.proprio_projector = ProprioProjector(
         llm_dim=official.config.text_config.hidden_size, proprio_dim=proprio_dim
     ).to("cuda", dtype=dtype)
-    official.use_proprio = True
-    input_ids, attention_mask, pixel_values, _ = official.prepare_inputs(dict(obs))
     rng = np.random.default_rng(0)
     proprio = torch.as_tensor(
         rng.uniform(-1, 1, size=(saved["n"], proprio_dim)), dtype=dtype
@@ -182,7 +184,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         stage_rlinf(cfg, work)
         return 0
     if args.stage == "official":
-        result = stage_official(cfg, work, args.proprio_dim)
+        try:
+            result = stage_official(cfg, work, args.proprio_dim)
+        except Exception as error:  # noqa: BLE001 - record, then fail
+            result = {"passed": False, "error": f"{type(error).__name__}: {error}"}
         args.out.write_text(json.dumps(result, indent=2))
         print(json.dumps(result, indent=2))
         return 0 if result.get("passed") else 1
