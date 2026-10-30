@@ -2157,3 +2157,109 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - X4: ≈ $4.0 billed. Billing summary $26.89 metered against $22.87 before X4, leaving ≈ $3.1 of the credit.
     - Journal: $10.12 at limit rates.
     - Collection GPU time: ≈ 1.4 of 2.0 h.
+- `2026-10-30 02:48:06` **E4 (driver)** checkpoints registered: sft=`RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora@a4ea91b38976` at `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft` (sha256 verified), grpo=`RLinf/RLinf-OpenVLAOFT-LIBERO-130@473954241c81` at `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo` (sha256 verified)
+- `2026-10-30 02:49:31` **E4 (driver)** collect `x4_grpo_smoke` (s0, grpo, main02_mirror.yaml); expected 5 min, stop at 10 min; MUJOCO_GL=egl; GPU used so far 0.00/2.0 h
+- `2026-10-30 02:49:34` **START** run_id=`x4_grpo_smoke` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`6de8918f2114` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=x4_grpo_smoke out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.1667 notes=X4 grpo smoke (GRPO) model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b' env.task_ids=[2] env.init_states_per_task=8 env.num_envs=10 monitor.assignment=cycle`
+- `2026-10-30 02:49:40` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-30 02:50:17` monitor monitor_grpo.json sha256=cce6891642a1 threshold=0.9300
+- `2026-10-30 02:50:17` building LiberoEnv (10 parallel envs)
+- `2026-10-30 02:50:47` indexing check passed: {'max_abs_logprob_diff': 9.5367431640625e-07, 'tolerance': 0.23288558959960937, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 02:51:07` done: 109 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_smoke/calls.parquet (0.00 GB)
+- `2026-10-30 02:51:07` **DONE** run_id=`x4_grpo_smoke` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_smoke/calls.parquet`
+- `2026-10-30 02:51:11` **E4 (driver)** collect `x4_grpo_smoke` ok: rc=0 1.7 min (expected 5), calls=109, peak RSS 59.94 GB, peak VRAM 23104 MiB
+- `2026-10-30 02:51:12` **E4 (driver)** gate s0 grpo (`x4_grpo_smoke`): **FAILED** ['undo_error_median_at_most_2cm']
+- `2026-10-30 02:51:14` **E4 (driver)** collect `x4_sft_smoke` (s0, sft, main02_mirror.yaml); expected 5 min, stop at 10 min; MUJOCO_GL=egl; GPU used so far 0.03/2.0 h
+- `2026-10-30 02:51:17` **START** run_id=`x4_sft_smoke` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`76c3f1823ede` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=x4_sft_smoke out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.1667 notes=X4 sft smoke (Base-Lora) model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_sft.json monitor.artifact_sha256='a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152' env.task_ids=[2] env.init_states_per_task=8 env.num_envs=10 monitor.assignment=cycle`
+- `2026-10-30 02:51:22` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft
+- `2026-10-30 02:51:58` monitor monitor_sft.json sha256=a787afe417cc threshold=1.1316
+- `2026-10-30 02:51:58` building LiberoEnv (10 parallel envs)
+- `2026-10-30 02:52:15` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2497334861755371, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 02:52:46` done: 177 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_smoke/calls.parquet (0.00 GB)
+- `2026-10-30 02:52:46` **DONE** run_id=`x4_sft_smoke` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_smoke/calls.parquet`
+- `2026-10-30 02:52:49` **E4 (driver)** collect `x4_sft_smoke` ok: rc=0 1.6 min (expected 5), calls=177, peak RSS 59.21 GB, peak VRAM 21690 MiB
+- `2026-10-30 02:52:49` **E4 (driver)** gate s0 sft (`x4_sft_smoke`): **PASSED**
+- `2026-10-30 03:12:27` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 03:12:27` **E4 (driver)** wave constants locked for every S1/S2 arm: num_envs=10, MUJOCO_GL=egl, speed_factor=1.0
+- `2026-10-30 03:13:21` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 03:13:22` **E4 (driver)** collect `x4_grpo_mirror_s3` (s2, grpo, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.05/2.0 h
+- `2026-10-30 03:13:26` **START** run_id=`x4_grpo_mirror_s3` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`81fc4a0e8589` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=x4_grpo_mirror_s3 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 grpo mirror_s3 (GRPO) env.num_envs=10 env.seed=3 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b'`
+- `2026-10-30 03:13:35` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-30 03:14:08` monitor monitor_grpo.json sha256=cce6891642a1 threshold=0.9300
+- `2026-10-30 03:14:08` building LiberoEnv (10 parallel envs)
+- `2026-10-30 03:14:39` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2478158760070801, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 03:18:27` heartbeat: task 3 batch 4 call 2 | 0.08/0.5 h, 0.02/30 GB, 2154 calls
+- `2026-10-30 03:23:27` heartbeat: task 9 batch 1 call 21 | 0.17/0.5 h, 0.03/30 GB, 4195 calls
+- `2026-10-30 03:25:05` done: 5181 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s3/calls.parquet (0.04 GB)
+- `2026-10-30 03:25:05` **DONE** run_id=`x4_grpo_mirror_s3` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s3/calls.parquet`
+- `2026-10-30 03:25:09` **E4 (driver)** collect `x4_grpo_mirror_s3` ok: rc=0 11.8 min (expected 15), calls=5181, peak RSS 63.11 GB, peak VRAM 25462 MiB
+- `2026-10-30 03:25:53` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 03:25:54` **E4 (driver)** collect `x4_grpo_mirror_s4` (s2, grpo, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.25/2.0 h
+- `2026-10-30 03:25:57` **START** run_id=`x4_grpo_mirror_s4` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`1eef694e55e0` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=x4_grpo_mirror_s4 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 grpo mirror_s4 (GRPO) env.num_envs=10 env.seed=4 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b'`
+- `2026-10-30 03:26:02` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-30 03:26:36` monitor monitor_grpo.json sha256=cce6891642a1 threshold=0.9300
+- `2026-10-30 03:26:36` building LiberoEnv (10 parallel envs)
+- `2026-10-30 03:27:04` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.22172506332397462, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 03:31:03` heartbeat: task 6 batch 0 call 0 | 0.08/0.5 h, 0.02/30 GB, 2427 calls
+- `2026-10-30 03:36:04` heartbeat: task 9 batch 4 call 0 | 0.17/0.5 h, 0.04/30 GB, 4847 calls
+- `2026-10-30 03:36:36` done: 5138 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s4/calls.parquet (0.04 GB)
+- `2026-10-30 03:36:36` **DONE** run_id=`x4_grpo_mirror_s4` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s4/calls.parquet`
+- `2026-10-30 03:36:41` **E4 (driver)** collect `x4_grpo_mirror_s4` ok: rc=0 10.8 min (expected 15), calls=5138, peak RSS 62.93 GB, peak VRAM 25463 MiB
+- `2026-10-30 03:37:25` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 03:37:26` **E4 (driver)** collect `x4_grpo_mirror_s5` (s2, grpo, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.43/2.0 h
+- `2026-10-30 03:37:29` **START** run_id=`x4_grpo_mirror_s5` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`002be274943b` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=x4_grpo_mirror_s5 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 grpo mirror_s5 (GRPO) env.num_envs=10 env.seed=5 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b'`
+- `2026-10-30 03:37:34` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-30 03:38:07` monitor monitor_grpo.json sha256=cce6891642a1 threshold=0.9300
+- `2026-10-30 03:38:07` building LiberoEnv (10 parallel envs)
+- `2026-10-30 03:38:36` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.2289383125305176, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 03:42:30` heartbeat: task 6 batch 1 call 21 | 0.08/0.5 h, 0.02/30 GB, 2443 calls
+- `2026-10-30 03:47:29` done: 4920 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s5/calls.parquet (0.04 GB)
+- `2026-10-30 03:47:29` **DONE** run_id=`x4_grpo_mirror_s5` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s5/calls.parquet`
+- `2026-10-30 03:47:33` **E4 (driver)** collect `x4_grpo_mirror_s5` ok: rc=0 10.1 min (expected 15), calls=4920, peak RSS 63.03 GB, peak VRAM 25462 MiB
+- `2026-10-30 03:48:05` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 03:48:06` **E4 (driver)** collect `x4_grpo_mirror_s6` (s2, grpo, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.60/2.0 h
+- `2026-10-30 03:48:10` **START** run_id=`x4_grpo_mirror_s6` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`34ebdee91e6c` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo model.unnorm_key=libero_130_no_noops_trajall run_id=x4_grpo_mirror_s6 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 grpo mirror_s6 (GRPO) env.num_envs=10 env.seed=6 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_grpo.json monitor.artifact_sha256='cce6891642a1fe8858e7f93ed0c7f1182dc5a6d7e65121b5293e6a06bbe7197b'`
+- `2026-10-30 03:48:15` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/grpo
+- `2026-10-30 03:48:48` monitor monitor_grpo.json sha256=cce6891642a1 threshold=0.9300
+- `2026-10-30 03:48:48` building LiberoEnv (10 parallel envs)
+- `2026-10-30 03:49:15` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.24642631530761722, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 03:53:10` heartbeat: task 3 batch 4 call 7 | 0.08/0.5 h, 0.02/30 GB, 2171 calls
+- `2026-10-30 03:58:12` heartbeat: task 9 batch 2 call 0 | 0.17/0.5 h, 0.04/30 GB, 4509 calls
+- `2026-10-30 03:59:36` done: 5198 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s6/calls.parquet (0.04 GB)
+- `2026-10-30 03:59:36` **DONE** run_id=`x4_grpo_mirror_s6` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_grpo_mirror_s6/calls.parquet`
+- `2026-10-30 03:59:43` **E4 (driver)** collect `x4_grpo_mirror_s6` ok: rc=0 11.6 min (expected 15), calls=5198, peak RSS 62.81 GB, peak VRAM 25466 MiB
+- `2026-10-30 04:01:22` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 04:01:23` **E4 (driver)** collect `x4_sft_mirror_s3` (s2, sft, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.79/2.0 h
+- `2026-10-30 04:01:26` **START** run_id=`x4_sft_mirror_s3` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`0188f2d8c5da` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=x4_sft_mirror_s3 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 sft mirror_s3 (Base-Lora) env.num_envs=10 env.seed=3 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_sft.json monitor.artifact_sha256='a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152'`
+- `2026-10-30 04:01:30` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft
+- `2026-10-30 04:02:05` monitor monitor_sft.json sha256=a787afe417cc threshold=1.1316
+- `2026-10-30 04:02:05` building LiberoEnv (10 parallel envs)
+- `2026-10-30 04:02:32` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.24190406799316405, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 04:06:26` heartbeat: task 3 batch 4 call 38 | 0.08/0.5 h, 0.02/30 GB, 2384 calls
+- `2026-10-30 04:11:26` heartbeat: task 9 batch 2 call 3 | 0.17/0.5 h, 0.05/30 GB, 5935 calls
+- `2026-10-30 04:12:39` done: 6961 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s3/calls.parquet (0.06 GB)
+- `2026-10-30 04:12:39` **DONE** run_id=`x4_sft_mirror_s3` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s3/calls.parquet`
+- `2026-10-30 04:12:45` **E4 (driver)** collect `x4_sft_mirror_s3` ok: rc=0 11.3 min (expected 15), calls=6961, peak RSS 62.41 GB, peak VRAM 25465 MiB
+- `2026-10-30 04:19:44` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 04:19:46` **E4 (driver)** collect `x4_sft_mirror_s4` (s2, sft, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 0.98/2.0 h
+- `2026-10-30 04:19:49` **START** run_id=`x4_sft_mirror_s4` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`cd56783e5ae6` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=x4_sft_mirror_s4 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 sft mirror_s4 (Base-Lora) env.num_envs=10 env.seed=4 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_sft.json monitor.artifact_sha256='a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152'`
+- `2026-10-30 04:19:54` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft
+- `2026-10-30 04:20:30` monitor monitor_sft.json sha256=a787afe417cc threshold=1.1316
+- `2026-10-30 04:20:30` building LiberoEnv (10 parallel envs)
+- `2026-10-30 04:21:01` indexing check passed: {'max_abs_logprob_diff': 4.76837158203125e-07, 'tolerance': 0.24394899368286133, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 04:24:49` heartbeat: task 3 batch 4 call 4 | 0.08/0.5 h, 0.02/30 GB, 2395 calls
+- `2026-10-30 04:29:49` heartbeat: task 9 batch 0 call 1 | 0.17/0.5 h, 0.04/30 GB, 5174 calls
+- `2026-10-30 04:32:04` done: 6925 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s4/calls.parquet (0.06 GB)
+- `2026-10-30 04:32:04` **DONE** run_id=`x4_sft_mirror_s4` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s4/calls.parquet`
+- `2026-10-30 04:32:07` **E4 (driver)** collect `x4_sft_mirror_s4` ok: rc=0 12.4 min (expected 15), calls=6925, peak RSS 63.16 GB, peak VRAM 25467 MiB
+- `2026-10-30 05:00:37` **E4 (driver)** S0 grpo gate FAILED on ['undo_error_median_at_most_2cm'], waived by `X4 AMENDMENT 2`
+- `2026-10-30 05:00:38` **E4 (driver)** collect `x4_sft_mirror_s5` (s2, sft, main02_mirror.yaml); expected 15 min, stop at 30 min; MUJOCO_GL=egl; GPU used so far 1.19/2.0 h
+- `2026-10-30 05:00:41` **START** run_id=`x4_sft_mirror_s5` config=`/root/RLinf/experiments/efference_probe/configs/main02_mirror.yaml` hash=`644cf7899f0b` overrides=`model.model_path=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft model.unnorm_key=libero_130_no_noops_trajall run_id=x4_sft_mirror_s5 out_root=/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4 budget.max_gpu_hours=0.5000 notes=X4 sft mirror_s5 (Base-Lora) env.num_envs=10 env.seed=5 model.do_sample=true model.temperature=1.6 monitor.enabled=true env.init_states_per_task=50 capture.layers=[32] capture.pools=[ctx_mean] monitor.artifact=experiments/efference_probe/x4/monitor_sft.json monitor.artifact_sha256='a787afe417cc288ad8f984a6cf55415a6c931238a7add928b8b551f67e2a4152'`
+- `2026-10-30 05:00:47` loading checkpoint /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/ckpts/sft
+- `2026-10-30 05:01:20` monitor monitor_sft.json sha256=a787afe417cc threshold=1.1316
+- `2026-10-30 05:01:20` building LiberoEnv (10 parallel envs)
+- `2026-10-30 05:01:50` indexing check passed: {'max_abs_logprob_diff': 9.5367431640625e-07, 'tolerance': 0.2405512619018555, 'logits_dtype': 'torch.float32', 'seq_len': 440, 'readout_start': 383, 'passed': True, 'n_hidden_layers': 33, 'n_act': 56}
+- `2026-10-30 05:05:42` heartbeat: task 3 batch 4 call 0 | 0.08/0.5 h, 0.02/30 GB, 2538 calls
+- `2026-10-30 05:10:42` heartbeat: task 9 batch 0 call 12 | 0.17/0.5 h, 0.05/30 GB, 5611 calls
+- `2026-10-30 05:12:47` done: 7324 calls -> /__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s5/calls.parquet (0.06 GB)
+- `2026-10-30 05:12:47` **DONE** run_id=`x4_sft_mirror_s5` -> `/__modal/volumes/vo-L53b0bYpCazhX3gz7qhGQO/data/x4/x4_sft_mirror_s5/calls.parquet`
+- `2026-10-30 05:12:50` **E4 (driver)** collect `x4_sft_mirror_s5` ok: rc=0 12.2 min (expected 15), calls=7324, peak RSS 63.31 GB, peak VRAM 25467 MiB
