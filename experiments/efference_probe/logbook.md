@@ -2127,3 +2127,6 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Collected:** GRPO 4 seeds (1000 episodes); Base-Lora 2 seeds (500 episodes).
   - **Spend:** billing summary $26.38 metered, so ≈ $3.62 of credit is left. Nothing is running.
   - **Pending:** whether to collect s5–s6 is the operator's call. It is asked before any X4 outcome is computed, so the decision cannot depend on the results.
+- `2026-10-30 04:59` **Operator: collect Base-Lora s5 only ("再跑 s5"), decided before any X4 outcome was computed.**
+  - **Cap:** recomputed by the launch rule from the higher of the two latest billing readings ($26.38): $9.44 + $3.62 − $0.50 = $12.56.
+  - **s6:** not collected; it would not fit the same rule afterwards.
