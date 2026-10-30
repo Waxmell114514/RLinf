@@ -2280,3 +2280,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Decision rule (V_feat, primary):** **"go"** iff TPR ≥ 0.5 on all four X1 mirror/freeze runs (the X4 replay-gate standard); **"mixed"** on 2–3 of 4; **"no-go"** on ≤ 1. Swap and E4 runs are reported, not gated.
   - **Comparison points (descriptive):** V_true, and the supervised X4 monitors' replay TPR (0.746 / 0.748 at FPR 0.02, logbook "X4 monitors frozen").
   - **BLAS:** autodetected kernels, 1 thread. These are new fits, not compared with any CSV. Code: new `ec0_precheck.py`, with a synthetic-run test first.
+- `2026-10-30 07:34` **EC0 RESULT: "no-go" (pre-registered rule). Results in `data/x1/ec0/`, `local_check/ec0/` and `data/x1/ec0/ec0_summary_all.json`.**
+  - **V_feat (primary), gated runs** (TPR at FPR 0.020 / AUROC): GRPO mirror 0.128 / 0.709, SFT mirror 0.115 / 0.661, GRPO freeze 0.039 / 0.728, SFT freeze 0.026 / 0.555. 0 of 4 pass TPR ≥ 0.5.
+  - **V_feat, swap (reported, not gated):** X1 0.104–0.122; E4 0.101–0.156.
+  - **V_true (true simulator states, same linear forward model):** X1 0.279–0.455 (AUROC 0.824–0.924); E4 swap 0.200–0.509 (AUROC 0.777–0.922).
+  - **Comparison:** the supervised X4 monitors reach 0.746 / 0.748 at the same FPR.
+  - **Reading:**
+    - A forward model learned only from the policy's own unperturbed transitions, with a squared-residual score, is a weak override detector even on true states. On decodes from frozen features it is close to useless.
+    - The supervised comparator's advantage is knowing what an override looks like.
+  - **EC0b (exploratory, registered here before any EC0b number; does not change the reading):** is the gap linearity or the label-free design? Both variants use V_true on the same folds and the same SELF-only fits.
+    - (a) an MLP forward model: sklearn `MLPRegressor(hidden_layer_sizes=(256, 256), alpha=1e-3, early_stopping=True, random_state=0)` on standardised inputs and targets;
+    - (b) the linear forward model scored on translation dims 0–2 only.
