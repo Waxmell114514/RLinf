@@ -2305,3 +2305,28 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - Linearity is not the bottleneck: a forward model learned only from unperturbed transitions, scored by prediction error, separates overrides moderately (AUROC 0.8–0.9) but catches at most about half of them at a 2% false-alarm rate, even with true states.
     - The natural spread of the policy's own transitions (contact, gripper, controller lag) overlaps most overrides. A detector that knows what an override looks like does markedly better.
     - For the proposed training experiment (efference token + self-supervised forward loss), detection at this operating point is bounded near the V_true numbers, and far below them from the VLA's own features (V_feat 0.03–0.16).
+- `2026-10-30 10:35` **X6 STAGE-0 PRE-REGISTRATION (operator: "先做那三步"; `reports/next_steps_fable_positive.md` §3.1, §4). Written before any of these numbers exists. No training.**
+
+  **Step 1 ($0): identifiability and copycat tables (descriptive; they set X6-EC's history length K).**
+  - **Data:** SELF, non-post-success transitions of GRPO-130 (`x4_grpo_mirror_s3–s6`) and Base-Lora (`x4_sft_mirror_s3–s5`); the target checkpoint is GRPO-130.
+  - **Forward model:** ridge (`RidgeCV`, alphas 1e-3…1e3) Δpos(c) ~ [s(c), a_cmd(c) flattened, task one-hot], out-of-fold by `GroupKFold(5)` over episodes. The residual SD per axis comes from the OOF residuals. The gain per axis is the Σ_k a_cmd[k, axis] coefficient of an OLS of Δpos_axis on [Σa_axis, s, task].
+  - **Offline fault injection:** each episode's first K SELF transitions (K ∈ {1, 2, 4, 8}) carry their real OOF residuals plus the fault's predicted effect:
+    - bias b ∈ {0.15, 0.30} per step on x: shift 8·b·gain_x per chunk; z = mean(r)/(sd_r/√K);
+    - inversion on x: effect −2·gain_x·Σa_x; z = slope of r on that regressor over its SE;
+    - gain g ∈ {0.6, 0.4} on x and y (bias known): effect −(1−g)·gain·Σa; z as for inversion.
+
+    Report the median z over episodes, and the share with z ≥ 3.
+  - **Copycat:** within-episode Pearson correlation of consecutive chunks' Σa per axis (x, y, z).
+  - **Design rule:** a family is "identifiable within K" iff median z ≥ 3. X6-EC's history length is the smallest K at which bias 0.30 and inversion are both identifiable, capped at 4.
+
+  **Step 2 (≈ $0.2, one GPU call): official-class loading smoke.**
+  - **(a)** GRPO-130 is loaded through both `implement_version: rlinf` and `official` (`use_proprio: false`). On the same observations (one task, 10 reset states) the two greedy (`do_sample: false`) action-token sequences are compared. Pass iff ≥ 99% of action tokens agree.
+  - **(b)** A fresh `ProprioProjector(proprio_dim=136)` is attached outside `rlinf/` (the official loader would look for projector weights our checkpoints lack). The forward pass with a 136-d proprio input runs, and actions are finite. The token difference with the projector's last layer zeroed is reported.
+  - **If (a) fails:** X6-EC needs a wrapper or an edit under `rlinf/`; that is reported, not worked around.
+
+  **Step 3 (≈ $0.5–0.9, one GPU call): Rule P pilot.**
+  - **Setup:** frozen GRPO-130, sampled at T = 1.6 like every collection, hijack off. A persistent fault is applied to the executed chunk on every call of every episode (new `faults.py`; clipped to [−1, 1] on dims 0–5; gripper untouched).
+  - **Tasks:** the two of {2, 3, 6, 8, 9} with the highest X4 GRPO clean-episode success (ties → lower id), × 8 states, 8 envs.
+  - **Settings (in this order, one container call):** clean, bias_x 0.15, bias_x 0.30, invert_x, gain 0.6, gain 0.4 (gain on dims 0–2).
+  - **Rule P (pilot level, n = 16 per setting):** a family is carried into X6-EC iff its success is ≤ 0.6 at some piloted magnitude. If clean success itself is < 0.8, the pilot is uninformative. If bias fails at 0.30, the narrative is scoped to inversion only (memo §6). The 300-episode stage-0 collection, if funded, firms these numbers up.
+  - **Budget:** the `x_waves` journal cap for steps 2 + 3 is set at the current journal + $1.60, so the billed spend of both calls is ≤ $1.60. Each call's worst case is gated as before.
