@@ -40,6 +40,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from . import observables
 from .capture import HiddenStateCapture
 from .config import RunConfig
+from .faults import parse as parse_fault
 from .hijack import HIJACK, SELF, HijackScheduler, build_executed_chunk
 from .monitor import (
     RECOVERY,
@@ -143,6 +144,7 @@ class EfferenceHarness:
         self._last_heartbeat = time.time()
         self._verification: dict[str, Any] = {}
         self._stop_reason: Optional[str] = None
+        self._fault = None  # X6: the sweep's current fault, if any
 
     # -- setup -----------------------------------------------------------
 
@@ -252,16 +254,26 @@ class EfferenceHarness:
         try:
             self.setup()
             self.writer.write_run_config(self._run_config_payload())
+            # X6: each fault of the sweep runs the same reset states in turn.
+            faults = (
+                [parse_fault(spec) for spec in self.cfg.fault.sweep]
+                if self.cfg.fault.enabled
+                else [None]
+            )
             for task_id in self.task_ids():
                 reset_ids = self.reset_state_ids_for_task(task_id)
                 num_envs = self.cfg.env.num_envs
-                for batch_index in range(0, len(reset_ids), num_envs):
-                    batch_ids = reset_ids[batch_index : batch_index + num_envs]
-                    self._run_batch(task_id, batch_ids, batch_index // num_envs)
-                    exceeded = self.budget.exceeded()
-                    if exceeded is not None:
-                        self._stop_reason = f"{exceeded}_budget_exhausted"
-                        self.log(f"STOP: {self._stop_reason}")
+                for fault in faults:
+                    self._fault = fault
+                    for batch_index in range(0, len(reset_ids), num_envs):
+                        batch_ids = reset_ids[batch_index : batch_index + num_envs]
+                        self._run_batch(task_id, batch_ids, batch_index // num_envs)
+                        exceeded = self.budget.exceeded()
+                        if exceeded is not None:
+                            self._stop_reason = f"{exceeded}_budget_exhausted"
+                            self.log(f"STOP: {self._stop_reason}")
+                            break
+                    if self._stop_reason is not None:
                         break
                 if self._stop_reason is not None:
                     break
@@ -384,6 +396,8 @@ class EfferenceHarness:
             executed = build_executed_chunk(commanded_env, decisions)
             for slot in np.flatnonzero(recovering):
                 executed[slot] = pending_undo[slot]
+            if self._fault is not None:
+                executed = self._fault.apply(executed)
 
             states_before = _as_numpy(obs["states"])
             main_images = _as_numpy(obs["main_images"])
@@ -512,6 +526,8 @@ class EfferenceHarness:
                     row["monitor_fired"] = bool(fired[slot])
                     row["is_recovery"] = bool(recovering[slot])
                     n_recoveries[episode_id] += int(recovering[slot])
+                if self._fault is not None:
+                    row["fault"] = self._fault.spec
                 rows[episode_id].append(row)
                 if decision.hijacked:
                     n_hijacks[episode_id] += 1
@@ -565,6 +581,11 @@ class EfferenceHarness:
                 }
                 for slot in range(n_real)
             }
+        if self._fault is not None:
+            for slot in range(n_real):
+                episode_extra.setdefault(int(episode_ids[slot]), {})["fault"] = (
+                    self._fault.spec
+                )
         self._finish_batch(
             rows, first_success_call, n_hijacks, task_id, censored, episode_extra
         )

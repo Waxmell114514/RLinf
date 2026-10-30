@@ -671,6 +671,77 @@ def _volume_journal_add(session: str, event: dict[str, Any]) -> None:
         batch.put_file(io.BytesIO(json.dumps(event).encode()), remote)
 
 
+@app.function(gpu=GPU, cpu=GPU_CPU, memory=GPU_MEMORY, timeout=3600, **COMMON)
+def gpu_script(script: str, args: list[str], mujoco_gl: str = "egl") -> int:
+    """One repo script on a GPU box against the Volume (X6 stage 0)."""
+    volume.reload()
+    env = {
+        **os.environ,
+        "MUJOCO_GL": mujoco_gl,
+        "PYOPENGL_PLATFORM": mujoco_gl,
+        "ROBOT_PLATFORM": "LIBERO",
+        "LIBERO_TYPE": "standard",
+        "TOKENIZERS_PARALLELISM": "false",
+        "PYTHONPATH": REPO,
+    }
+    env.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
+    rc = subprocess.run(
+        [PYTHON, f"{REPO}/{script}", *args], env=env, cwd=REPO, check=False
+    ).returncode
+    volume.commit()
+    return rc
+
+
+@app.local_entrypoint()
+def script(
+    path: str,
+    args: str = "",
+    budget_usd: float = 0.0,
+    max_s: int = 600,
+    mujoco_gl: str = "egl",
+):
+    """A repo script on a GPU box, under the X waves' shared spend journal.
+
+    ``max_s`` is both the function's hard timeout and the reservation the gate
+    prices (plus start-up), so the call cannot cost more than it reserved.
+    """
+    if budget_usd <= 0:
+        raise SystemExit("script needs --budget-usd (the x_waves journal cap)")
+    rate = USD_PER_H["collect"]
+    fits, committed, cost = stage_gate(
+        _volume_journal(X_SESSION), time.time(), budget_usd, rate, max_s
+    )
+    if not fits:
+        raise SystemExit(
+            f"budget: committed ${committed:.2f} + this call's worst case "
+            f"${cost:.2f} > ${budget_usd:.2f}; not started"
+        )
+    key = f"script:{path}:{time.time():.0f}"
+    _volume_journal_add(
+        X_SESSION,
+        {
+            "event": "start",
+            "key": key,
+            "t": time.time(),
+            "usd_per_h": rate,
+            "reserve_s": max_s + STARTUP_S,
+            "kind": "collect",
+            "wave": "x6",
+            "cmd": f"{path} {args}",
+        },
+    )
+    rc = None
+    try:
+        rc = gpu_script.with_options(timeout=max_s).remote(
+            path, shlex.split(args), mujoco_gl
+        )
+    finally:
+        _volume_journal_add(
+            X_SESSION, {"event": "end", "key": key, "t": time.time(), "rc": rc}
+        )
+    print(f"[x6] {path} -> rc={rc}")
+
+
 @app.local_entrypoint()
 def stage(cmd: str, mujoco_gl: str = "egl", wave: str = "e4", budget_usd: float = 0.0):
     """One driver command; ``--wave x1`` / ``--wave x4`` for the later waves.

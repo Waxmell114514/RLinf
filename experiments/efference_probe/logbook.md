@@ -2330,3 +2330,30 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Settings (in this order, one container call):** clean, bias_x 0.15, bias_x 0.30, invert_x, gain 0.6, gain 0.4 (gain on dims 0–2).
   - **Rule P (pilot level, n = 16 per setting):** a family is carried into X6-EC iff its success is ≤ 0.6 at some piloted magnitude. If clean success itself is < 0.8, the pilot is uninformative. If bias fails at 0.30, the narrative is scoped to inversion only (memo §6). The 300-episode stage-0 collection, if funded, firms these numbers up.
   - **Budget:** the `x_waves` journal cap for steps 2 + 3 is set at the current journal + $1.60, so the billed spend of both calls is ≤ $1.60. Each call's worst case is gated as before.
+- `2026-10-30 10:45` **X6 stage 0, step 1 RESULT (identifiability and copycat; `data/x6/identify.json`, `x6_identify.py`).** All SELF, non-post-success X4 transitions.
+  - **Fit:**
+    - GRPO-130: 16,872 transitions, 1,000 episodes; OOF residual SD (x, y, z) 0.83 / 0.64 / 1.17 cm; gain 1.03 / 1.14 / 1.11 cm per summed command unit.
+    - Base-Lora: 17,307 transitions; residual SD 0.78 / 0.54 / 1.14 cm; gain 0.99 / 1.12 / 1.04 cm.
+  - **Median z (share z ≥ 3)** at K = 1 / 2 / 4 / 8, GRPO-130:
+
+    | fault | K = 1 | K = 2 | K = 4 | K = 8 |
+    |---|---|---|---|---|
+    | bias 0.15 | 1.06 (0.00) | 2.16 (0.09) | 3.52 (0.76) | 4.51 (0.99) |
+    | bias 0.30 | 2.56 (0.02) | 4.28 (1.00) | 6.52 (1.00) | 8.75 |
+    | invert_x | 10.4 (1.00) | 17.5 | 18.7 | 23.8 |
+    | gain 0.6 | 2.55 (0.25) | 3.22 (0.59) | 3.29 (0.65) | 5.01 (0.87) |
+    | gain 0.4 | 3.66 (0.72) | 4.99 | 5.10 | 8.03 |
+
+    Base-Lora is within ±0.3 of these.
+  - **Copycat:** consecutive-chunk correlation of Σa (x, y, z) is 0.68 / 0.64 / 0.64 (GRPO-130) and 0.68 / 0.69 / 0.60 (Base-Lora).
+  - **Design rule:** history K = 2 on both checkpoints.
+    - **Identifiable from 2 chunks:** bias 0.30 and inversion.
+    - **Needs 4:** bias 0.15.
+    - **Boundary case:** gain 0.6 (59–65% of episodes at z ≥ 3).
+- `2026-10-30 10:45` **X6 stage 0, steps 2–3: procedure details (no number exists yet).**
+  - **Pilot tasks by the registered rule:** {2, 8}, both 1.000 X4 GRPO clean success (39 / 48 episodes).
+  - **Launch mechanics (deviation from "one GPU call" via the driver):** the driver would need an `init` CPU call (1800 s reservation) plus per-run hang grace, so the gate could not hold the two steps under the registered journal + $1.60. Both steps therefore run as single GPU calls of a new `modal_e4.py::script` entrypoint.
+    - **Reservation:** `max_s` is both the Modal function's hard timeout and the gate's reservation (+300 s start-up). Smoke `max_s` = 600 (worst case $0.82); pilot `max_s` = 1020 (worst case $1.20).
+    - **Gate:** each is started only if committed + worst case ≤ journal-at-launch + $1.60.
+    - **Pilot run:** the pilot is `run_collect.py` (the harness CLI) with the fault sweep, not `e4_wave.py collect`. The analysis is unchanged.
+  - **Code:** `faults.py` (+ `FaultConfig`, harness sweep wiring; flags-off hashes unchanged) and `x6_load_smoke.py`, with offline tests.

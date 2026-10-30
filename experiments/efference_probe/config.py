@@ -145,6 +145,16 @@ class MonitorConfig:
 
 
 @dataclass
+class FaultConfig:
+    """X6 stage 0: persistent actuation faults on the executed chunk (faults.py)."""
+
+    enabled: bool = False
+    # Fault specs run in turn on the same reset states of every task, e.g.
+    # ["clean", "bias_x:0.15", "invert_x", "gain:0.6"].
+    sweep: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RunConfig:
     """Top-level collection config."""
 
@@ -158,6 +168,7 @@ class RunConfig:
     frames: FramesConfig = field(default_factory=FramesConfig)
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    fault: FaultConfig = field(default_factory=FaultConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -171,6 +182,8 @@ class RunConfig:
         # config unchanged.
         if not self.monitor.enabled:
             payload.pop("monitor", None)
+        if not self.fault.enabled:
+            payload.pop("fault", None)
         if not self.capture.extra_observables:
             payload["capture"].pop("extra_observables", None)
         blob = json.dumps(payload, sort_keys=True, default=str).encode()
@@ -238,6 +251,15 @@ class RunConfig:
                 raise ValueError(f"unknown monitor.recovery: {self.monitor.recovery!r}")
             if self.monitor.score_from_call < 0:
                 raise ValueError("monitor.score_from_call must be >= 0")
+        if self.fault.enabled:
+            from .faults import parse
+
+            if not self.fault.sweep:
+                raise ValueError("fault.enabled needs a non-empty fault.sweep")
+            for spec in self.fault.sweep:
+                parse(spec)
+            if self.hijack.enabled or self.monitor.enabled:
+                raise ValueError("faults run with hijack and monitor disabled")
 
 
 def _build(cls, data: Any):
