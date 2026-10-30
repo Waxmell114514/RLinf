@@ -62,15 +62,47 @@ def _residual_scores(
     score: np.ndarray,
     groups: np.ndarray,
     task_ids: np.ndarray,
+    forward: str = "ridge",
+    dims: Optional[slice] = None,
 ) -> np.ndarray:
-    """Fit the forward model on ``fit`` rows; score ``score`` rows."""
+    """Fit the forward model on ``fit`` rows; score ``score`` rows.
+
+    ``forward`` and ``dims`` are EC0b's exploratory variants; the registered
+    EC0 is ridge over all 8 dims.
+    """
     delta = x0.compose_delta(before, after)
     inputs = forward_inputs(before, commands, tasks, task_ids)
-    model = x0._Decoder(inputs[fit], delta[fit], groups[fit])
+    model = (
+        x0._Decoder(inputs[fit], delta[fit], groups[fit])
+        if forward == "ridge"
+        else _MlpForward(inputs[fit], delta[fit])
+    )
     train_residual = delta[fit] - model.predict(inputs[fit])
     scale = np.maximum(train_residual.std(axis=0), 1e-8)
     residual = (delta[score] - model.predict(inputs[score])) / scale
+    if dims is not None:
+        residual = residual[:, dims]
     return (residual**2).sum(axis=1)
+
+
+class _MlpForward:
+    """EC0b (a): an MLP forward model on standardised inputs and targets."""
+
+    def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
+        from sklearn.neural_network import MLPRegressor
+
+        self.x_mean, self.x_sd = x.mean(0), np.maximum(x.std(0), 1e-8)
+        self.y_mean, self.y_sd = y.mean(0), np.maximum(y.std(0), 1e-8)
+        self.model = MLPRegressor(
+            hidden_layer_sizes=(256, 256),
+            alpha=1e-3,
+            early_stopping=True,
+            random_state=0,
+        ).fit((x - self.x_mean) / self.x_sd, (y - self.y_mean) / self.y_sd)
+
+    def predict(self, x: np.ndarray) -> np.ndarray:
+        z = self.model.predict((x - self.x_mean) / self.x_sd)
+        return z * self.y_sd + self.y_mean
 
 
 def oof_scores(
@@ -82,6 +114,8 @@ def oof_scores(
     groups: np.ndarray,
     h_before: Optional[np.ndarray] = None,
     h_after: Optional[np.ndarray] = None,
+    forward: str = "ridge",
+    dims: Optional[slice] = None,
 ) -> np.ndarray:
     """Out-of-fold comparator scores; decoded states iff hidden states given.
 
@@ -118,7 +152,7 @@ def oof_scores(
                 decode_into(fit_rows[is_self[fit_rows]], train[inner_out])
         fit = train[is_self[train]]
         scores[test] = _residual_scores(
-            before, after, commands, tasks, fit, test, groups, task_ids
+            before, after, commands, tasks, fit, test, groups, task_ids, forward, dims
         )
     return scores
 
@@ -142,7 +176,7 @@ def state_cell(data_root: Path, run_id: str) -> tuple[int, str]:
     return x0.best_cell(a2[a2["target"] == "s_next"])
 
 
-def run_ec0(data_root: Path, run_id: str) -> dict[str, Any]:
+def run_ec0(data_root: Path, run_id: str, ec0b: bool = False) -> dict[str, Any]:
     run = load_run(data_root / run_id)
     store = HiddenStore(run.run_dir / "hidden", max_cache_gb=4.0)
     pairs = x0.readout_pairs(run, max_calls=10**9)
@@ -172,6 +206,16 @@ def run_ec0(data_root: Path, run_id: str) -> dict[str, Any]:
     }
     true_scores = oof_scores(s_before, s_after, commands, tasks, is_self, groups)
     out["V_true"] = operating_point(true_scores, is_self, is_hijack)
+    if ec0b:
+        mlp = oof_scores(
+            s_before, s_after, commands, tasks, is_self, groups, forward="mlp"
+        )
+        out["EC0b_mlp"] = operating_point(mlp, is_self, is_hijack)
+        translation = oof_scores(
+            s_before, s_after, commands, tasks, is_self, groups, dims=slice(0, 3)
+        )
+        out["EC0b_translation"] = operating_point(translation, is_self, is_hijack)
+        return out
     feat_scores = oof_scores(
         s_before, s_after, commands, tasks, is_self, groups, h_before, h_after
     )
@@ -193,16 +237,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--ec0b", action="store_true", help="exploratory EC0b variants (V_true only)"
+    )
     parser.add_argument("runs", nargs="+")
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     results = {}
+    prefix = "ec0b" if args.ec0b else "ec0"
     for run_id in args.runs:
-        results[run_id] = run_ec0(args.data_root, run_id)
-        (args.out / f"ec0_{run_id}.json").write_text(
+        results[run_id] = run_ec0(args.data_root, run_id, args.ec0b)
+        (args.out / f"{prefix}_{run_id}.json").write_text(
             json.dumps(results[run_id], indent=2)
         )
         print(json.dumps(results[run_id]), flush=True)
+    if args.ec0b:
+        return 0
     summary = {"runs": results, "reading": reading(results)}
     (args.out / "ec0_summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps({"reading": summary["reading"]}))
