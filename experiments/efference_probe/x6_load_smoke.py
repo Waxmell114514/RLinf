@@ -106,11 +106,14 @@ def stage_official(cfg, work: Path, proprio_dim: int) -> dict[str, Any]:
     }
     # The classes may index action tokens differently (relative bins vs
     # vocabulary ids); the best of the plausible conventions is reported.
-    vocab = int(official.config.text_config.vocab_size)
+    np.savez(work / "official_tokens.npz", official=tokens, rlinf=reference)
+    # OpenVLA's action bins are the last 256 ids of the 32,000-token base
+    # vocabulary; the padded config vocab_size is not that base.
+    base = 32000
     candidates = {
         "same": reference,
-        "vocab_minus_256_offset": reference - (vocab - 256),
-        "vocab_minus_1_minus": vocab - 1 - reference,
+        "base_minus_256_offset": reference - (base - 256),
+        "base_minus_1_minus": base - 1 - reference,
     }
     agreement = {k: float(np.mean(tokens == v)) for k, v in candidates.items()}
     out["a_agreement_by_convention"] = agreement
