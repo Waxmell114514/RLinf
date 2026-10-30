@@ -2130,3 +2130,30 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-10-30 04:59` **Operator: collect Base-Lora s5 only ("再跑 s5"), decided before any X4 outcome was computed.**
   - **Cap:** recomputed by the launch rule from the higher of the two latest billing readings ($26.38): $9.44 + $3.62 − $0.50 = $12.56.
   - **s6:** not collected; it would not fit the same rule afterwards.
+- `2026-10-30 05:14` **X4 READOUT (PREREG_X1_X4.md X4; numbers from `reports/x4_report.md`, built from the runs' manifests and `calls.parquet`).**
+  - **Collected:**
+    - GRPO: mirror s3–s6, 1000 episodes.
+    - Base-Lora: mirror s3–s5, 750 episodes. s6 was cut by the budget rule. s5 was collected on the operator's decision, made before any outcome was computed.
+    - Censored: 0.
+  - **GRPO** (G = 0.219, so 0.5·G = 0.110). Reported with Amendment 2's deviation: the S0 undo check failed, 2.23 cm over 4 undos.
+    - **B_mon:** +0.059 [−0.013, +0.132]; **B_orc:** +0.083 [+0.017, +0.150].
+    - **Rules:** Rule O false (B_orc < 0.5·G), Rule M false.
+    - **Reading:** "undo does not recover the cost; X4 is uninformative about the comparator" (M is not interpreted).
+  - **Base-Lora** (G = 0.167, so 0.5·G = 0.084).
+    - **B_mon:** +0.015 [−0.083, +0.117]; **B_orc:** +0.002 [−0.093, +0.098].
+    - **Rules:** Rule O false, Rule M false.
+    - **Reading:** the same.
+  - **Reported alongside:**
+
+    | | online FPR / TPR (off arm) | undo error median | false-positive cost | off-arm probe success |
+    |---|---|---|---|---|
+    | GRPO | 0.019 / 0.754 (5387 SELF, 917 HIJACK calls) | 1.86 cm over 1178 undos | +0.047 [+0.020, +0.080] | 0.756 |
+    | Base-Lora | 0.024 / 0.732 | 1.39 cm over 1330 undos | −0.014 [−0.178, +0.139] | 0.493 |
+
+    - **GRPO false-positive cost:** clean episodes in the monitor arm did not do worse. The narrow CI reflects near-ceiling clean success.
+    - **Sanity:** the off arm reproduces E4's pooled probe success on both checkpoints (0.756 vs 0.730; 0.493 vs 0.477), so no sanity flag.
+    - **Hijacks per probe episode** (off / monitor / oracle): GRPO 3.15 / 3.02 / 2.82; Base-Lora 4.31 / 4.29 / 4.13.
+  - **Spend:**
+    - X4: ≈ $4.0 billed. Billing summary $26.89 metered against $22.87 before X4, leaving ≈ $3.1 of the credit.
+    - Journal: $10.12 at limit rates.
+    - Collection GPU time: ≈ 1.4 of 2.0 h.
