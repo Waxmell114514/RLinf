@@ -2384,3 +2384,9 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Clipping:** at most 0.57% of executed dims 0–5 are clipped.
   - **Caveat:** n = 16 per setting, so the 300-episode stage-0 collection would firm these numbers up.
   - **Spend:** the pilot took 307 s; journal $10.69 (+$0.57 for the three steps, against the +$1.60 cap); billing summary $27.38 metered, ≈ $2.6 of credit left.
+
+- `2026-10-30 16:20` **X6 PRE-REGISTRATION (`PREREG_X6.md`).** Written before any n = 300 benchmark run, training collection or fine-tune; the commit that adds the file is the timestamp.
+  - **Part A (control):** OFT GRPO-130 and π0 in the minimal tier; GR00T, DreamZero and Base-Lora in the solid tier. Six fault settings, 300 episodes each, on states 0–29. Rule M: under bias_x 0.30 and invert_x, success ≤ 0.5 × clean, with paired-drop CI_low > 0, for every model with clean success ≥ 0.40.
+  - **Part B (X6-EC):** arms F, A (136-d copy), B (8-d state), C (shuffled copy), D (state + forward-model head), E (copy + head), all through the `rlinf` class (`ec_policy.py`). Training on states 30–49 only. Rules E, N, L and 0 on the cells bias_x 0.30 (a held-out direction) and invert_x.
+  - **Gate S0:** the wrapper smoke (`x6_ec_smoke.py`). Minimal-tier cap $25 on a rental.
+  - **Approval:** none yet. Training under X6-EC needs the user to lift "no training" explicitly.
