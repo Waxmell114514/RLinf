@@ -2426,3 +2426,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **S1 gate (clean ≥ 0.80):** passed (0.963).
   - **Rule M (OFT):** fails as predicted. bias_x:0.3 drop 0.950 [0.923, 0.970]; invert_x drop 0.963 [0.940, 0.983]; both cells succeed at ≤ 0.5 · clean, n_states = 300.
   - **Spend:** journal $10.759 → $14.349 (S1 $3.59). Cap unchanged at `--budget-usd 40.19`; $25.84 left. Next: S3.
+
+- `2026-11-01 10:55` **X6 S3 RESULT: training collection, `/vol/data/x6/x6_ec_collect`; gate passed.** GRPO-130, 10 goal tasks × reset states 30–49 × 6 passes, env seed 101, frames on (0.41 GB). 1,200 episodes, 22,613 calls, stop reason `completed`. Read with `x6_ec_report.py --collection --expected-episodes 1200`.
+  - **Success by family × compensation:**
+    - clean: n 373, 0.981;
+    - bias: compensated n 368, 0.981; uncompensated n 148, 0.270;
+    - inversion: compensated n 219, 0.986; uncompensated n 92, 0.022.
+  - **Draw check:** 31.1% clean, 43.0% bias, 25.9% inversion (prereg 0.30 / 0.45 / 0.25). 71.0% of faulted episodes are compensated (prereg 0.70).
+  - **S3 gate:**
+    - episodes logged: 1.000 of 1,200 (≥ 0.95), passed;
+    - compensated success at clean level: 0.981 and 0.986 against clean 0.981, reported.
+  - **Spend:** journal $14.349 → $16.923 (S3 $2.57); $23.27 left under `--budget-usd 40.19`. Next: S3b.
