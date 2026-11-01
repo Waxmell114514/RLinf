@@ -2511,3 +2511,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
       - **prediction if the flattening account holds:** A's clean success returns to about F's (≥ 0.90). A − B on bias then measures the copy at the base's sharpness;
       - it is post hoc, and is reported as exploratory whatever it shows.
     - **Proper fix (needs new credit, ≈ $22 `[estimate]`):** take the NLL at the sampling temperature (`default_forward(temperature=1.6)`), so that fitting self-samples leaves the clean policy unchanged. Then retrain A–D and repeat S5.
+
+- `2026-11-01 13:05` **X6 AMENDMENT 2 APPROVED (user: “跑诊断吧”): the T = 1.0 re-evaluation diagnostic.** It is exploratory and post hoc: the readout below is fixed before any of it runs, and nothing in it rescores Rules 0, E, N or L.
+  - **Runs** (arms unchanged, `x6_ec_eval.yaml` with `model.temperature=1.0`), in sequence, because their reservations together exceed the cap:
+    - `x6_ec_diag_A_T1`: arm A_s0 on clean and bias_x:0.3, 600 episodes, `--max-s 2400` (reserves $2.46);
+    - `x6_ec_diag_B_T1`: arm B_s0 on bias_x:0.3, 300 episodes, `--max-s 1500` (reserves $1.64). It starts only if the journal still fits it under 40.19.
+  - **Fixed readout** (paired bootstrap over (task, state), B = 2,000, seed 0, through `x6_ec_report.paired_difference`):
+    - **D1:** A(T1) − F on clean, where F is S1 at T 1.6. The flattening account predicts ≥ −0.05, i.e. A(T1) clean ≳ 0.91.
+    - **D2:** A(T1) − B(T1) on bias_x:0.3: the copy at the base's sharpness.
+    - **D3:** A(T1) − F on bias_x:0.3.
+    - **D4:** mean sampled-token logprob at call 0, A(T1) against F's −1.845. The account predicts about the same value.
+  - **If D1 fails,** the flattening account is wrong or incomplete, and that is reported.
