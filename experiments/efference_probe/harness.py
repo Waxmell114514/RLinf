@@ -37,9 +37,10 @@ import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-from . import observables
+from . import ec_policy, observables
 from .capture import HiddenStateCapture
 from .config import RunConfig
+from .faults import draw_training_fault
 from .faults import parse as parse_fault
 from .hijack import HIJACK, SELF, HijackScheduler, build_executed_chunk
 from .monitor import (
@@ -155,6 +156,8 @@ class EfferenceHarness:
         self._verification: dict[str, Any] = {}
         self._stop_reason: Optional[str] = None
         self._fault = None  # X6: the sweep's current fault, if any
+        self._pass_index = 0  # X6-EC: the training collection's pass
+        self.arm: Optional[dict[str, Any]] = None  # X6-EC: a trained arm's metadata
 
     # -- setup -----------------------------------------------------------
 
@@ -169,6 +172,17 @@ class EfferenceHarness:
                 f"no model builder registered for {self.cfg.model.model_type!r}"
             )
         self.model.eval()
+
+        if self.cfg.efference.enabled:
+            arm_dir = Path(self.cfg.efference.arm_dir)
+            if not arm_dir.is_absolute():
+                arm_dir = REPO_ROOT / arm_dir
+            self.arm = ec_policy.load_arm(self.model, arm_dir)
+            self.log(
+                f"arm {self.arm.get('arm')} from {arm_dir}: {self.arm['kind']} "
+                f"input ({self.arm['in_dim']}-d)"
+                + (", history zeroed" if self.cfg.efference.zero_history else "")
+            )
 
         if self.cfg.monitor.enabled:
             artifact = Path(self.cfg.monitor.artifact)
@@ -244,20 +258,22 @@ class EfferenceHarness:
         return list(range(self.env.task_suite.get_num_tasks()))
 
     def reset_state_ids_for_task(self, task_id: int) -> np.ndarray:
-        """Global reset-state ids for the first N trials of ``task_id``.
+        """Global reset-state ids for N trials of ``task_id``, from the offset.
 
         LIBERO indexes initial states globally across (task, trial); the
         cumulative bin edges in ``LiberoEnv`` give the offset for each task.
         """
         bins = self.env.cumsum_trial_id_bins
         start = int(bins[task_id - 1]) if task_id > 0 else 0
-        available = int(bins[task_id]) - start
+        offset = self.cfg.env.init_state_offset
+        available = max(int(bins[task_id]) - start - offset, 0)
         count = min(self.cfg.env.init_states_per_task, available)
         if count < self.cfg.env.init_states_per_task:
             self.log(
-                f"task {task_id} has only {available} initial states; using {count}"
+                f"task {task_id} has only {available} initial states from trial "
+                f"{offset}; using {count}"
             )
-        return start + np.arange(count, dtype=np.int64)
+        return start + offset + np.arange(count, dtype=np.int64)
 
     # -- main loop -------------------------------------------------------
 
@@ -266,16 +282,20 @@ class EfferenceHarness:
             self.setup()
             self.writer.write_run_config(self._run_config_payload())
             # X6: each fault of the sweep runs the same reset states in turn.
-            faults = (
-                [parse_fault(spec) for spec in self.cfg.fault.sweep]
-                if self.cfg.fault.enabled
-                else [None]
-            )
+            # X6-EC's training collection instead visits them `passes` times,
+            # each episode drawing its own fault (`_run_batch`).
+            if not self.cfg.fault.enabled:
+                faults = [None]
+            elif self.cfg.fault.mode == "draw":
+                faults = [None] * self.cfg.fault.passes
+            else:
+                faults = [parse_fault(spec) for spec in self.cfg.fault.sweep]
             for task_id in self.task_ids():
                 reset_ids = self.reset_state_ids_for_task(task_id)
                 num_envs = self.cfg.env.num_envs
-                for fault in faults:
+                for pass_index, fault in enumerate(faults):
                     self._fault = fault
+                    self._pass_index = pass_index
                     for batch_index in range(0, len(reset_ids), num_envs):
                         batch_ids = reset_ids[batch_index : batch_index + num_envs]
                         self._run_batch(task_id, batch_ids, batch_index // num_envs)
@@ -380,6 +400,26 @@ class EfferenceHarness:
             )
         pending_undo: list[Optional[np.ndarray]] = [None] * num_envs
         n_recoveries = {int(episode_ids[slot]): 0 for slot in range(n_real)}
+        # X6: the fault each slot runs under.  The sweep gives every slot the
+        # same one; the X6-EC training collection draws one per episode, with
+        # the oracle compensating some of them (PREREG_X6.md section 3.2).
+        drawing = self.cfg.fault.enabled and self.cfg.fault.mode == "draw"
+        slot_faults = [self._fault] * num_envs
+        compensated = np.zeros(num_envs, dtype=bool)
+        if drawing:
+            fault_rng = np.random.default_rng(
+                [self.cfg.env.seed, task_id, batch_index, self._pass_index, 0xFA17]
+            )
+            for slot in range(num_envs):
+                draw = draw_training_fault(fault_rng)
+                slot_faults[slot] = draw.fault
+                compensated[slot] = draw.compensated
+        faulted = any(fault is not None for fault in slot_faults)
+        # X6-EC: a trained arm's input, built online from what was sent.
+        history = (
+            ec_policy.history_for(self.arm, num_envs) if self.arm is not None else None
+        )
+        descriptions = obs.get("task_descriptions")
         # X1: the raw observation behind `obs`, read before it is replaced.
         extra = self.cfg.capture.extra_observables
         raw_before = list(self.env.current_raw_obs) if extra else None
@@ -392,7 +432,14 @@ class EfferenceHarness:
             if not recording.any():
                 break
 
-            commanded, result, captured = self._policy_step(obs, sampling, call_idx)
+            efference = (
+                history.vector(_as_numpy(obs["states"]))
+                if history is not None
+                else None
+            )
+            commanded, result, captured = self._policy_step(
+                obs, sampling, call_idx, efference
+            )
             # Absent for some architectures (X6 fault benchmark).
             logprobs = (result or {}).get("prev_logprobs")
             commanded_env = self._to_env_action_space(commanded)
@@ -409,8 +456,25 @@ class EfferenceHarness:
             executed = build_executed_chunk(commanded_env, decisions)
             for slot in np.flatnonzero(recovering):
                 executed[slot] = pending_undo[slot]
-            if self._fault is not None:
-                executed = self._fault.apply(executed)
+            # What the controller sends (the efference copy), then what the
+            # faulty actuator executes.  The target is the oracle's command.
+            target = None
+            if drawing:
+                target = np.stack(
+                    [
+                        slot_faults[i].compensate(commanded_env[i])
+                        for i in range(num_envs)
+                    ]
+                )
+                executed = np.where(compensated[:, None, None], target, executed)
+            sent = executed
+            if faulted:
+                executed = np.stack(
+                    [
+                        fault.apply(sent[i]) if fault is not None else sent[i]
+                        for i, fault in enumerate(slot_faults)
+                    ]
+                )
 
             states_before = _as_numpy(obs["states"])
             main_images = _as_numpy(obs["main_images"])
@@ -423,6 +487,14 @@ class EfferenceHarness:
                 next_obs[-1] if isinstance(next_obs, (list, tuple)) else next_obs
             )
             states_after = _as_numpy(obs_after["states"])
+
+            if history is not None and not self.cfg.efference.zero_history:
+                history.push(sent, states_before, states_after)
+            tokens = (
+                _as_numpy(result["forward_inputs"]["action_tokens"])
+                if drawing
+                else None
+            )
 
             terminated = terminations.cpu().numpy().astype(bool)
             truncated = truncations.cpu().numpy().astype(bool)
@@ -549,8 +621,16 @@ class EfferenceHarness:
                     row["monitor_fired"] = bool(fired[slot])
                     row["is_recovery"] = bool(recovering[slot])
                     n_recoveries[episode_id] += int(recovering[slot])
-                if self._fault is not None:
-                    row["fault"] = self._fault.spec
+                if slot_faults[slot] is not None:
+                    row["fault"] = slot_faults[slot].spec
+                if drawing or history is not None:
+                    row["a_sent"] = flatten(sent[slot])
+                if drawing:
+                    row["a_target"] = flatten(target[slot])
+                    row["compensated"] = bool(compensated[slot])
+                    row["action_tokens"] = np.asarray(tokens[slot], np.int32).reshape(
+                        -1
+                    )
                 rows[episode_id].append(row)
                 if decision.hijacked:
                     n_hijacks[episode_id] += 1
@@ -605,11 +685,16 @@ class EfferenceHarness:
                 }
                 for slot in range(n_real)
             }
-        if self._fault is not None:
-            for slot in range(n_real):
-                episode_extra.setdefault(int(episode_ids[slot]), {})["fault"] = (
-                    self._fault.spec
-                )
+        for slot in range(n_real):
+            extra_fields = episode_extra.setdefault(int(episode_ids[slot]), {})
+            if slot_faults[slot] is not None:
+                extra_fields["fault"] = slot_faults[slot].spec
+            if drawing:
+                extra_fields["compensated"] = bool(compensated[slot])
+                extra_fields["pass_index"] = self._pass_index
+            if drawing and descriptions is not None:
+                # The trainer rebuilds the prompt from it.
+                extra_fields["task_description"] = str(descriptions[slot])
         self._finish_batch(
             rows, first_success_call, n_hijacks, task_id, censored, episode_extra
         )
@@ -671,12 +756,18 @@ class EfferenceHarness:
         return params
 
     def _policy_step(
-        self, obs: dict[str, Any], sampling: dict[str, Any], call_idx: int
+        self,
+        obs: dict[str, Any],
+        sampling: dict[str, Any],
+        call_idx: int,
+        efference: Optional[np.ndarray] = None,
     ):
         """One ``predict_action_batch`` with hidden-state capture armed."""
         # predict_action_batch unsqueezes `main_images` in place; hand it a
         # shallow copy so our logged observation keeps its [B, H, W, C] shape.
         model_obs = dict(obs)
+        if efference is not None:
+            model_obs["efference"] = efference
         if self.capture is None:
             with torch.no_grad():
                 actions, result = self.model.predict_action_batch(

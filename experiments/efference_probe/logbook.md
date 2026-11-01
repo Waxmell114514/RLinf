@@ -2390,3 +2390,16 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Part B (X6-EC):** arms F, A (136-d copy), B (8-d state), C (shuffled copy), D (state + forward-model head), E (copy + head), all through the `rlinf` class (`ec_policy.py`). Training on states 30–49 only. Rules E, N, L and 0 on the cells bias_x 0.30 (a held-out direction) and invert_x.
   - **Gate S0:** the wrapper smoke (`x6_ec_smoke.py`). Minimal-tier cap $25 on a rental.
   - **Approval:** none yet. Training under X6-EC needs the user to lift "no training" explicitly.
+
+- `2026-11-01 09:10` **X6 AMENDMENT 1 (`PREREG_X6.md`), and the X6-EC training code.** Written before any n = 300 run, training collection or fine-tune. Nothing has run.
+  - **Platform:** Modal, the user's choice (≈ $30 of new credit). Simulation runs on the L40S function ($3.28/h at limits); fine-tunes on a new H100 function `gpu_train` ($4.71/h).
+  - **Cap:** at most $29.5 of new spend for X6, enforced through the x-waves journal; `modal_e4.py::journal` reads it for free.
+  - **New gate S3b:** a 20-step training smoke on the real class. It checks the input rebuild and the token round trip, and measures s/step.
+  - **Order changed to fit the cap:** π0 (Rule M cells only) and arm E move after the rule arms.
+  - **Code:**
+    - `faults.py`: 2-D bias, `invert_y`, the oracle inverse, the per-episode draw;
+    - config: `env.init_state_offset`, `fault.mode: draw` with `passes`, an `efference` section;
+    - harness: per-slot faults and compensation, `EfferenceHistory` online, logging of `a_sent` / `a_target` / `action_tokens`;
+    - new files: `ec_dataset.py`, `train_ec.py`, `x6_ec_report.py`, `configs/x6_ec_{collect,eval}.yaml`, `x6_modal_runbook.md`.
+  - **Tests:** an offline end-to-end test (`tests/test_x6_ec.py`) on CPU fakes with real peft. It runs collection → samples → LoRA training of arms A, C, D → save → harness evaluation, and checks that the online inputs equal the offline replay.
+  - **Bug the test found:** peft's `save_pretrained` saves the whole base `lm_head` whenever `lm_head` is a LoRA target; the arm now saves the adapter only.

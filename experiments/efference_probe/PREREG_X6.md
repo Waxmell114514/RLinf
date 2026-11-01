@@ -249,3 +249,47 @@ Platform: a rental (AutoDL A800 or Vast.ai A100), chosen by the user. Modal cred
 - The rental platform's image installs `requirements/install.sh embodied --model openvla-oft --env libero`, plus `openpi` for π0.
 
 ## Amendments
+
+### Amendment 1 (2026-11-01, before any X6 data at n = 300, any training collection or fine-tune)
+
+**Why:** the user chose Modal (with ≈ $30 of new credit) over a rental, and asked for the training code first. Writing that code fixed details §3 left open. Nothing has run.
+
+- **Platform and pricing.** Modal bills each container at its limits.
+  - **Simulation stages** (S0, S1, S2, S3, S5) run on the existing L40S function `gpu_script`, at $3.28/h.
+  - **Fine-tunes** (S4) run on a new H100 function `gpu_train` (8 cores, 48 GiB), at $4.71/h, via `modal_e4.py::script --kind train`.
+  - **Gate:** every call goes through the x-waves spend journal and its gate. `modal_e4.py::journal` prints the journal without starting a container.
+- **Cap.** At most $29.5 of new spend for all of X6: the credit, less $0.5. It is enforced as `--budget-usd` = the journal's committed total when S0 starts + 29.5. Each stage's `--max-s` bounds its own reservation.
+- **New stage S3b,** between S3 and S4: a 20-step training smoke on the H100, through `train_ec.py --max-steps 20`.
+  - **On the real class, it checks:**
+    - that `model_inputs` rebuilds exactly the inputs `predict_action_batch` builds;
+    - that decoding the policy's logged tokens gives back its logged commands (within 1e-3);
+    - the time per step and the memory.
+  - **Gate:** both checks pass, and the measured rate puts one full fine-tune (2 epochs) at ≤ 50 min. If the rate misses, stop and propose a schedule by amendment.
+- **Order, to fit the cap.** Estimates are `[estimate]`, scaled from the pilot's 18 s per 40-call batch.
+
+  | step | stage | estimate |
+  |---|---|---|
+  | 1 | S0 | ≈ $0.5 |
+  | 2 | S1 | ≈ $3.3 |
+  | 3 | S3 | ≈ $2.7 |
+  | 4 | S3b | ≈ $0.7 |
+  | 5 | S4: A, B, C, D, seed 0 | ≈ $2.2–3.3 each |
+  | 6 | S5: A on 3 cells; B, C, D on the 2 fault cells | ≈ $5.5 |
+  | 7 | S2: π0 on the Rule M cells only (clean, bias_x 0.3, invert_x) | ≈ $2–3 |
+  | 8 | arm E (fine-tune plus 2 cells) | ≈ $3.8 |
+  | 9 | seed 1 for A and B | — |
+
+  - **Before each stage:** the journal's committed spend plus the stage's reservation must fit the cap; if it does not, the stage does not start and the shortfall is reported.
+  - **Why E moved last:** arm E carries no rule.
+  - **π0's other settings:** its descriptive settings wait for more credit. π0 needs its own image (`install.sh embodied --model openpi --env libero`), not yet written.
+- **Collection passes.** §3.2's "six passes with env seeds 101–106" runs as one collection with env seed 101 and `fault.passes: 6`.
+  - **Fault draws:** each pass draws its faults from `rng(seed, task, batch, pass)`.
+  - **Policy sampling:** continues one torch stream.
+  - **Why:** the env is built once per run, and the reset states are fixed, so the env seed changes nothing else.
+- **Fixed by the code** (`faults.py`, `ec_dataset.py`, `train_ec.py`, `ec_policy.py`); §3 left these open:
+  - **Bias spec:** `bias:<m>@<deg>`. The axis sectors (±10° around 0°, 90°, 180°, 270°) are never drawn.
+  - **Targets:** the policy's own 56 tokens. The fault's dims are re-tokenised from the oracle's command through the inverse of the class's bin decoding; the gripper keeps the policy's token.
+  - **LoRA:** `q/k/v/o/gate/up/down_proj` and `lm_head`, alpha = rank = 32, gaussian init, adapters in float32. Only the adapter is saved, not the base `lm_head`.
+  - **Projector:** float32.
+  - **Prefetch:** micro-batch 8 × 2 accumulation steps = batch 16; frames are decoded in two background threads.
+- **Readout:** `x6_ec_report.py` implements Rules M, E, N, L and 0 and the readings of §3.5. Its `--collection` gives S3's gate: episodes logged, and success by family × compensation.

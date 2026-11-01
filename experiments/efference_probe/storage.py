@@ -37,6 +37,12 @@ ARRAY_COLUMNS: dict[str, tuple[str, ...]] = {
     "states_after": ("state_dim",),
     "logprobs": ("n_act",),
     "entropy_tokens": ("n_act",),
+    # X6-EC only (PREREG_X6.md section 3.2): what the controller sent before
+    # the fault, the oracle's command (the training target), the policy's own
+    # action tokens.
+    "a_sent": ("num_action_chunks", "action_dim"),
+    "a_target": ("num_action_chunks", "action_dim"),
+    "action_tokens": ("n_act",),
 }
 
 

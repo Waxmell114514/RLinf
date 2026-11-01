@@ -61,6 +61,9 @@ class EnvConfig:
     task_ids: Optional[list[int]] = None
     # Number of fixed initial states (trials) per task.
     init_states_per_task: int = 20
+    # X6-EC: the first trial used, so a training collection can start past
+    # the evaluation states (PREREG_X6.md section 1).
+    init_state_offset: int = 0
     # Parallel env slots.  One batch holds `num_envs` init states of a *single*
     # task, so swap donors are always same-task (SPEC 3.1 T3).
     num_envs: int = 20
@@ -161,6 +164,22 @@ class FaultConfig:
     # Fault specs run in turn on the same reset states of every task, e.g.
     # ["clean", "bias_x:0.15", "invert_x", "gain:0.6"].
     sweep: list[str] = field(default_factory=list)
+    # X6-EC: "sweep" as above, or "draw": the training collection, where each
+    # episode draws its own fault and compensation (faults.draw_training_fault)
+    # and every reset state is visited `passes` times.
+    mode: str = "sweep"
+    passes: int = 1
+
+
+@dataclass
+class EfferenceConfig:
+    """X6-EC: run a trained arm with its efference-copy token (ec_policy.py)."""
+
+    enabled: bool = False
+    # Directory written by train_ec.py (arm.json, projector.pt, lora/).
+    arm_dir: str = ""
+    # Input ablation: keep the history blocks at zero for the whole episode.
+    zero_history: bool = False
 
 
 @dataclass
@@ -178,6 +197,7 @@ class RunConfig:
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     fault: FaultConfig = field(default_factory=FaultConfig)
+    efference: EfferenceConfig = field(default_factory=EfferenceConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -193,6 +213,13 @@ class RunConfig:
             payload.pop("monitor", None)
         if not self.fault.enabled:
             payload.pop("fault", None)
+        elif self.fault.mode == "sweep" and self.fault.passes == 1:
+            payload["fault"].pop("mode", None)
+            payload["fault"].pop("passes", None)
+        if not self.efference.enabled:
+            payload.pop("efference", None)
+        if self.env.init_state_offset == 0:
+            payload["env"].pop("init_state_offset", None)
         if not self.capture.extra_observables:
             payload["capture"].pop("extra_observables", None)
         if self.capture.enabled:
@@ -271,15 +298,40 @@ class RunConfig:
             )
         if self.model.model_type != "openvla_oft" and self.capture.enabled:
             raise ValueError("hidden-state capture supports openvla_oft only")
+        if self.env.init_state_offset < 0:
+            raise ValueError("env.init_state_offset must be >= 0")
         if self.fault.enabled:
             from .faults import parse
 
-            if not self.fault.sweep:
-                raise ValueError("fault.enabled needs a non-empty fault.sweep")
+            if self.fault.mode not in ("sweep", "draw"):
+                raise ValueError(f"unknown fault.mode: {self.fault.mode!r}")
+            if self.fault.passes < 1:
+                raise ValueError("fault.passes must be >= 1")
+            if self.fault.mode == "sweep":
+                if not self.fault.sweep:
+                    raise ValueError("fault.enabled needs a non-empty fault.sweep")
+                if self.fault.passes != 1:
+                    raise ValueError("fault.passes applies to mode 'draw' only")
+            elif self.fault.sweep:
+                raise ValueError("fault.mode 'draw' takes no sweep")
             for spec in self.fault.sweep:
                 parse(spec)
             if self.hijack.enabled or self.monitor.enabled:
                 raise ValueError("faults run with hijack and monitor disabled")
+        if self.efference.enabled:
+            if not self.efference.arm_dir:
+                raise ValueError("efference.enabled needs efference.arm_dir")
+            if (
+                self.model.model_type != "openvla_oft"
+                or self.model.implement_version != "rlinf"
+            ):
+                raise ValueError("the efference token is for the rlinf OFT class")
+            if self.capture.enabled or self.hijack.enabled or self.monitor.enabled:
+                raise ValueError(
+                    "efference arms run with capture, hijack and monitor disabled"
+                )
+            if self.fault.enabled and self.fault.mode == "draw":
+                raise ValueError("the training collection runs the frozen policy")
 
 
 def _build(cls, data: Any):
@@ -305,6 +357,7 @@ def _build(cls, data: Any):
             "BudgetConfig": BudgetConfig,
             "MonitorConfig": MonitorConfig,
             "FaultConfig": FaultConfig,
+            "EfferenceConfig": EfferenceConfig,
         }.get(
             field_type
             if isinstance(field_type, str)

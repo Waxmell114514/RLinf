@@ -133,7 +133,8 @@ class EfferenceMixin:
             )
         # [BOS, patches, text...]: the parent inserts the patches after BOS.
         row = 1 + self._num_patch_tokens()
-        token = self.efference_projector(x.to(embeddings.dtype)).unsqueeze(1)
+        # The projector may train in float32 while the LM runs in bf16.
+        token = self.efference_projector(x).to(embeddings.dtype).unsqueeze(1)
         embeddings = torch.cat([embeddings[:, :row], token, embeddings[:, row:]], 1)
         mask = torch.cat(
             [mask[:, :row], torch.ones_like(mask[:, :1]), mask[:, row:]], 1
@@ -207,11 +208,18 @@ def efference_class(base: type) -> type:
     return _SUBCLASSES[base]
 
 
-def adopt(model: nn.Module, in_dim: int, seed: int = 0) -> nn.Module:
+def adopt(
+    model: nn.Module,
+    in_dim: int,
+    seed: int = 0,
+    projector_dtype: Optional[torch.dtype] = None,
+) -> nn.Module:
     """Give a loaded ``rlinf``-class OFT model the efference token, in place.
 
     The projector's first layer is drawn from ``seed`` (same seed, same draw
-    for arms of the same width); its last layer starts at zero.
+    for arms of the same width); its last layer starts at zero.  It takes the
+    model's dtype unless ``projector_dtype`` says otherwise (training and the
+    arms it writes use float32).
     """
     if isinstance(model, EfferenceMixin):
         raise ValueError("model already has an efference token")
@@ -221,13 +229,101 @@ def adopt(model: nn.Module, in_dim: int, seed: int = 0) -> nn.Module:
         torch.manual_seed(seed)
         projector = EfferenceProjector(in_dim, llm_dim)
     model.__class__ = efference_class(type(model))
-    model.efference_projector = projector.to(device=param.device, dtype=param.dtype)
+    model.efference_projector = projector.to(
+        device=param.device, dtype=projector_dtype or param.dtype
+    )
     model._efference_x = None
     model._efference_row = None
     model._efference_hook = model.language_model.register_forward_hook(
         model._drop_efference_logit
     )
     return model
+
+
+# -- trained arms ----------------------------------------------------------------
+
+ARM_FILE = "arm.json"
+PROJECTOR_FILE = "projector.pt"
+LORA_DIR = "lora"
+# The repo's LoRA targets for this class (rlinf/models/__init__.py), LLM group
+# only: the vision and projector names (proj, qkv, fc1, fc2, q, kv, fc3,
+# out_proj) are dropped, which also keeps LoRA off the efference projector.
+LORA_TARGETS = (
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+    "lm_head",
+)
+
+
+def lora_config(rank: int):
+    """The repo's LoRA settings (alpha = rank, no dropout, gaussian init)."""
+    from peft import LoraConfig
+
+    return LoraConfig(
+        r=rank,
+        lora_alpha=rank,
+        lora_dropout=0.0,
+        target_modules=list(LORA_TARGETS),
+        init_lora_weights="gaussian",
+    )
+
+
+def save_arm(model, peft_model, arm_dir, meta: dict[str, Any]) -> None:
+    """Write a trained arm: its metadata, projector and LoRA adapter."""
+    import json
+    from pathlib import Path
+
+    arm_dir = Path(arm_dir)
+    arm_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(model.efference_state(), arm_dir / PROJECTOR_FILE)
+    if peft_model is not None:
+        # lm_head is a LoRA target, which peft would take as a cue to save the
+        # whole (untrained) base head as well; only the adapter is needed.
+        peft_model.save_pretrained(
+            str(arm_dir / LORA_DIR), save_embedding_layers=False
+        )
+    (arm_dir / ARM_FILE).write_text(json.dumps(meta, indent=2))
+
+
+def load_arm(model: nn.Module, arm_dir) -> dict[str, Any]:
+    """Adopt ``model`` and load a trained arm into it, in place, for evaluation.
+
+    The LoRA adapter is injected into the model's own modules and left
+    unmerged, as it ran in training.  Returns the arm's metadata, which holds
+    the input statistics :class:`EfferenceHistory` needs.
+    """
+    import json
+    from pathlib import Path
+
+    arm_dir = Path(arm_dir)
+    meta = json.loads((arm_dir / ARM_FILE).read_text())
+    adopt(model, int(meta["in_dim"]), projector_dtype=torch.float32)
+    model.load_efference_state(torch.load(arm_dir / PROJECTOR_FILE, map_location="cpu"))
+    if (arm_dir / LORA_DIR).is_dir():
+        from peft import PeftModel
+
+        PeftModel.from_pretrained(model, str(arm_dir / LORA_DIR), is_trainable=False)
+    model.eval()
+    return meta
+
+
+def history_for(meta: dict[str, Any], num_envs: int) -> "EfferenceHistory":
+    """The input builder an arm was trained with."""
+    return EfferenceHistory(
+        num_envs,
+        meta["kind"],
+        meta["state_low"],
+        meta["state_high"],
+        meta.get("delta_scale"),
+        history=int(meta["history"]),
+        chunk=int(meta["chunk"]),
+        action_dim=int(meta["action_dim"]),
+    )
 
 
 # -- the input ------------------------------------------------------------------

@@ -46,27 +46,28 @@ class FakeBackbone:
 class FakeLM(nn.Module):
     """Causal and position-aware, so a token or a shift changes later rows."""
 
-    def __init__(self):
+    def __init__(self, n_positions=128):
         super().__init__()
-        self.pos = nn.Embedding(64, D)
+        self.pos = nn.Embedding(n_positions, D)
         # Rows differ by O(1) from their neighbours, as in a real LM.
-        self.pos_out = nn.Embedding(64, D)
-        self.mix = nn.Linear(D, D)
-        self.head = nn.Linear(D, VOCAB)
+        self.pos_out = nn.Embedding(n_positions, D)
+        # Named like Llama's modules, so LoRA's target list finds them.
+        self.q_proj = nn.Linear(D, D)
+        self.lm_head = nn.Linear(D, VOCAB)
 
     def forward(self, inputs_embeds, attention_mask, position_ids, **kwargs):
         x = (inputs_embeds + self.pos(position_ids)) * attention_mask[..., None]
         count = attention_mask.cumsum(1).clamp(min=1)[..., None]
         hidden = torch.tanh(
-            self.mix(x.cumsum(1) / count) + 3 * self.pos_out(position_ids)
+            self.q_proj(x.cumsum(1) / count) + 3 * self.pos_out(position_ids)
         )
-        return SimpleNamespace(logits=self.head(hidden), hidden_states=(hidden,))
+        return SimpleNamespace(logits=self.lm_head(hidden), hidden_states=(hidden,))
 
 
 class FakeOFT(nn.Module):
-    def __init__(self):
+    def __init__(self, action_dim=ACTION_DIM, chunks=CHUNKS):
         super().__init__()
-        self.action_dim, self.num_action_chunks = ACTION_DIM, CHUNKS
+        self.action_dim, self.num_action_chunks = action_dim, chunks
         self.vision_backbone = FakeBackbone()
         self.embed = nn.Embedding(VOCAB, D)
         self.vision = nn.Linear(3, N_PATCHES * D)
@@ -77,6 +78,7 @@ class FakeOFT(nn.Module):
 
     def _prepare_input_for_action_prediction(self, input_ids, attention_mask):
         b = input_ids.shape[0]
+        ACT = self.action_dim * self.num_action_chunks  # noqa: N806
         ids = torch.cat(
             [
                 input_ids,
@@ -93,9 +95,10 @@ class FakeOFT(nn.Module):
     def _build_embedding(self, input_ids, attention_mask, pixel_values):
         input_ids, attention_mask = input_ids[:, :-1], attention_mask[:, :-1]
         actions_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-        actions_mask[:, -ACT:] = True
+        actions_mask[:, -self.action_dim * self.num_action_chunks :] = True
         embeddings = self.embed(input_ids) * (~actions_mask[..., None])
-        patches = self.vision(pixel_values).reshape(len(input_ids), N_PATCHES, D)
+        pixels = pixel_values.reshape(len(input_ids), -1)
+        patches = self.vision(pixels).reshape(len(input_ids), N_PATCHES, D)
         # prismatic's _build_multimodal_attention: patches go after <BOS>.
         mm = torch.cat([embeddings[:, :1], patches, embeddings[:, 1:]], 1)
         mask = torch.cat(
@@ -164,7 +167,8 @@ class FakeOFT(nn.Module):
             forward_inputs["pixel_values"],
         )
         logits = outputs.logits[:, -self.action_dim * self.num_action_chunks - 1 : -1]
-        tokens = forward_inputs["action_tokens"]
+        # The real class flattens [B, chunks, dim] in preprocess_for_train.
+        tokens = forward_inputs["action_tokens"].reshape(len(logits), -1)
         return {
             "logprobs": torch.log_softmax(logits, -1).gather(-1, tokens[..., None])[
                 ..., 0

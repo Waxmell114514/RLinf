@@ -100,7 +100,8 @@ def run(cfg) -> dict[str, Any]:
     out["c_zero_init_token_agreement_with_plain"] = float(
         np.mean(zero["tokens"] == plain["tokens"])
     )
-    stats = model.norm_stats.get(cfg.model.unnorm_key, {}).get("proprio")
+    unnorm_key = getattr(model, "unnorm_key", cfg.model.unnorm_key)
+    stats = model.norm_stats.get(unnorm_key, {}).get("proprio")
     out["d_proprio_stats"] = (
         {k: list(map(float, stats[k])) for k in ("q01", "q99") if k in stats}
         if stats

@@ -47,6 +47,9 @@ from typing import Any, Optional
 import modal
 
 GPU = os.environ.get("E4_GPU", "L40S")
+# X6-EC fine-tunes: an H100 does the 7B LoRA step ~5x faster than an L40S for
+# 2x the price (PREREG_X6.md section 5).
+TRAIN_GPU = os.environ.get("X6_TRAIN_GPU", "H100")
 REPO = "/root/RLinf"
 
 
@@ -219,6 +222,9 @@ GPU_MEMORY = (49152, 98304)
 # restarted from scratch, so the remaining ones run off Modal (LOCAL_RUN.md).
 PROBE_CPU = (8.0, 24.0)
 PROBE_MEMORY = (32768, 49152)
+# Training holds one bf16 checkpoint on the host while loading, plus frames.
+TRAIN_CPU = (4.0, 8.0)
+TRAIN_MEMORY = (32768, 49152)
 ORCHESTRATOR_CPU, ORCHESTRATOR_MEMORY = 0.25, 1024
 
 # Modal list prices (USD), October 2026.  Modal bills the greater of request
@@ -238,6 +244,7 @@ def usd_per_hour(cores: float, memory_mib: float, gpu: Optional[str] = None) -> 
 
 USD_PER_H = {
     "collect": usd_per_hour(GPU_CPU[1], GPU_MEMORY[1], GPU),
+    "train": usd_per_hour(TRAIN_CPU[1], TRAIN_MEMORY[1], TRAIN_GPU),
     "linear": usd_per_hour(PROBE_CPU[1], PROBE_MEMORY[1]),
     "mlp": usd_per_hour(PROBE_CPU[1], PROBE_MEMORY[1]),
     "orchestrate": usd_per_hour(ORCHESTRATOR_CPU, ORCHESTRATOR_MEMORY),
@@ -671,9 +678,7 @@ def _volume_journal_add(session: str, event: dict[str, Any]) -> None:
         batch.put_file(io.BytesIO(json.dumps(event).encode()), remote)
 
 
-@app.function(gpu=GPU, cpu=GPU_CPU, memory=GPU_MEMORY, timeout=3600, **COMMON)
-def gpu_script(script: str, args: list[str], mujoco_gl: str = "egl") -> int:
-    """One repo script on a GPU box against the Volume (X6 stage 0)."""
+def _run_repo_script(script: str, args: list[str], mujoco_gl: str) -> int:
     volume.reload()
     env = {
         **os.environ,
@@ -692,6 +697,21 @@ def gpu_script(script: str, args: list[str], mujoco_gl: str = "egl") -> int:
     return rc
 
 
+@app.function(gpu=GPU, cpu=GPU_CPU, memory=GPU_MEMORY, timeout=3600, **COMMON)
+def gpu_script(script: str, args: list[str], mujoco_gl: str = "egl") -> int:
+    """One repo script on a GPU box against the Volume (X6 stage 0)."""
+    return _run_repo_script(script, args, mujoco_gl)
+
+
+@app.function(gpu=TRAIN_GPU, cpu=TRAIN_CPU, memory=TRAIN_MEMORY, timeout=3600, **COMMON)
+def gpu_train(script: str, args: list[str], mujoco_gl: str = "egl") -> int:
+    """One repo script on the training card (X6-EC fine-tunes)."""
+    return _run_repo_script(script, args, mujoco_gl)
+
+
+SCRIPT_KINDS = {"collect": "gpu_script", "train": "gpu_train"}
+
+
 @app.local_entrypoint()
 def script(
     path: str,
@@ -699,15 +719,19 @@ def script(
     budget_usd: float = 0.0,
     max_s: int = 600,
     mujoco_gl: str = "egl",
+    kind: str = "collect",
 ):
     """A repo script on a GPU box, under the X waves' shared spend journal.
 
     ``max_s`` is both the function's hard timeout and the reservation the gate
     prices (plus start-up), so the call cannot cost more than it reserved.
+    ``--kind train`` runs it on the training card at that card's rate.
     """
     if budget_usd <= 0:
         raise SystemExit("script needs --budget-usd (the x_waves journal cap)")
-    rate = USD_PER_H["collect"]
+    if kind not in SCRIPT_KINDS:
+        raise SystemExit(f"--kind must be one of {sorted(SCRIPT_KINDS)}")
+    rate = USD_PER_H[kind]
     fits, committed, cost = stage_gate(
         _volume_journal(X_SESSION), time.time(), budget_usd, rate, max_s
     )
@@ -725,14 +749,15 @@ def script(
             "t": time.time(),
             "usd_per_h": rate,
             "reserve_s": max_s + STARTUP_S,
-            "kind": "collect",
+            "kind": kind,
             "wave": "x6",
             "cmd": f"{path} {args}",
         },
     )
+    function = gpu_train if kind == "train" else gpu_script
     rc = None
     try:
-        rc = gpu_script.with_options(timeout=max_s).remote(
+        rc = function.with_options(timeout=max_s).remote(
             path, shlex.split(args), mujoco_gl
         )
     finally:
@@ -740,6 +765,13 @@ def script(
             X_SESSION, {"event": "end", "key": key, "t": time.time(), "rc": rc}
         )
     print(f"[x6] {path} -> rc={rc}")
+
+
+@app.local_entrypoint()
+def journal():
+    """The X waves' spend journal, read from the client (starts no container)."""
+    spent, committed = journal_usd(_volume_journal(X_SESSION), time.time())
+    print(f"[{X_SESSION}] spent ${spent:.3f}, committed ${committed:.3f}")
 
 
 @app.local_entrypoint()

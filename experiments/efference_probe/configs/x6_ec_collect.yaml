@@ -1,0 +1,44 @@
+# X6-EC training collection (PREREG_X6.md section 3.2).  Frozen GRPO-130 on
+# trials 30-49 of every goal task (never an evaluation state), six passes;
+# each episode draws its own fault and whether the oracle compensates it
+# (faults.draw_training_fault).  Frames are kept for the trainer.
+run_id: x6_ec_collect
+out_root: experiments/efference_probe/data
+notes: "X6-EC training collection"
+
+model:
+  model_path: /path/to/RLinf-OpenVLAOFT-LIBERO-130/
+  unnorm_key: libero_130_no_noops_trajall
+  max_prompt_length: 128
+  do_sample: true
+  temperature: 1.6
+
+env:
+  task_suite_name: libero_goal
+  task_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  init_state_offset: 30
+  init_states_per_task: 20
+  num_envs: 10
+  max_calls_per_episode: 40
+  seed: 101
+
+hijack:
+  enabled: false
+
+capture:
+  enabled: false
+  verify_indexing: false
+
+frames:
+  mode: all
+  jpeg_quality: 95
+  save_wrist: false
+
+fault:
+  enabled: true
+  mode: draw
+  passes: 6
+
+budget:
+  max_gpu_hours: 2.0
+  max_disk_gb: 30.0
