@@ -2414,3 +2414,15 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **(c) Zero-init token:** greedy-token agreement with (a) 0.946, reported only. A zero token still takes attention and shifts positions.
   - **(d) Proprio bounds:** the checkpoint carries 8-d proprio q01/q99 for its unnorm key, so `EfferenceHistory` normalises the state by the checkpoint's bounds.
   - **Spend:** journal $10.694 → $10.759. The S1 cap is the same `--budget-usd 40.19` (journal at S0 + $29.5).
+
+- `2026-11-01 10:05` **X6 S1 RESULT: Part A, OFT (arm F), `/vol/data/x6/x6_fault_oft`; gate passed.** GRPO-130, 6 settings × 300 episodes (10 goal tasks × 30 reset states), 54,645 calls. Read with `x6_fault_report.py` and `x6_ec_report.py --part-a`.
+  - **Success [95% CI], restricted mean steps to success (RMST):**
+    - clean 0.963 [0.940, 0.983], RMST 121;
+    - bias_x:0.15 0.410 [0.357, 0.467], 246;
+    - bias_x:0.3 0.013 [0.003, 0.027], 319;
+    - invert_x 0.000 [0.000, 0.000], 320;
+    - gain:0.6 0.750 [0.700, 0.800], 196;
+    - gain:0.4 0.470 [0.417, 0.527], 256.
+  - **S1 gate (clean ≥ 0.80):** passed (0.963).
+  - **Rule M (OFT):** fails as predicted. bias_x:0.3 drop 0.950 [0.923, 0.970]; invert_x drop 0.963 [0.940, 0.983]; both cells succeed at ≤ 0.5 · clean, n_states = 300.
+  - **Spend:** journal $10.759 → $14.349 (S1 $3.59). Cap unchanged at `--budget-usd 40.19`; $25.84 left. Next: S3.
