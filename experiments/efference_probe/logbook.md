@@ -2437,3 +2437,15 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - episodes logged: 1.000 of 1,200 (≥ 0.95), passed;
     - compensated success at clean level: 0.981 and 0.986 against clean 0.981, reported.
   - **Spend:** journal $14.349 → $16.923 (S3 $2.57); $23.27 left under `--budget-usd 40.19`. Next: S3b.
+
+- `2026-11-01 11:05` **X6 S3b RESULT: 20-step training smoke, arm A, H100 (`/vol/data/x6/arms/smoke`); gate passed.** `train_ec.py --max-steps 20` on the S3 collection (22,613 samples, 136-d input).
+  - **Input check:** `model_inputs` equals `predict_action_batch`'s `input_ids`, `attention_mask` and `pixel_values` exactly (the trainer stops otherwise).
+  - **Token round trip:** max error 3.0e-8 (tolerance 1e-3).
+  - **Rate:** 0.957 s/step (steps 1–19; step 0 at 5.4 s includes warm-up). Peak GPU memory 47.7 GiB.
+  - **Loss:** NLL finite, first window 4.396, last window 4.354 (LR still in warm-up).
+  - **Full plan:** 2 × ⌊22,613 / 16⌋ = 2,826 steps × 0.957 s = 45.1 min, within the 50-min gate. Passed.
+  - **Spend:** journal $16.923 → $17.058 (S3b $0.14); $23.13 left.
+  - **S4 launch plan:**
+    - A, B, C and D run concurrently. Each reserves $5.10 (3,600 s + 300 s start-up at $4.71/h), $37.47 committed in all, under 40.19.
+    - Each run adds `--max-minutes 55`, an operational guard. If training ever reaches 55 min, the arm saves what it has (`stopped_early: true`, reported) instead of losing everything to the 3,600 s container kill.
+    - Expected ≈ $3.7 per arm `[estimate]`.
