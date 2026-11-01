@@ -2522,3 +2522,34 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - **D3:** A(T1) − F on bias_x:0.3.
     - **D4:** mean sampled-token logprob at call 0, A(T1) against F's −1.845. The account predicts about the same value.
   - **If D1 fails,** the flattening account is wrong or incomplete, and that is reported.
+
+- `2026-11-01 13:45` **X6 AMENDMENT 2 RESULT: the T = 1.0 re-evaluation diagnostic (exploratory, post hoc).** `data/x6/x6_amendment2_diagnostic.json`.
+  - **Runs** (both rc 0):
+    - `/vol/data/x6/x6_ec_diag_A_T1`: arm A_s0, clean and bias_x:0.3, 600 episodes, 14,941 calls;
+    - `/vol/data/x6/x6_ec_diag_B_T1`: arm B_s0, bias_x:0.3, 300 episodes, 11,766 calls.
+    - Both `run_config.yaml` files confirm temperature 1.0 and the intended `arm_dir`.
+  - **Success:** A(T1) clean 0.867, bias_x:0.3 0.327; B(T1) bias_x:0.3 0.043. For reference, F (T 1.6): clean 0.963, bias 0.013.
+  - **Fixed readout** (paired bootstrap, B = 2,000, seed 0):
+    - **D1:** A(T1) − F on clean = −0.097 [−0.137, −0.057]. The prediction (≥ −0.05) **fails**: T 1.0 recovers most of the clean loss (0.547 → 0.867), but not all of it.
+    - **D2:** A(T1) − B(T1) on bias = **+0.283 [+0.227, +0.337]**.
+    - **D3:** A(T1) − F on bias = +0.313 [+0.257, +0.370]. That is 0.33 of G_f (0.950); Rule E's form asks for 0.5.
+    - **D4, call 0 on bias** (F's call-0 values are as in the 12:55 entry):
+      - sampled-token logprob per token: F −1.848; A(T1) −2.175; B(T1) −2.188;
+      - within-chunk action jitter: F 0.036; A(T1) 0.098; B(T1) 0.098.
+      - Both arms stay flatter than the base at T 1.0, and equally so.
+  - **Descriptive:** B(T1) − F on bias +0.030 [+0.007, +0.057]. B(T1) − B(T1.6) on bias +0.033 [+0.007, +0.060].
+  - **Reading:**
+    - **Flattening:** the fine-tune flattened the sampling distribution, but T = 1.0 compensates only in part (D4). The flattening account explains most of Rule 0's failure, not all of it (D1).
+    - **The copy:**
+      - At the same temperature, with the same training data, schedule and batches, the arm with the efference copy succeeds on persistent bias 0.283 more often than the arm with the state alone.
+      - The state-only fine-tune gains almost nothing over the frozen base (+0.03).
+      - So under bias, the gain comes from the copy channel, not from fine-tuning under faults.
+    - **Limits:**
+      - post hoc, one seed, one family (bias; inversion not run at T 1.0);
+      - no shuffled-copy control at T 1.0 (C's training NLL matched B's, a descriptive hint only);
+      - a clean cost of about 0.10 remains.
+  - **Spend:** journal $36.677 → $39.020 (A(T1) $1.49, B(T1) $0.86); $1.17 left under 40.19. **The approved X6 sequence ends here.**
+  - **Next, with new credit** `[estimate]`:
+    - fix the recipe: NLL at the sampling temperature, or greedy targets plus a KL-to-base term;
+    - retrain A–D (≈ $15) and re-run S5 at the evaluation temperature, with C and the inversion cell (≈ $7);
+    - seed 1 for A and B (≈ $10).
