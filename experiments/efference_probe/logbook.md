@@ -2407,3 +2407,10 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - `2026-11-01 09:40` **X6 APPROVAL (user: “取消“禁止训练”并按照这个顺序来”).** The user lifts “no training” for X6-EC.
   - **Approved:** the Amendment 1 order on Modal, under the $29.5 new-spend cap: S0 → S1 → S3 → S3b → S4 (A, B, C, D) → S5 → π0 Rule-M cells → E → seed 1.
   - **Gates:** every pre-registered gate stops the sequence. In particular, S3b stops it if one full fine-tune would exceed 50 min. Each call must fit the journal cap before it starts.
+
+- `2026-11-01 09:55` **X6 S0 RESULT: wrapper smoke on the real class (`/vol/data/x6/ec_smoke.json`), passed.** GRPO-130 (`/vol/ckpts/grpo`), task 2, 4 reset states, greedy decoding.
+  - **(a) Plain rlinf class:** `predict_action_batch` against the `default_forward` replay, max |Δ logprob| 0.0 (tolerance 0.100).
+  - **(b) Adopted class, random projector output (sd 0.02):** max |Δ| 0.0 (tolerance 0.105). The token sits at row 257 (BOS + 256 patches). Actions are finite in both, shape [4, 8, 7].
+  - **(c) Zero-init token:** greedy-token agreement with (a) 0.946, reported only. A zero token still takes attention and shifts positions.
+  - **(d) Proprio bounds:** the checkpoint carries 8-d proprio q01/q99 for its unnorm key, so `EfferenceHistory` normalises the state by the checkpoint's bounds.
+  - **Spend:** journal $10.694 → $10.759. The S1 cap is the same `--budget-usd 40.19` (journal at S0 + $29.5).
