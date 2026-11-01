@@ -339,6 +339,11 @@ def train(args, load_model=load_checkpoint) -> dict[str, Any]:
         "planned_steps": len(plan),
         "stopped_early": stopped_early,
         "train_s": time.time() - started,
+        "peak_gpu_gib": (
+            torch.cuda.max_memory_allocated() / 2**30
+            if torch.cuda.is_available()
+            else None
+        ),
         "gate": gate_summary(log),
     }
     meta = {
