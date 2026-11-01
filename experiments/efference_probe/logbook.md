@@ -2403,3 +2403,7 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - new files: `ec_dataset.py`, `train_ec.py`, `x6_ec_report.py`, `configs/x6_ec_{collect,eval}.yaml`, `x6_modal_runbook.md`.
   - **Tests:** an offline end-to-end test (`tests/test_x6_ec.py`) on CPU fakes with real peft. It runs collection → samples → LoRA training of arms A, C, D → save → harness evaluation, and checks that the online inputs equal the offline replay.
   - **Bug the test found:** peft's `save_pretrained` saves the whole base `lm_head` whenever `lm_head` is a LoRA target; the arm now saves the adapter only.
+
+- `2026-11-01 09:40` **X6 APPROVAL (user: “取消“禁止训练”并按照这个顺序来”).** The user lifts “no training” for X6-EC.
+  - **Approved:** the Amendment 1 order on Modal, under the $29.5 new-spend cap: S0 → S1 → S3 → S3b → S4 (A, B, C, D) → S5 → π0 Rule-M cells → E → seed 1.
+  - **Gates:** every pre-registered gate stops the sequence. In particular, S3b stops it if one full fine-tune would exceed 50 min. Each call must fit the journal cap before it starts.
