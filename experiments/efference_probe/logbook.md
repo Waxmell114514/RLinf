@@ -2449,3 +2449,23 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - A, B, C and D run concurrently. Each reserves $5.10 (3,600 s + 300 s start-up at $4.71/h), $37.47 committed in all, under 40.19.
     - Each run adds `--max-minutes 55`, an operational guard. If training ever reaches 55 min, the arm saves what it has (`stopped_early: true`, reported) instead of losing everything to the 3,600 s container kill.
     - Expected ≈ $3.7 per arm `[estimate]`.
+
+- `2026-11-01 12:10` **X6 S4 RESULT: fine-tunes A, B, C, D, seed 0 (`/vol/data/x6/arms/{A,B,C,D}_s0`).** H100, run concurrently, 22,613 samples, the same batch plan for every arm (seed 0). Every arm passes the S4 loss gate (finite; last window below first).
+
+  | arm | steps | train s | s/step | peak GiB | NLL first → last window (100 steps) |
+  |---|---|---|---|---|---|
+  | A (copy) | 2,826 / 2,826 | 2,656 | 0.939 | 47.7 | 3.752 → 3.172 |
+  | B (state) | 2,826 / 2,826 | 2,593 | 0.917 | 47.7 | 3.747 → 3.253 |
+  | C (copy, shuffled) | 2,826 / 2,826 | 2,892 | 1.020 | 47.7 | 3.754 → 3.254 |
+  | D (state + FM) | 2,736 / 2,826 | 3,301 | 1.205 | 48.6 | 3.753 → 3.223 |
+
+  - **D stopped early.** The `--max-minutes 55` guard stopped it at step 2,736 of 2,826 (96.8%), because the forward-model head makes each step slower (1.205 s/step against 0.917 s for B).
+    - The cosine LR was already at 2.6e-7 of 5e-5 there, so the 90 missing steps carry almost no update.
+    - D's last NLL window (steps 2,636–2,736) covers different batches from the other arms', so its NLL is not compared with theirs.
+    - D's FM MSE at step 2,700: 0.085, in Δs units divided by the clean sd, against 2.29 at step 0.
+  - **Training-loss reading (descriptive, not a pre-registered rule).** On identical batches (same plan), A's last-window NLL is 0.081 below B's. C's is within 0.0002 of B's. So the episode-aligned copy lowers the loss on the compensated targets, and shuffling the copy across episodes removes the whole gain. Whether this carries to closed-loop success is S5's question.
+  - **Spend:** journal $17.058 → $32.404 (S4 $15.35, $3.84 per arm); $7.79 left under 40.19.
+  - **S5 plan under the remaining cap:**
+    - order A, B, C, D, by the rules they carry: A for Rules E, N, 0; B for E and L; C for N; D for L;
+    - each run starts only if committed + reservation ≤ 40.19 (A reserves $3.01, B/C/D $2.46);
+    - expected ≈ $1.7–2.0 per run `[estimate]`, so D may not fit, in which case it is reported as a shortfall.
