@@ -2469,3 +2469,45 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - order A, B, C, D, by the rules they carry: A for Rules E, N, 0; B for E and L; C for N; D for L;
     - each run starts only if committed + reservation ≤ 40.19 (A reserves $3.01, B/C/D $2.46);
     - expected ≈ $1.7–2.0 per run `[estimate]`, so D may not fit, in which case it is reported as a shortfall.
+
+- `2026-11-01 12:55` **X6 S5 RESULT (partial): evaluations of A and B, seed 0. Rule 0 fails; Part B stops.** `x6_ec_eval.yaml` (trials 0–29 of the 10 goal tasks, env seed 3, T 1.6), paired with S1's F.
+  - **Runs:**
+    - `/vol/data/x6/x6_ec_eval_A`: clean, bias_x:0.3 and invert_x; 900 episodes, 30,689 calls;
+    - `/vol/data/x6/x6_ec_eval_B`: the two fault cells; 600 episodes, 23,897 calls.
+  - **Success [95% CI]:**
+    - F: clean 0.963; bias_x:0.3 0.013; invert_x 0.000 (S1);
+    - A: clean 0.547 [0.490, 0.603]; bias_x:0.3 0.133 [0.097, 0.170]; invert_x 0.013 [0.003, 0.027];
+    - B: bias_x:0.3 0.010 [0.000, 0.023]; invert_x 0.003 [0.000, 0.010].
+  - **Rules** (paired bootstrap over (task, state), B = 2,000, seed 0; the report's own `paired_difference`; `data/x6/x6_partB_seed0_partial.json`):
+    - **Rule 0:** A − F on clean = −0.417 [−0.473, −0.360]. **Fails.**
+    - **Rule E:**
+      - bias: A − F = +0.120 [+0.080, +0.163], against 0.5 · G_f = 0.475. Fails.
+      - inversion: A − F = +0.013 [+0.003, +0.027], against 0.482. Fails.
+    - **Rule N, A − B half:**
+      - bias: +0.123 [+0.087, +0.160], below 0.15. Fails, so N fails whatever C gives.
+      - inversion: +0.010 [−0.003, +0.027]. Fails.
+    - **B − F** (descriptive): bias −0.003 [−0.020, +0.013]; inversion +0.003 [0.000, +0.010].
+    - **Rule L:** not scored (D not evaluated).
+  - **Reading (§3.5, ¬0):** “the fine-tune damaged the policy. Reported, and no further arms are trained.” Arm E and seed 1 are cancelled.
+  - **C and D not evaluated:**
+    - C was launched twice and stopped twice.
+      - 12:31: a hedge, while A's projected finish sat within about 30 s of its 3,000 s hard timeout. Only with C stopped did the cap still hold an A rerun. A finished at 12:41.
+      - 12:45, after about 3 min: once ¬0 was read. C can no longer change any rule, and the money left buys one diagnostic.
+    - D did not fit beside C under the cap, and after ¬0 it would compare two damaged arms at the floor.
+  - **Correction to the 12:10 entry's arm list.** The rules each arm serves are: A for E, N, 0; B for N and L; C for N; D for L.
+  - **Diagnosis (exploratory, not pre-registered; `[inference]` where marked).** At call 0 the observation is identical across runs (same reset state, image and env seed; A's history is zero). There:
+    - **sampled-token logprob:** F −1.845 per token; A −2.950; B −2.932;
+    - **within-chunk action jitter** (mean |Δa|, dims 0–5): F 0.036; A 0.132; B 0.132.
+    - **So** both fine-tunes sample from a much flatter distribution than the base. They share the cause: it is the fine-tune, not the copy.
+    - **Likely cause `[inference]`:**
+      - **The setup:** about 90% of the target tokens are the policy's own T = 1.6 samples, but the NLL is taken at T = 1.0, as pre-registered (§3.3 / Amendment 1).
+      - **What fitting does:** fitting softmax(z′) to samples of softmax(z / 1.6) drives z′ toward z / 1.6. Sampling the fine-tune at T = 1.6 then draws from about softmax(z / 2.56).
+      - **The training NLL agrees:** its fall from 3.75 to 3.17 is what that flattening alone would give.
+    - **A − B on bias, +0.123 with CI_low > 0, under the same damage:** the episode-aligned copy is read, so the channel carries information (descriptive).
+  - **Spend:** journal $32.404 → $36.677 (by wall-clock at $3.28/h `[estimate of the split]`: A ≈ $2.4, B ≈ $1.7, the two stopped C runs ≈ $0.15); $3.51 left under 40.19.
+  - **Proposed, not run: Amendment 2, which needs the user's approval.**
+    - **Diagnostic (≈ $2.5 `[estimate]`, fits the $3.51 left):**
+      - re-evaluate A at T = 1.0 on clean and bias_x:0.3 (600 episodes, `--max-s 2400`), then B at T = 1.0 on bias_x:0.3 (300 episodes, `--max-s 1500`);
+      - **prediction if the flattening account holds:** A's clean success returns to about F's (≥ 0.90). A − B on bias then measures the copy at the base's sharpness;
+      - it is post hoc, and is reported as exploratory whatever it shows.
+    - **Proper fix (needs new credit, ≈ $22 `[estimate]`):** take the NLL at the sampling temperature (`default_forward(temperature=1.6)`), so that fitting self-samples leaves the clean policy unchanged. Then retrain A–D and repeat S5.
