@@ -2602,3 +2602,30 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Code:** `ec_dataset.build_samples(own_target_calls=...)` and the trainer flag, recorded in `arm.json`. New test `test_masked_targets_keep_the_policy_tokens_before_the_history_has_content` (call-0 targets equal the policy's tokens; later calls and the inputs unchanged). `tests/test_x6_ec.py` plus `tests/test_ec_policy.py`: 37 passed.
   - **Order:** S4″-A → S5″-A (Rule 0 gate) → S4″-B, C → S5″-B, C. D is not run.
   - **Cap:** `--budget-usd 29.5` on the old workspace; $6.418 committed. Expected ≈ $17.4 `[estimate]`.
+
+- `2026-11-02 13:50` **X6 S4″-A and S5″-A RESULT (Amendment 4, old workspace). Rule 0 fails narrowly; Amendment 4 stops at its gate.**
+  - **S4″-A** (`/vol/data/x6/arms/A_s0_m1`; loss T 1.6, call-0 targets the policy's own): 2,826 / 2,826 steps, 2,634 s; NLL first window 3.551 → last 3.156. Loss gate passed.
+  - **S5″-A** (`/vol/data/x6/x6_ec_eval4_A`; T 1.6; 900 episodes, 26,722 calls; `run_config.yaml` confirms the arm dir and T): success clean 0.863, bias_x:0.3 0.327, invert_x 0.020.
+  - **Rules** (paired bootstrap, B = 2,000, seed 0):
+    - **Rule 0:** A″ − F on clean = −0.100 [−0.140, −0.060]. **Fails:** the point is below −0.05 and CI_low below −0.10.
+    - **Rule E:**
+      - bias: +0.313 [+0.260, +0.367], below 0.475. Fails.
+      - inversion: +0.020 [+0.007, +0.037], below 0.482. Fails.
+  - **Reading (§3.5, ¬0):** no further arms are trained. Steps 3–4 (B″, C″) are cancelled.
+  - **Pre-specified mechanism check (descriptive):** on clean episodes at call 0, A″'s x / y / z jitter is 0.088 / 0.065 / 0.032 against F's 0.087 / 0.068 / 0.030. It is within the predicted 1.25×, so the mask removes the call-0 spread.
+    - **What is left:** calls 1–3, x at 1.1–1.3× F and y at 1.35–1.67× F.
+  - **Descriptive across the three recipes** (A at T 1.6: Amendment 1 → 3 → 4):
+    - **clean:** 0.547 → 0.823 → 0.863 (F 0.963);
+    - **bias_x:0.3:** 0.133 → 0.327 → 0.327;
+    - **invert_x:** 0.013 → 0.030 → 0.020.
+    - **So Rule E's failure on bias does not depend on the recipe** (≈ 1/3 of G_f), and inversion is never learned.
+  - **Clean success by task (descriptive, post hoc), F against A″:**
+    - task 0, “open the middle drawer of the cabinet”: 0.83 → 0.53;
+    - task 9, “put the wine bottle on the rack”: 0.90 → 0.53;
+    - the other eight tasks: within 0.07 of F, with a mean of 0.948 against 0.988.
+  - **Where the pre-registered claim stands:** the headline E ∧ N ∧ 0 cannot be reached by these recipes, since E fails at +0.31 in all three. Rule N, the copy rather than the fine-tune, is the part not yet tested under any recipe. It decides between “N ∧ ¬E: the copy is read, but not enough” and “¬N: a fine-tune effect”. Its only evidence is Amendment 2's exploratory A − B = +0.283 at T 1.0.
+  - **Spend:** old-workspace journal $6.418 → $12.270 (Amendment 4 so far $5.85); $17.23 left under 29.5.
+  - **Proposed, not run: Amendment 5, which needs the user's approval because it deviates from the ¬0 stop.**
+    - **Runs:** B″ and C″ under Amendment 4's recipe, evaluated on the two fault cells. B″ also runs clean, to tell a fine-tune cost from a copy cost on nominal success.
+    - **Cost:** ≈ $12 `[estimate]`.
+    - **Scored:** Rule N, and descriptively B″ − F on clean. It is reported as a declared deviation.
