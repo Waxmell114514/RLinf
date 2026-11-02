@@ -2571,3 +2571,28 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Step-0 NLL at T 1.6:** 3.361 (first window, 5 steps: 3.787). The collection's logged NLL of the frozen policy's own tokens at T 1.6 averages 3.090/token. The gap is consistent with the re-tokenised, compensated dims and the inserted zero token (descriptive).
   - **Exit code:** the trainer exited 1, because its summary applies S4's loss gate (last window 3.829 vs first 3.787) to 20 warm-up steps (LR ≤ 1.05e-5). That gate is S4's, not S3b's; S3b's gate is the checks and the rate (Amendment 1).
   - **Spend:** old-workspace journal $0.000 → $0.137. Next: S4′-A.
+
+- `2026-11-02 11:20` **X6 S4′-A and S5′-A RESULT (Amendment 3, old workspace). Rule 0 fails again; Amendment 3 stops.**
+  - **S4′-A** (`/vol/data/x6/arms/A_s0_t16`, loss T 1.6): 2,826 / 2,826 steps, 2,869 s (1.015 s/step); NLL first window 3.585 → last 3.181. Loss gate passed.
+  - **S5′-A** (`/vol/data/x6/x6_ec_eval3_A`; T 1.6, the pre-registered evaluation; 900 episodes, 26,977 calls; `run_config.yaml` confirms the arm dir and T): success clean 0.823, bias_x:0.3 0.327, invert_x 0.030.
+  - **Rules** (paired bootstrap, B = 2,000, seed 0):
+    - **Rule 0:** A′ − F on clean = −0.140 [−0.187, −0.093]. **Fails.**
+    - **Rule E:**
+      - bias: A′ − F = +0.313 [+0.260, +0.367], below 0.475. Fails.
+      - inversion: +0.030 [+0.013, +0.050], below 0.482. Fails.
+  - **Reading (§3.5, ¬0):** no further arms are trained. Steps 4–6 of Amendment 3 (B′, C′, D′, and seed 1) are cancelled.
+  - **Diagnosis (exploratory; free, from the logged commands):** per-dim within-chunk jitter of the clean cell. Pairs are x / y / z, against F.
+    - **The generic flattening is fixed.** At call 0, dims 2–5 match F exactly: 0.031 / 0.007 / 0.014 / 0.010 against 0.030 / 0.007 / 0.014 / 0.010. Under Amendment 1's recipe they were 1.5–1.7× F.
+    - **What is left sits on the fault dims x and y:**
+      - call 0: 0.323 / 0.210 / 0.031 against F's 0.087 / 0.068 / 0.030;
+      - call 1: 0.122 / 0.104 / 0.050 against 0.067 / 0.045 / 0.055;
+      - calls 2–3: x and y at 1.2–1.9× F, z at F.
+    - **Reading `[inference]`:**
+      - **The source:** on every faulted call (70% of episodes), the fault dims' targets are the oracle's command. At call 0 the history is zero-padded, so the input cannot tell a faulted episode from a clean one. The fine-tune therefore learns the mixture of the policy's command and the compensated ones, which is a wide x/y distribution.
+      - **After call 0:** the copy carries the first Δs from call 1 on, and the spread falls. It stays above F where a small bias is hard to see.
+      - **Why Rule 0 fails:** this is the leading candidate for the remaining clean loss.
+    - **Amendment 3 versus the Amendment 2 diagnostic:** A′ at T 1.6 behaves like Amendment 1's A at T 1.0, on success (clean 0.823 vs 0.867; bias 0.327 vs 0.327) and on jitter.
+  - **Spend:** old-workspace journal $0.137 → $6.418 (A′ fine-tune ≈ $3.8, evaluation ≈ $2.5 `[estimate of the split]`); $23.08 left under 29.5.
+  - **Proposed, not run: Amendment 4, which needs the user's approval.**
+    - **Identifiability-masked targets:** on call 0, where the copy holds no information yet, the target is the policy's own tokens. The oracle's command is the target only from call 1 on.
+    - Then retrain A, evaluate it on the three cells under the same Rule 0 gate, then B and C (Rule N). D (Rule L) runs only if the cap still fits.
