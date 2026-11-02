@@ -314,6 +314,23 @@ def test_the_collection_logs_what_was_sent_executed_and_targeted(tmp_path):
     assert sum(g["n"] for g in summary["by_group"].values()) == 3 * N_ENVS
 
 
+def test_masked_targets_keep_the_policy_tokens_before_the_history_has_content(tmp_path):
+    """Amendment 4: call 0 trains on the policy's own tokens; later calls do not change."""
+    calls = ec_dataset.load_calls([_collect_run(tmp_path)])
+    stats = ec_dataset.fit_input_stats(calls)
+    plain = ec_dataset.build_samples(calls, "copy", stats, TOKENIZER)
+    masked = ec_dataset.build_samples(
+        calls, "copy", stats, TOKENIZER, own_target_calls=1
+    )
+    first = calls["call_idx"].to_numpy() == 0
+    own = np.stack([np.asarray(t).reshape(CHUNKS, DIM) for t in calls["action_tokens"]])
+    np.testing.assert_array_equal(masked.targets[first], own[first])
+    np.testing.assert_array_equal(masked.targets[~first], plain.targets[~first])
+    faulted = first & (calls["fault"] != "clean").to_numpy()
+    assert faulted.any() and (plain.targets[faulted] != own[faulted]).any()
+    np.testing.assert_array_equal(masked.efference, plain.efference)
+
+
 # -- training and evaluation -----------------------------------------------------
 
 

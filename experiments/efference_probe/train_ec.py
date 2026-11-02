@@ -173,7 +173,9 @@ def train(args, load_model=load_checkpoint) -> dict[str, Any]:
         else None
     )
     stats = ec_dataset.fit_input_stats(calls, bounds)
-    samples = ec_dataset.build_samples(calls, spec.kind, stats, tokenizer)
+    samples = ec_dataset.build_samples(
+        calls, spec.kind, stats, tokenizer, own_target_calls=args.own_target_calls
+    )
     in_dim = samples.efference.shape[1]
 
     ec_policy.adopt(model, in_dim, seed=args.seed, projector_dtype=torch.float32)
@@ -372,6 +374,7 @@ def train(args, load_model=load_checkpoint) -> dict[str, Any]:
             "warmup": args.warmup,
             "lambda_fm": args.lambda_fm if spec.forward_model else None,
             "loss_temperature": args.loss_temperature,
+            "own_target_calls": args.own_target_calls,
         },
         "summary": summary,
     }
@@ -403,6 +406,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "temperature of the NLL's softmax. 1.0 is Amendment 1's recipe; "
             "Amendment 3 sets the collection's sampling temperature (1.6), so "
             "that fitting the policy's own samples leaves it unchanged"
+        ),
+    )
+    parser.add_argument(
+        "--own-target-calls",
+        type=int,
+        default=0,
+        help=(
+            "calls with call_idx below this train on the policy's own tokens "
+            "(Amendment 4: 1, since the history is empty at call 0); 0 keeps "
+            "the oracle's command on the fault dims of every faulted call"
         ),
     )
     parser.add_argument("--max-steps", type=int, default=0, help="0: the full plan")

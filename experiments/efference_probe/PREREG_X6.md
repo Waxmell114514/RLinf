@@ -341,3 +341,42 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
 | 6 | A at seed 1: fine-tune, plus the two fault cells, only if both reservations fit | — | ≈ $5.5 |
 
 - **Readout:** `x6_ec_report.py --arm F=… --arm A=… --arm B=… --arm C=… --arm D=…` on the step 3–5 runs. The seed-0 arms of Amendment 1 are kept and reported, never pooled with these.
+
+### Amendment 4 (2026-11-02, before any fine-tune with masked targets)
+
+**Why:**
+- Amendment 3's A′ failed Rule 0: A′ − F on clean = −0.140 [−0.187, −0.093].
+- The free per-dim readout (`logbook.md`, 2026-11-02 11:20) splits that failure in two:
+  - **Fixed:** the loss-temperature fix restored dims 2–5 to the base exactly.
+  - **Not fixed:** at call 0 of clean episodes, x and y jitter at 3.7× and 3.1× F, and their excess shrinks once the copy carries a Δs.
+- **Cause:** at call 0 the history is zero-padded, so no input can tell a faulted episode from a clean one. Oracle targets there teach a mixture of the policy's command and the compensated ones.
+- **Approval:** the user asked for the steps that verify the core claim (“做能验证核心主张的步骤”).
+
+**The one change:**
+- **Masked targets:** `train_ec.py --own-target-calls 1`. On calls with `call_idx` 0, the target is the policy's own tokens on every dim. From call 1 on, the fault dims take the oracle's command, as before.
+- **Kept from Amendment 3:** `--loss-temperature 1.6`.
+- **Recorded:** `arm.json` records `optim.own_target_calls`.
+- **Size of the change:** it touches 1,200 of 22,613 samples (call 0 of every episode). It changes targets only on the faulted ones.
+
+**Unchanged:**
+- **Data and training:** the collection (the old workspace's copy of S3), the inputs, the arms, the optimiser and schedule, and seed 0.
+- **Evaluation and readout:** the evaluation config (T 1.6), F, Rules E, N and 0, the readings of §3.5, and the loss gate.
+
+**Platform and cap:**
+- **Workspace:** the old workspace.
+- **Cap:** `--budget-usd 29.5`; $6.418 was committed before this amendment.
+- **Paths:** arms `/vol/data/x6/arms/{A,B,C}_s0_m1`; evaluation run ids `x6_ec_eval4_{A,B,C}`.
+- **No new smoke:** the change only rebuilds the targets before training, and the trainer still runs its input and round-trip checks first. A crash would cost what a smoke costs.
+
+**Order and gates** (estimates `[estimate]`):
+
+| step | stage | gate | estimate |
+|---|---|---|---|
+| 1 | S4″-A: fine-tune A (`--max-s 3600 --max-minutes 55`) | S4's loss gate | ≈ $3.8 |
+| 2 | S5″-A: A on clean, bias_x 0.3 and invert_x (`--max-s 3600`) | Rule 0. On ¬0: stop, report, train nothing more | ≈ $2.5 |
+| 3 | S4″-B and S4″-C, run concurrently | S4's loss gate | ≈ $7.7 |
+| 4 | S5″-B and S5″-C on the two fault cells, run concurrently (`--max-s 2400`) | — | ≈ $3.4 |
+
+- **Readout:** Rules 0, E and N, with A″, B″ and C″ against F.
+- **Not run:** D and Rule L. The forward-model loss is not part of the core claim, and the cap leaves about $6 after step 4.
+- **Pre-specified mechanism check (descriptive, not a rule):** on clean episodes at call 0, A″'s x and y within-chunk jitter is predicted within 1.25× of F's (0.087, 0.068).

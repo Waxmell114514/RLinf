@@ -2596,3 +2596,9 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Proposed, not run: Amendment 4, which needs the user's approval.**
     - **Identifiability-masked targets:** on call 0, where the copy holds no information yet, the target is the policy's own tokens. The oracle's command is the target only from call 1 on.
     - Then retrain A, evaluate it on the three cells under the same Rule 0 gate, then B and C (Rule N). D (Rule L) runs only if the cap still fits.
+
+- `2026-11-02 12:00` **X6 AMENDMENT 4 PRE-REGISTERED (`PREREG_X6.md`, Amendment 4): identifiability-masked targets.** User: “做能验证核心主张的步骤”.
+  - **Change:** `--own-target-calls 1`. Call 0, where the history is still empty, trains on the policy's own tokens. It is kept together with `--loss-temperature 1.6`.
+  - **Code:** `ec_dataset.build_samples(own_target_calls=...)` and the trainer flag, recorded in `arm.json`. New test `test_masked_targets_keep_the_policy_tokens_before_the_history_has_content` (call-0 targets equal the policy's tokens; later calls and the inputs unchanged). `tests/test_x6_ec.py` plus `tests/test_ec_policy.py`: 37 passed.
+  - **Order:** S4″-A → S5″-A (Rule 0 gate) → S4″-B, C → S5″-B, C. D is not run.
+  - **Cap:** `--budget-usd 29.5` on the old workspace; $6.418 committed. Expected ≈ $17.4 `[estimate]`.

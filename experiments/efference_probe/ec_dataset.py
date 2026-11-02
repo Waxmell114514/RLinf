@@ -262,8 +262,15 @@ def build_samples(
     stats: dict[str, Any],
     tokenizer: ActionTokenizer,
     history: int = 2,
+    own_target_calls: int = 0,
 ) -> Samples:
-    """Replay every episode through the online input builder."""
+    """Replay every episode through the online input builder.
+
+    ``own_target_calls`` (Amendment 4): on calls with ``call_idx`` below it,
+    the target is the policy's own tokens on every dim, because the history
+    there holds nothing yet that could tell a faulted episode from a clean
+    one.  0 keeps Amendment 1's targets.
+    """
     before = _stack(calls, "states_before", STATE_DIM)
     after = _stack(calls, "states_after", STATE_DIM)
     sent = _stack(calls, "a_sent", CHUNK, ACTION_DIM)
@@ -277,6 +284,15 @@ def build_samples(
             )
         ]
     )
+    early = calls["call_idx"].to_numpy() < own_target_calls
+    if early.any():
+        own = np.stack(
+            [
+                np.asarray(t, dtype=np.int64).reshape(CHUNK, ACTION_DIM)
+                for t in calls.loc[early, "action_tokens"]
+            ]
+        )
+        targets[early] = own
     scale = np.asarray(stats["delta_scale"], dtype=np.float32)
     delta = np.clip(
         (after - before) / scale, -ec_policy.DELTA_CLIP, ec_policy.DELTA_CLIP
