@@ -2563,3 +2563,11 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - Checks: `calls.parquet`, `manifest.json` and `run_config.yaml` are byte-size identical, and three spot-checked episodes (0, 617, 1199) match in file count and bytes.
   - **Cap:** the old workspace's `x_waves` journal reads $0.000, so `--budget-usd 29.5`.
   - **Order:** S3b′ smoke → S4′-A → S5′-A (Rule 0 gate: on ¬0, stop) → S4′-B, C, D → S5′-B, C, D → A at seed 1 if it fits. Expected ≈ $24 for steps 1–5 `[estimate]`.
+
+- `2026-11-02 09:55` **X6 S3b′ RESULT (Amendment 3, old workspace): 20-step smoke, arm A, `--loss-temperature 1.6`; gate passed.** `/vol/data/x6/arms/smoke_t16`; the image built and the copied collection loaded (22,613 samples).
+  - **Input check:** passed. The trainer stops otherwise.
+  - **Token round trip:** max error 3.0e-8. `arm.json` records `loss_temperature` 1.6.
+  - **Rate:** 0.918 s/step (steps 1–19), so the full plan is 2,826 × 0.918 s = 43.2 min, within 50. Peak GPU memory 47.7 GiB.
+  - **Step-0 NLL at T 1.6:** 3.361 (first window, 5 steps: 3.787). The collection's logged NLL of the frozen policy's own tokens at T 1.6 averages 3.090/token. The gap is consistent with the re-tokenised, compensated dims and the inserted zero token (descriptive).
+  - **Exit code:** the trainer exited 1, because its summary applies S4's loss gate (last window 3.829 vs first 3.787) to 20 warm-up steps (LR ≤ 1.05e-5). That gate is S4's, not S3b's; S3b's gate is the checks and the rate (Amendment 1).
+  - **Spend:** old-workspace journal $0.000 → $0.137. Next: S4′-A.
