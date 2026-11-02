@@ -2553,3 +2553,13 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - fix the recipe: NLL at the sampling temperature, or greedy targets plus a KL-to-base term;
     - retrain A–D (≈ $15) and re-run S5 at the evaluation temperature, with C and the inversion cell (≈ $7);
     - seed 1 for A and B (≈ $10).
+
+- `2026-11-02 09:30` **X6 AMENDMENT 3 PRE-REGISTERED (`PREREG_X6.md`, Amendment 3): the loss-temperature fix, run on the old Modal workspace.** User: “在old modal token也有了$30 credit，迁移到那边做实验”.
+  - **Change:** `train_ec.py --loss-temperature 1.6` (NLL at the sampling temperature; recorded in `arm.json`). Everything else, rules and gates included, is unchanged.
+  - **Code:** the new flag (default 1.0, Amendment 1's recipe) and a test, `test_the_loss_is_taken_at_the_requested_temperature`, that the forward pass gets the flag's temperature and `arm.json` records it. `tests/test_x6_ec.py`: 24 passed; `tests/test_ec_policy.py`: 12 passed.
+  - **Migration:**
+    - The old workspace's Volume already holds GRPO-130. Its HF revision (473954241c81), file sizes and LFS etags of all four safetensors match the new workspace's.
+    - S3's collection was copied to `/vol/data/x6/x6_ec_collect` on the old Volume: 22,613 frames in 1,200 episode dirs, through this container.
+    - Checks: `calls.parquet`, `manifest.json` and `run_config.yaml` are byte-size identical, and three spot-checked episodes (0, 617, 1199) match in file count and bytes.
+  - **Cap:** the old workspace's `x_waves` journal reads $0.000, so `--budget-usd 29.5`.
+  - **Order:** S3b′ smoke → S4′-A → S5′-A (Rule 0 gate: on ¬0, stop) → S4′-B, C, D → S5′-B, C, D → A at seed 1 if it fits. Expected ≈ $24 for steps 1–5 `[estimate]`.

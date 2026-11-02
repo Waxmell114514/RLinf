@@ -291,7 +291,7 @@ def train(args, load_model=load_checkpoint) -> dict[str, Any]:
                 },
                 compute_logprobs=True,
                 output_hidden_states=spec.forward_model,
-                temperature=1.0,
+                temperature=args.loss_temperature,
                 top_k=-1,
             )
             nll = -result["logprobs"].float().mean()
@@ -371,6 +371,7 @@ def train(args, load_model=load_checkpoint) -> dict[str, Any]:
             "lr_lora": args.lr_lora,
             "warmup": args.warmup,
             "lambda_fm": args.lambda_fm if spec.forward_model else None,
+            "loss_temperature": args.loss_temperature,
         },
         "summary": summary,
     }
@@ -394,6 +395,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--lr-lora", type=float, default=5e-5)
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--lambda-fm", type=float, default=1.0)
+    parser.add_argument(
+        "--loss-temperature",
+        type=float,
+        default=1.0,
+        help=(
+            "temperature of the NLL's softmax. 1.0 is Amendment 1's recipe; "
+            "Amendment 3 sets the collection's sampling temperature (1.6), so "
+            "that fitting the policy's own samples leaves it unchanged"
+        ),
+    )
     parser.add_argument("--max-steps", type=int, default=0, help="0: the full plan")
     parser.add_argument("--max-minutes", type=float, default=0.0)
     parser.add_argument("--grad-checkpointing", action="store_true")

@@ -446,6 +446,40 @@ def test_an_arm_trains_saves_and_runs_in_the_harness(tmp_path, arm):
     assert np.abs(online[calls["call_idx"].to_numpy() >= 1, 8:]).sum() > 0 or arm == "D"
 
 
+class TemperatureRecordingOFT(TrainFakeOFT):
+    """Records the temperature every training forward is taken at."""
+
+    def __init__(self):
+        super().__init__()
+        self.forward_temperatures = []
+
+    def default_forward(self, forward_inputs=None, **kw):
+        self.forward_temperatures.append(kw.get("temperature"))
+        return super().default_forward(forward_inputs=forward_inputs, **kw)
+
+
+@pytest.mark.parametrize(
+    "extra, expected", [((), 1.0), (("--loss-temperature", "1.6"), 1.6)]
+)
+def test_the_loss_is_taken_at_the_requested_temperature(tmp_path, extra, expected):
+    """Amendment 3: the NLL's temperature is a flag, recorded in arm.json."""
+    pytest.importorskip("peft")
+    run = _collect_run(tmp_path / "collect")
+    model = TemperatureRecordingOFT()
+    args = train_ec.parse_args(
+        [
+            "--config", str(CONFIG), "--runs", str(run), "--arm", "A",
+            "--out", str(tmp_path / "arm"), "--batch", "4", "--micro-batch", "2",
+            "--warmup", "1", "--max-steps", "2", "--log-every", "1000", *extra,
+        ]
+    )  # fmt: skip
+    meta = train_ec.train(args, load_model=lambda cfg: model)
+    assert model.forward_temperatures and set(model.forward_temperatures) == {expected}
+    assert meta["optim"]["loss_temperature"] == expected
+    saved = json.loads((tmp_path / "arm" / ec_policy.ARM_FILE).read_text())
+    assert saved["optim"]["loss_temperature"] == expected
+
+
 def test_zeroed_history_keeps_only_the_state(tmp_path):
     pytest.importorskip("peft")
     run = _collect_run(tmp_path / "collect")

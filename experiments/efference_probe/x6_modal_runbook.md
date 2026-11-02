@@ -105,3 +105,30 @@ python experiments/efference_probe/x6_ec_report.py \
 ## Not yet runnable
 
 - **S2 (π0):** needs its own image (`install.sh embodied --model openpi --env libero`) and the checkpoint on the Volume.
+
+## Amendment 3 on the old workspace
+
+The old workspace has its own Volume, its own `x_waves` journal and a $29.5 cap (`PREREG_X6.md`, Amendment 3). Every call maps the old tokens onto `MODAL_TOKEN_*`, and never prints them.
+
+```bash
+old() { MODAL_TOKEN_ID="$MODAL_OLD_TOKEN_ID" MODAL_TOKEN_SECRET="$MODAL_OLD_TOKEN_SECRET" "$@"; }
+old modal run $M::journal            # read $0.000 before step 1
+export CAP=29.5
+TRAIN="--config $CFG/x6_fault_oft.yaml --runs $OUT/x6_ec_collect --loss-temperature 1.6 --set model.model_path=$CKPT"
+
+# 1. S3b′: smoke
+old modal run $M::script --kind train --path experiments/efference_probe/train_ec.py \
+  --args "$TRAIN --arm A --out $OUT/arms/smoke_t16 --max-steps 20 --log-every 1" \
+  --budget-usd $CAP --max-s 1500
+
+# 2. S4′-A; for step 4, run the same with ARM=B and ARM=C. D gets --max-s 4200 and --max-minutes 65.
+old modal run $M::script --kind train --path experiments/efference_probe/train_ec.py \
+  --args "$TRAIN --arm $ARM --out $OUT/arms/${ARM}_s0_t16 --seed 0 --max-minutes 55 --log-every 100" \
+  --budget-usd $CAP --max-s 3600
+
+# 3. S5′-A (A on all three cells); for step 5, B, C and D add fault.sweep=[bias_x:0.3,invert_x] and --max-s 2400.
+old modal run $M::script --path experiments/efference_probe/run_collect.py \
+  --args "--config $CFG/x6_ec_eval.yaml --logbook $LOG --set model.model_path=$CKPT out_root=$OUT \
+          run_id=x6_ec_eval3_$ARM efference.arm_dir=$OUT/arms/${ARM}_s0_t16" \
+  --budget-usd $CAP --max-s 3600
+```

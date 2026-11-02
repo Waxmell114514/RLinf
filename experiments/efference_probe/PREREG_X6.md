@@ -293,3 +293,51 @@ Platform: a rental (AutoDL A800 or Vast.ai A100), chosen by the user. Modal cred
   - **Projector:** float32.
   - **Prefetch:** micro-batch 8 × 2 accumulation steps = batch 16; frames are decoded in two background threads.
 - **Readout:** `x6_ec_report.py` implements Rules M, E, N, L and 0 and the readings of §3.5. Its `--collection` gives S3's gate: episodes logged, and success by family × compensation.
+
+### Amendment 2 (2026-11-01, after S5's partial readout)
+
+An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T = 1.0. The design, its fixed readout (D1–D4) and the result are in `logbook.md`, entries at 13:05 and 13:45 on 2026-11-01. It rescores no rule.
+
+### Amendment 3 (2026-11-02, before any fine-tune with the new loss)
+
+**Why:**
+- Seed 0 failed Rule 0: A − F on clean = −0.417.
+- At call 0, both fine-tunes sampled a much flatter distribution than the base. Amendment 1's recipe took the NLL at T = 1.0 on targets that are about 90% the policy's own T = 1.6 samples. Fitting those drives the logits toward z / 1.6, so sampling at T = 1.6 then flattens the policy a second time.
+- The Amendment 2 diagnostic also measured the copy's effect at T = 1.0: A − B on bias = +0.283 [+0.227, +0.337]. That one number is exploratory.
+- The user moved the experiments to the old Modal workspace, which has a new $30 credit (“在old modal token也有了$30 credit，迁移到那边做实验”).
+
+**The one change to the recipe:**
+- **Loss temperature:** `train_ec.py --loss-temperature 1.6`, the sampling temperature of the collection and of the evaluation (sampling is pure temperature: top_k −1, top_p 1.0).
+- **Why it fixes the flattening:** at this temperature the NLL is the log-likelihood the samples were drawn under. On the policy's own tokens, its expected gradient vanishes at the frozen policy, so only the re-tokenised, compensated dims carry a systematic signal.
+- **Recorded:** the value is saved in `arm.json` (`optim.loss_temperature`).
+
+**Unchanged:**
+- **Data:** the S3 collection, copied as is from the new workspace's Volume.
+- **Training:** the samples and their inputs, the arms A–D, LoRA, the projector and FM head, the optimiser, LR, schedule, warm-up, batch, epochs and seed 0.
+- **Evaluation and readout:** the evaluation config (T 1.6, trials 0–29, env seed 3), F (= S1), Rules E, N, L and 0, the readings of §3.5, and the S3b/S4 gates.
+
+**Platform:**
+- **Workspace:** the old Modal workspace. Its tokens are in `MODAL_OLD_TOKEN_ID` / `MODAL_OLD_TOKEN_SECRET`, which are mapped onto `MODAL_TOKEN_*` for each call and never printed.
+- **Storage:** that workspace's own Volume `efference-e4`.
+- **Checkpoint:** its GRPO-130 at `/vol/ckpts/grpo` is the one S3 collected with. The HF revision (473954241c81), file sizes and LFS etags of all four safetensors match.
+- **Collection:** `/vol/data/x6/x6_ec_collect` there, a byte copy of S3 (1,200 episodes, 22,613 frames).
+- **Paths:** new arm dirs `/vol/data/x6/arms/{A,B,C,D}_s0_t16`, and evaluation run ids `x6_ec_eval3_{A,B,C,D}`.
+
+**Cap:**
+- At most $29.5 of new spend: the credit, less $0.5. It is enforced as `--budget-usd 29.5`, since that workspace's `x_waves` journal read $0.000 before any call.
+- The rule from Amendment 1 holds: a stage starts only if committed + its reservation ≤ the cap.
+
+**D's guard:** at D's measured 1.205 s/step, its plan takes 56.8 min. D therefore runs with `--max-s 4200 --max-minutes 65`; A, B and C keep `--max-s 3600 --max-minutes 55`.
+
+**Order and gates** (estimates `[estimate]`, from the seed-0 measurements):
+
+| step | stage | gate | estimate |
+|---|---|---|---|
+| 1 | S3b′: 20-step smoke of arm A with `--loss-temperature 1.6`; it also checks the copied data and the image | S3b's checks and rate; step-0 NLL reported | ≈ $0.3 |
+| 2 | S4′-A: fine-tune A | S4's loss gate | ≈ $3.8 |
+| 3 | S5′-A: A on clean, bias_x 0.3 and invert_x (`--max-s 3600`) | Rule 0 on A. On ¬0: stop, report, and train nothing more (§3.5) | ≈ $2.5 |
+| 4 | S4′-B, C, D, run concurrently | S4's loss gate | ≈ $12.3 |
+| 5 | S5′-B, C, D on the two fault cells, concurrently while the cap holds | — | ≈ $5.1 |
+| 6 | A at seed 1: fine-tune, plus the two fault cells, only if both reservations fit | — | ≈ $5.5 |
+
+- **Readout:** `x6_ec_report.py --arm F=… --arm A=… --arm B=… --arm C=… --arm D=…` on the step 3–5 runs. The seed-0 arms of Amendment 1 are kept and reported, never pooled with these.
