@@ -2635,3 +2635,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Code:** `fault.oracle`, with a new test. Full experiment suite: 240 passed.
   - **Run:** `x6_oracle_bound` on bias_x:0.3 and invert_x, 600 episodes, on the old workspace (cap 29.5; $12.270 committed).
   - **Gate for step 2:** both cells reach Rule E's efficacy level and lie within 0.05 of F's clean.
+
+- `2026-11-04 14:15` **X6 AMENDMENT 5 RESULT: perfect-identification upper bound (`/vol/data/x6/x6_oracle_bound`, old workspace); gate for step 2 passed.** Frozen GRPO-130 with every chunk sent through the active fault's exact inverse. 600 episodes, 8,863 calls, rc 0. `run_config.yaml` shows `fault.oracle: true` and efference off.
+  - **bias_x:0.3:** success 0.987.
+    - Against F's clean: +0.023 [+0.003, +0.050].
+    - Against F on the cell: +0.973 [+0.953, +0.990], against 0.5 · G_f = 0.475.
+  - **invert_x:** success 0.970.
+    - Against F's clean: +0.007 [−0.023, +0.033].
+    - Against F on the cell: +0.970 [+0.950, +0.987], against 0.482.
+  - **Reading:** with the fault known, the frozen policy recovers essentially all of both faults at no nominal cost. Every fine-tuned arm's shortfall (bias 0.327, inversion ≈ 0.02, clean −0.10) is therefore one of fault identification and representation, not a limit of the policy or the tasks.
+  - **Next:** step 2, the analytic estimator of b and the per-axis sign from the efference copy.
+  - **Spend:** old journal $12.270 → $13.116 ($0.85); $16.38 left.
