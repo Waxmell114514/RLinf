@@ -2678,3 +2678,20 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Code:** `make_estimator`, two new tests; full suite 247 passed.
   - **Run:** `x6_est7_eval`, three cells, 900 episodes, on the old workspace ($14.859 committed).
   - **Caveat (stated in the amendment):** the evaluation states are the ones whose result motivated the change, so this is a post-hoc revision.
+
+- `2026-11-04 19:00` **X6 AMENDMENT 7 RESULT: the discrete-hypothesis estimator around the frozen VLA (`/vol/data/x6/x6_est7_eval`, old workspace). All three gates pass (post-hoc revision; see the caveat in Amendment 7).** 900 episodes, 17,759 calls, rc 0. `run_config.yaml` confirms `x6_estimator_params_select.json`.
+  - **Success:** clean 0.977, bias_x:0.3 0.807, invert_x 0.640. For reference: F 0.963 / 0.013 / 0.000; Amendment 6 0.970 / 0.757 / 0.337; oracle — / 0.987 / 0.970.
+  - **R0′: passed.** est − F on clean = +0.013 [−0.013, +0.040]. 1 of 300 clean episodes ever corrected; no sign ever flipped on clean.
+  - **RE′ on bias: passed.** +0.793 [+0.747, +0.837], against 0.475.
+    - against the oracle: −0.180 [−0.227, −0.137];
+    - against Amendment 6: +0.050 [+0.007, +0.090].
+  - **RE′ on inversion: passed.** +0.640 [+0.587, +0.693], against 0.482.
+    - against the oracle: −0.330 [−0.387, −0.273];
+    - against Amendment 6: +0.303 [+0.250, +0.357].
+  - **Logged estimates:**
+    - inversion: the sign flipped in every episode, and no bias was sent at calls ≤ 2 (max |b̂| 0);
+    - bias: b̂_x averages 0.241 at calls ≥ 3, against the true 0.3.
+  - **What is left to the oracle:**
+    - inversion: the first one to two inverted chunks before the flip;
+    - bias: the estimate falls about 20% short.
+  - **Spend:** old journal $14.859 → $16.394 ($1.54); $13.11 left.
