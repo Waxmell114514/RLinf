@@ -331,6 +331,44 @@ def test_masked_targets_keep_the_policy_tokens_before_the_history_has_content(tm
     np.testing.assert_array_equal(masked.efference, plain.efference)
 
 
+@pytest.mark.parametrize("spec", ["bias_x:0.3", "invert_x"])
+def test_the_oracle_upper_bound_sends_the_exact_inverse(tmp_path, spec):
+    """fault.oracle: the frozen policy's chunk goes through the fault's inverse."""
+    harness = fake._harness(
+        tmp_path,
+        [
+            "run_id=oracle",
+            "hijack.enabled=false",
+            "capture.enabled=false",
+            "fault.enabled=true",
+            f"fault.sweep=[{spec}]",
+            "fault.oracle=true",
+        ],
+        env=PromptEnv(),
+    )
+    harness.model, harness.capture = TokenModel(), None
+    harness._fault = faults.parse(spec)
+    calls, _ = fake._collect(harness)
+    fault = faults.parse(spec)
+    moved = False
+    for _, row in calls.iterrows():
+        cmd = np.asarray(row["a_cmd_env"]).reshape(CHUNKS, DIM)
+        executed = np.asarray(row["a_exec"]).reshape(CHUNKS, DIM)
+        np.testing.assert_allclose(executed, fault.apply(fault.compensate(cmd)))
+        moved |= not np.allclose(executed, fault.apply(cmd))
+    assert moved
+    for bad in (["fault.mode=draw", "fault.passes=2"], ["efference.enabled=true"]):
+        with pytest.raises(ValueError):
+            fake._harness(
+                tmp_path / "bad",
+                ["hijack.enabled=false", "capture.enabled=false",
+                 "fault.enabled=true", "fault.oracle=true",
+                 *(["fault.sweep=[]"] if "fault.mode=draw" in bad
+                   else [f"fault.sweep=[{spec}]"]), *bad],
+                env=PromptEnv(),
+            )  # fmt: skip
+
+
 # -- training and evaluation -----------------------------------------------------
 
 

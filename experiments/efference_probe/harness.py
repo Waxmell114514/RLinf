@@ -467,6 +467,16 @@ class EfferenceHarness:
                     ]
                 )
                 executed = np.where(compensated[:, None, None], target, executed)
+            elif self.cfg.fault.enabled and self.cfg.fault.oracle and faulted:
+                # Upper bound: perfect identification, the exact inverse sent.
+                executed = np.stack(
+                    [
+                        fault.compensate(commanded_env[i])
+                        if fault is not None
+                        else executed[i]
+                        for i, fault in enumerate(slot_faults)
+                    ]
+                )
             sent = executed
             if faulted:
                 executed = np.stack(

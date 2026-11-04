@@ -2629,3 +2629,9 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - **Runs:** B″ and C″ under Amendment 4's recipe, evaluated on the two fault cells. B″ also runs clean, to tell a fine-tune cost from a copy cost on nominal success.
     - **Cost:** ≈ $12 `[estimate]`.
     - **Scored:** Rule N, and descriptively B″ − F on clean. It is reported as a declared deviation.
+
+- `2026-11-04 10:00` **X6 AMENDMENT 5 PRE-REGISTERED: the perfect-identification upper bound for the frozen-policy route (R1 step 1).** User: “按这个顺序来，先做上限测试”.
+  - **Basis:** the literature report `reports/VLA 故障适应 训练机制.md`, with notes in `research_notes/VLA 故障适应 训练机制/`. Diagnosis: the fine-tunes ask one network both to infer an unidentifiable fault and to act. That yields a mixture on x/y (the clean cost), shrinkage toward zero compensation (bias at about 1/3), and a fixed-sign correction that cannot represent inversion. Recommended: a frozen VLA plus a fault estimator and an analytic inverse.
+  - **Code:** `fault.oracle`, with a new test. Full experiment suite: 240 passed.
+  - **Run:** `x6_oracle_bound` on bias_x:0.3 and invert_x, 600 episodes, on the old workspace (cap 29.5; $12.270 committed).
+  - **Gate for step 2:** both cells reach Rule E's efficacy level and lie within 0.05 of F's clean.

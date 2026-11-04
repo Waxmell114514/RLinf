@@ -169,6 +169,10 @@ class FaultConfig:
     # and every reset state is visited `passes` times.
     mode: str = "sweep"
     passes: int = 1
+    # Upper-bound test (X6 R1 step 1): in sweep mode, send every chunk through
+    # the active fault's exact inverse (Fault.compensate), i.e. perfect fault
+    # identification around the frozen policy.
+    oracle: bool = False
 
 
 @dataclass
@@ -216,6 +220,8 @@ class RunConfig:
         elif self.fault.mode == "sweep" and self.fault.passes == 1:
             payload["fault"].pop("mode", None)
             payload["fault"].pop("passes", None)
+        if self.fault.enabled and not self.fault.oracle:
+            payload["fault"].pop("oracle", None)
         if not self.efference.enabled:
             payload.pop("efference", None)
         if self.env.init_state_offset == 0:
@@ -314,6 +320,10 @@ class RunConfig:
                     raise ValueError("fault.passes applies to mode 'draw' only")
             elif self.fault.sweep:
                 raise ValueError("fault.mode 'draw' takes no sweep")
+            if self.fault.oracle and self.fault.mode != "sweep":
+                raise ValueError("fault.oracle applies to mode 'sweep' only")
+            if self.fault.oracle and self.efference.enabled:
+                raise ValueError("fault.oracle wraps the frozen policy, not an arm")
             for spec in self.fault.sweep:
                 parse(spec)
             if self.hijack.enabled or self.monitor.enabled:

@@ -380,3 +380,19 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
 - **Readout:** Rules 0, E and N, with A″, B″ and C″ against F.
 - **Not run:** D and Rule L. The forward-model loss is not part of the core claim, and the cap leaves about $6 after step 4.
 - **Pre-specified mechanism check (descriptive, not a rule):** on clean episodes at call 0, A″'s x and y within-chunk jitter is predicted within 1.25× of F's (0.087, 0.068).
+
+### Amendment 5 (2026-11-04, before the run): R1 step 1, the perfect-identification upper bound
+
+- **Why:** the literature review (`reports/VLA 故障适应 训练机制.md`, R1/Z4) proposes splitting fault inference from action. The VLA stays frozen, and an estimator of the fault's bias b and per-axis sign s drives an analytic correction a′ = s ⊙ a − b. Before building any estimator, this run measures what perfect identification buys. The user approved the order: “按这个顺序来，先做上限测试”.
+- **Code:** `fault.oracle: true` (sweep mode only; not with an arm). Every chunk is sent as `Fault.compensate(commanded)`, the same inverse the S3 collection applied in draw mode. Test: `test_the_oracle_upper_bound_sends_the_exact_inverse`. Earlier config hashes are unchanged.
+- **Run:**
+  - **Config:** `x6_oracle_bound`, frozen GRPO-130, `x6_ec_eval.yaml` with `efference.enabled=false fault.oracle=true fault.sweep=[bias_x:0.3,invert_x]` (trials 0–29, env seed 3, T 1.6).
+  - **Size:** 600 episodes, `--max-s 2400`.
+  - **Where:** the old workspace, under `--budget-usd 29.5`.
+  - **Clean is not rerun:** the oracle is the identity there, so the clean cell is F's.
+- **Readout** (paired with F, B = 2,000, seed 0):
+  - success on each fault cell;
+  - bound − F(clean) on each;
+  - bound − F(f) on each.
+- **Gate for step 2 (the analytic estimator):** both fault cells must reach the efficacy level of Rule E (bound − F(f) ≥ 0.5 · G_f, CI_low > 0) and lie within 0.05 of F's clean. Otherwise the frozen-policy route stops here.
+- **Prior expectation `[from S3, descriptive]`:** in S3, compensated episodes succeeded 0.981 (bias) and 0.986 (inversion) against clean 0.981, on the training states.
