@@ -430,7 +430,7 @@ class EfferenceHarness:
         )
         # X6 R1: the analytic fault estimator around the frozen policy.
         estimator = (
-            fault_estimator.FaultEstimator(num_envs, self.estimator_params)
+            fault_estimator.make_estimator(num_envs, self.estimator_params)
             if self.cfg.estimator.enabled
             else None
         )

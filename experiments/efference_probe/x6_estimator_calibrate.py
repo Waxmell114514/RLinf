@@ -103,12 +103,16 @@ def score(calls: pd.DataFrame, signs: np.ndarray, biases: np.ndarray) -> dict:
             err = np.zeros(len(rows))
             good = ok_sign & (biases[rows] == 0).all(1)
         first = int(np.argmax(good)) if good.any() else len(rows)
+        wrong_bias = (
+            float(np.abs(biases[rows]).max()) if kind.startswith("invert") else 0.0
+        )
         families.setdefault(family, []).append(
             {
                 "detect_call": first,
                 "detected": bool(good.any()),
                 "final_err": float(err[-1]),
                 "wrong_sign_calls": int((~ok_sign).sum()),
+                "max_wrong_bias": wrong_bias,
                 "calls": len(rows),
             }
         )
@@ -125,6 +129,7 @@ def score(calls: pd.DataFrame, signs: np.ndarray, biases: np.ndarray) -> dict:
             "detect_call_mean": float(frame["detect_call"].mean()),
             "detect_call_median": float(frame["detect_call"].median()),
             "final_bias_err_mean": float(frame["final_err"].mean()),
+            "max_wrong_bias_mean": float(frame["max_wrong_bias"].mean()),
             "wrong_sign_call_frac": float(
                 frame["wrong_sign_calls"].sum() / frame["calls"].sum()
             ),
@@ -146,6 +151,7 @@ def main(argv=None) -> int:
     parser.add_argument("--heldout", required=True, help="S1 sweep run dir")
     parser.add_argument("--out", required=True)
     parser.add_argument("--max-false-alarm", type=float, default=0.02)
+    parser.add_argument("--kind", choices=["joint", "select"], default="joint")
     args = parser.parse_args(argv)
 
     train = load(Path(args.train), "a_sent")
@@ -153,14 +159,23 @@ def main(argv=None) -> int:
     clean = (train["fault"] == "clean").to_numpy()
     plant = calibrate(sent[clean], prev_chunk[clean], ds_prev[clean], ds[clean])
 
-    grid = list(
-        itertools.product([2.0, 3.0, 4.0], [2.0, 2.5, 3.0, 3.5, 4.0], [0.15, 0.3])
-    )
+    if args.kind == "select":
+        settings = [
+            {"kind": "select", "p_act": p_act, "bias_sd": bias_sd}
+            for p_act, bias_sd in itertools.product(
+                [0.8, 0.9, 0.95, 0.99], [0.15, 0.25]
+            )
+        ]
+    else:
+        settings = [
+            {"z_sign": z_sign, "z_bias": z_bias, "prior_sign_sd": prior_sign_sd}
+            for z_sign, z_bias, prior_sign_sd in itertools.product(
+                [2.0, 3.0, 4.0], [2.0, 2.5, 3.0, 3.5, 4.0], [0.15, 0.3]
+            )
+        ]
     candidates = []
-    for z_sign, z_bias, prior_sign_sd in grid:
-        params = EstimatorParams(
-            **plant, z_sign=z_sign, z_bias=z_bias, prior_sign_sd=prior_sign_sd
-        )
+    for setting in settings:
+        params = EstimatorParams(**plant, **setting)
         signs, biases = replay(
             params,
             sent,
@@ -171,7 +186,7 @@ def main(argv=None) -> int:
         scored = score(train, signs, biases)
         candidates.append({"params": params.to_dict(), "train": scored})
         print(
-            f"z_sign {z_sign} z_bias {z_bias} prior_s {prior_sign_sd}: "
+            f"{setting}: "
             f"clean FA {scored['clean']['episode_false_alarm']:.3f} "
             f"mean detect {mean_detect(scored):.2f}",
             flush=True,

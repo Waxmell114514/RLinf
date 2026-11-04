@@ -153,3 +153,35 @@ def test_the_harness_sends_the_estimators_correction(tmp_path):
                  f"estimator.params_file={PARAMS_FILE}", *bad],
                 env=PromptEnv(),
             )  # fmt: skip
+
+
+SELECT_FILE = PARAMS_FILE.with_name("x6_estimator_params_select.json")
+
+
+def _select_run(fault, seed=0):
+    from efference_probe.fault_estimator import EstimatorParams as P
+
+    params = P(**{**_params().to_dict(), "kind": "select", "p_act": 0.8})
+    sent, ds = _episode(np.random.default_rng(seed), fault)
+    return replay(params, sent, ds, np.zeros(len(sent)), np.arange(len(sent)))
+
+
+def test_hypothesis_selection_identifies_each_fault_without_a_spurious_bias():
+    signs, biases = _select_run(faults.parse("clean"))
+    assert (signs == 1).all() and (biases == 0).all()
+    signs, biases = _select_run(faults.parse("bias_x:0.3"))
+    assert (signs == 1).all() and abs(biases[-1, 0] - 0.3) < 0.08
+    signs, biases = _select_run(faults.parse("invert_x"))
+    assert (signs[5:, 0] == -1).all() and (signs[:, 1] == 1).all()
+    # The inversion is never sent as a bias, before or after the flip.
+    assert (biases == 0).all()
+
+
+def test_the_committed_selection_params_load_and_dispatch():
+    from efference_probe.fault_estimator import SelectionEstimator, make_estimator
+
+    params = EstimatorParams.from_dict(json.loads(SELECT_FILE.read_text()))
+    assert params.kind == "select"
+    assert isinstance(make_estimator(3, params), SelectionEstimator)
+    with pytest.raises(ValueError):
+        make_estimator(1, EstimatorParams(**{**params.to_dict(), "kind": "x"}))

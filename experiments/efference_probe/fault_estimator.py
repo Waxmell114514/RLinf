@@ -45,6 +45,15 @@ class EstimatorParams:
     z_sign: float = 3.0
     z_bias: float = 3.0
     chunk: int = 8
+    # "joint": the (sign, bias) regression above (Amendment 6).  "select":
+    # Amendment 7's discrete hypotheses per axis (SelectionEstimator).
+    kind: str = "joint"
+    # "select" only: prior probabilities of no fault, a bias, an inversion;
+    # the bias prior's sd; and the posterior probability a hypothesis needs
+    # before its correction is applied.
+    prior_h: tuple[float, float, float] = (0.6, 0.2, 0.2)
+    bias_sd: float = 0.2
+    p_act: float = 0.95
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -52,7 +61,9 @@ class EstimatorParams:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EstimatorParams":
         fields = dict(data)
-        for key in ("k", "k_last", "k_psum", "alpha", "c", "noise_sd"):
+        for key in ("k", "k_last", "k_psum", "alpha", "c", "noise_sd", "prior_h"):
+            if key not in fields:
+                continue
             fields[key] = tuple(float(x) for x in fields[key])
         return cls(**fields)
 
@@ -167,6 +178,92 @@ class FaultEstimator:
         return out
 
 
+class SelectionEstimator:
+    """Amendment 7: which fault is active, per axis, as discrete hypotheses.
+
+    H0 no fault (s = +1, b = 0); H1 a bias (s = +1, b ~ N(0, bias_sd^2),
+    tracked by a scalar Kalman filter); H2 an inversion (s = -1, b = 0).  Each
+    hypothesis's marginal likelihood of the measured displacements updates its
+    posterior probability (MOSAIC / COIN-style context inference).  A
+    correction is applied only for a hypothesis whose posterior exceeds
+    ``p_act``: an implausibly large implied bias, which an inversion produces
+    while the command is nearly constant, loses to H2 instead of being sent.
+    """
+
+    def __init__(self, num_envs: int, params: EstimatorParams):
+        self.p = params
+        self.num_envs = num_envs
+        self.log_post = np.zeros((num_envs, 2, 3))
+        self.b_mean = np.zeros((num_envs, 2))
+        self.b_var = np.zeros((num_envs, 2))
+        self.prev_chunk = np.zeros((num_envs, params.chunk, 2))
+        self.ds_prev = np.zeros((num_envs, 2))
+        self.has_prev = np.zeros(num_envs, dtype=bool)
+        self.reset()
+
+    def reset(self, slots=None) -> None:
+        slots = range(self.num_envs) if slots is None else slots
+        for slot in slots:
+            self.log_post[slot] = np.log(np.asarray(self.p.prior_h, dtype=float))
+            self.b_mean[slot] = 0.0
+            self.b_var[slot] = self.p.bias_sd**2
+            self.prev_chunk[slot] = 0.0
+            self.ds_prev[slot] = 0.0
+            self.has_prev[slot] = False
+
+    def update(self, sent: np.ndarray, ds: np.ndarray) -> None:
+        sent = np.asarray(sent, dtype=np.float64)
+        ds = np.asarray(ds, dtype=np.float64)
+        for a, j in enumerate(AXES):
+            k, kl, kps = self.p.k[a], self.p.k_last[a], self.p.k_psum[a]
+            u = (
+                k * sent[:, :, j].sum(1)
+                + kl * self.prev_chunk[:, -1, a]
+                + kps * self.prev_chunk[:, :, a].sum(1)
+            )
+            v = self.p.chunk * k + np.where(self.has_prev, self.p.chunk * kps + kl, 0.0)
+            y = ds[:, j] - self.p.alpha[a] * self.ds_prev[:, a] - self.p.c[a]
+            r = self.p.noise_sd[a] ** 2
+
+            def loglik(resid, var):
+                return -0.5 * (np.log(2 * np.pi * var) + resid**2 / var)
+
+            l0 = loglik(y - u, r)
+            l2 = loglik(y + u, r)
+            pred_var = v**2 * self.b_var[:, a] + r
+            resid = y - u - v * self.b_mean[:, a]
+            l1 = loglik(resid, pred_var)
+            gain = self.b_var[:, a] * v / pred_var
+            self.b_mean[:, a] += gain * resid
+            self.b_var[:, a] *= 1.0 - gain * v
+            lp = self.log_post[:, a] + np.stack([l0, l1, l2], axis=1)
+            self.log_post[:, a] = lp - np.logaddexp.reduce(lp, axis=1, keepdims=True)
+        self.prev_chunk = sent[:, :, list(AXES)].copy()
+        self.ds_prev = ds[:, list(AXES)].copy()
+        self.has_prev[:] = True
+
+    def posterior(self) -> np.ndarray:
+        """[num_envs, 2 axes, 3 hypotheses] posterior probabilities."""
+        return np.exp(self.log_post)
+
+    def estimate(self) -> tuple[np.ndarray, np.ndarray]:
+        post = self.posterior()
+        sign = np.where(post[:, :, 2] > self.p.p_act, -1.0, 1.0)
+        bias = np.where(post[:, :, 1] > self.p.p_act, self.b_mean, 0.0)
+        return sign, bias
+
+    correct = FaultEstimator.correct
+
+
+def make_estimator(num_envs: int, params: EstimatorParams):
+    """The estimator ``params.kind`` names."""
+    if params.kind == "select":
+        return SelectionEstimator(num_envs, params)
+    if params.kind == "joint":
+        return FaultEstimator(num_envs, params)
+    raise ValueError(f"unknown estimator kind {params.kind!r}")
+
+
 def replay(
     params: EstimatorParams,
     sent: np.ndarray,
@@ -181,10 +278,10 @@ def replay(
     """
     signs = np.ones((len(sent), 2))
     biases = np.zeros((len(sent), 2))
-    est: Optional[FaultEstimator] = None
+    est: Optional[Any] = None
     for i in range(len(sent)):
         if call_idx[i] == 0 or est is None or episodes[i] != episodes[i - 1]:
-            est = FaultEstimator(1, params)
+            est = make_estimator(1, params)
         sign, bias = est.estimate()
         signs[i], biases[i] = sign[0], bias[0]
         est.update(sent[i : i + 1], ds[i : i + 1])

@@ -423,3 +423,26 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
   - **R0′:** est − F on clean ≥ −0.05 with CI_low ≥ −0.10;
   - **RE′:** est − F on each fault cell ≥ 0.5 · G_f with CI_low > 0.
   - **Descriptive:** est − oracle bound on the fault cells, and the detection call from the logged estimates.
+
+### Amendment 7 (2026-11-04, after Amendment 6's closed-loop result): discrete fault hypotheses
+
+- **Why:** Amendment 6 passed R0′ and RE′ on bias, but failed RE′ on inversion: 0.337 against an oracle of 0.970. Its logged estimates show the cause.
+  - At call 1, before the sign is decided, the joint (s, b) regression reads the inversion as a large bias (mean |b̂_x| = 0.80) and sends it.
+  - With a nearly constant command, s = −1 and a large b are collinear.
+- **Change:** `kind: select` (`SelectionEstimator`). Per axis there are three hypotheses:
+  - H0: no fault;
+  - H1: a bias b ~ N(0, bias_sd²), tracked by a scalar Kalman filter;
+  - H2: an inversion.
+  - Each is weighed by its marginal likelihood (MOSAIC / COIN-style context inference; `research_notes/…/neuroscience_efference.md`). A correction is sent only for a hypothesis whose posterior exceeds p_act.
+  - The plant fit is unchanged.
+- **Selection** (S3 only; same rule as Amendment 6; `data/x6/x6_estimator_calibration_select.json`): over p_act ∈ {0.8, 0.9, 0.95, 0.99} × bias_sd ∈ {0.15, 0.25}, chosen p_act 0.8, bias_sd 0.25, frozen in `configs/x6_estimator_params_select.json`.
+  - **S3:** clean false alarms 0.000; inversion detected at a mean call of 1.2 (x) and 2.5 (y); biases ≥ 0.25 detected 66%, at a mean call of 8.7.
+  - **S1 open-loop replay:**
+    - clean 0/300;
+    - invert_x flipped by call 3 in every episode, with no bias sent in calls 0–6. Late spurious biases appear only in the uncorrected open-loop drift.
+    - bias_x detected 60% over the 0.15 and 0.3 cells.
+- **Caveat:** the evaluation states (trials 0–29) are the ones whose Amendment 6 result motivated this change, and no fresh goal-suite states are left (30–49 are S3's). This run is therefore reported as a post-hoc revision. Its only protection is that the setting was chosen on S3, by the rule fixed in Amendment 6.
+- **Run:**
+  - **Config:** `x6_est7_eval`, as Amendment 6 with `estimator.params_file=…/x6_estimator_params_select.json`. Sweep [clean, bias_x:0.3, invert_x], 900 episodes, `--max-s 3600`.
+  - **Place and cap:** the old workspace, under `--budget-usd 29.5`.
+- **Readout:** R0′ and RE′ as in Amendment 6. Also, descriptively, against Amendment 6 and the oracle.

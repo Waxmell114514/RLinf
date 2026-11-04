@@ -2670,3 +2670,11 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - **Bias:** b̂_x settles at 0.21–0.27, short of the true 0.3. Episodes whose mean b̂ ≥ 0.27 succeed 0.909, against 0.472 for b̂ < 0.2.
   - **Reading:** for bias, the efference-copy estimator plus a frozen VLA passes both pre-registered gates. No fine-tune ever reached that. Inversion fails by a one-call artefact of the estimator's decision rule.
   - **Spend:** old journal $13.116 → $14.859 ($1.74); $14.64 left.
+
+- `2026-11-04 18:00` **X6 AMENDMENT 7 PRE-REGISTERED: discrete fault hypotheses (`SelectionEstimator`), the fix for Amendment 6's call-1 artefact.**
+  - **Change:** per axis, H0 (no fault), H1 (bias) and H2 (inversion), weighed by marginal likelihood; a correction is sent once a hypothesis's posterior exceeds 0.8.
+  - **Chosen on S3:** p_act 0.8, bias_sd 0.25 (`configs/x6_estimator_params_select.json`). S3 clean false alarms 0; inversion caught at call 1.2.
+  - **S1 replay:** no bias sent in calls 0–6 of any inversion episode.
+  - **Code:** `make_estimator`, two new tests; full suite 247 passed.
+  - **Run:** `x6_est7_eval`, three cells, 900 episodes, on the old workspace ($14.859 committed).
+  - **Caveat (stated in the amendment):** the evaluation states are the ones whose result motivated the change, so this is a post-hoc revision.
