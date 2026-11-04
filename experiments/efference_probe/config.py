@@ -176,6 +176,15 @@ class FaultConfig:
 
 
 @dataclass
+class EstimatorConfig:
+    """X6 R1: the frozen policy wrapped by the analytic fault estimator."""
+
+    enabled: bool = False
+    # JSON of fault_estimator.EstimatorParams (configs/x6_estimator_params.json).
+    params_file: str = ""
+
+
+@dataclass
 class EfferenceConfig:
     """X6-EC: run a trained arm with its efference-copy token (ec_policy.py)."""
 
@@ -202,6 +211,7 @@ class RunConfig:
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     fault: FaultConfig = field(default_factory=FaultConfig)
     efference: EfferenceConfig = field(default_factory=EfferenceConfig)
+    estimator: EstimatorConfig = field(default_factory=EstimatorConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -224,6 +234,8 @@ class RunConfig:
             payload["fault"].pop("oracle", None)
         if not self.efference.enabled:
             payload.pop("efference", None)
+        if not self.estimator.enabled:
+            payload.pop("estimator", None)
         if self.env.init_state_offset == 0:
             payload["env"].pop("init_state_offset", None)
         if not self.capture.extra_observables:
@@ -324,10 +336,21 @@ class RunConfig:
                 raise ValueError("fault.oracle applies to mode 'sweep' only")
             if self.fault.oracle and self.efference.enabled:
                 raise ValueError("fault.oracle wraps the frozen policy, not an arm")
+            if self.estimator.enabled and (
+                self.fault.mode != "sweep"
+                or self.fault.oracle
+                or self.efference.enabled
+            ):
+                raise ValueError(
+                    "estimator wraps the frozen policy in sweep mode, without "
+                    "fault.oracle or an arm"
+                )
             for spec in self.fault.sweep:
                 parse(spec)
             if self.hijack.enabled or self.monitor.enabled:
                 raise ValueError("faults run with hijack and monitor disabled")
+        if self.estimator.enabled and not self.estimator.params_file:
+            raise ValueError("estimator.enabled needs estimator.params_file")
         if self.efference.enabled:
             if not self.efference.arm_dir:
                 raise ValueError("efference.enabled needs efference.arm_dir")
@@ -368,6 +391,7 @@ def _build(cls, data: Any):
             "MonitorConfig": MonitorConfig,
             "FaultConfig": FaultConfig,
             "EfferenceConfig": EfferenceConfig,
+            "EstimatorConfig": EstimatorConfig,
         }.get(
             field_type
             if isinstance(field_type, str)

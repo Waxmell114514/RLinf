@@ -2646,3 +2646,16 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Reading:** with the fault known, the frozen policy recovers essentially all of both faults at no nominal cost. Every fine-tuned arm's shortfall (bias 0.327, inversion ≈ 0.02, clean −0.10) is therefore one of fault identification and representation, not a limit of the policy or the tasks.
   - **Next:** step 2, the analytic estimator of b and the per-axis sign from the efference copy.
   - **Spend:** old journal $12.270 → $13.116 ($0.85); $16.38 left.
+
+- `2026-11-04 16:30` **X6 AMENDMENT 6 PRE-REGISTERED: the analytic fault estimator around the frozen VLA (R1 step 2).** User: “继续做第2步，先离线标定估计器”.
+  - **Offline calibration:**
+    - The plant fit on S3 clean calls needed a first-order term: with only the current chunk, R² is 0.86 and the lag-1 residual autocorrelation 0.78; with the previous displacement and chunk, R² 0.93 and autocorrelation about 0.1.
+    - Chosen on S3: z_sign 2.0, z_bias 2.5. Clean false alarms on S3: 0.000.
+  - **S1 open-loop replay:**
+    - clean 0/300;
+    - bias_x:0.3 detected 100%, median call 1;
+    - invert_x 97.7%, median call 5;
+    - bias_x:0.15 26%;
+    - gain never miscorrected.
+  - **Code:** `fault_estimator.py`, `x6_estimator_calibrate.py`, `estimator` config, harness wiring, `configs/x6_estimator_params.json`, `tests/test_fault_estimator.py`. Full suite: 245 passed.
+  - **Run:** `x6_est_eval` (clean, bias_x:0.3, invert_x; 900 episodes) on the old workspace, $13.116 committed. Readout R0′ / RE′ as Rule 0 / Rule E.

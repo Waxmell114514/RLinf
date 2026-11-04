@@ -396,3 +396,30 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
   - bound − F(f) on each.
 - **Gate for step 2 (the analytic estimator):** both fault cells must reach the efficacy level of Rule E (bound − F(f) ≥ 0.5 · G_f, CI_low > 0) and lie within 0.05 of F's clean. Otherwise the frozen-policy route stops here.
 - **Prior expectation `[from S3, descriptive]`:** in S3, compensated episodes succeeded 0.981 (bias) and 0.986 (inversion) against clean 0.981, on the training states.
+
+### Amendment 6 (2026-11-04, before any closed-loop run of the estimator): R1 step 2, the analytic fault estimator
+
+- **Why:** the perfect-identification bound (Amendment 5) recovers 0.987 on bias and 0.970 on inversion at no clean cost. What is left is to identify the fault from the efference copy. The user asked: “继续做第2步，先离线标定估计器”.
+- **Estimator** (`fault_estimator.py`):
+  - **Plant model:** a per-axis (x, y) first-order model, ds = k·Σexec + k_last·exec_prev,last + k_psum·Σexec_prev + α·ds_prev + c, with exec = s·sent + b.
+  - **Inference:** a two-parameter Gaussian posterior over (s, b) per axis, updated once per call.
+  - **Decisions:** s flips when its posterior is confidently negative (z_sign). b is read from the posterior conditioned on ŝ and applied when it is z_bias sds from zero.
+  - **Correction:** the chunk sent is ŝ ⊙ (a − b̂) on x and y, clipped to the bounds. Nothing is learned and the VLA is frozen.
+- **Offline calibration** (`x6_estimator_calibrate.py`; `data/x6/x6_estimator_calibration.json`):
+  - **Plant fit:** least squares on S3's clean calls (training states 30–49). R² 0.93; residual sd 0.0079 / 0.0074; lag-1 autocorrelation 0.06 / 0.12.
+  - **Selection** (S3 only): the setting with the lowest mean detection call on inversions and biases ≥ 0.25, among those with clean-episode false alarms ≤ 2%. Chosen: z_sign 2.0, z_bias 2.5, prior sign sd 0.3. Frozen in `configs/x6_estimator_params.json`.
+  - **Development history:** three model and selection revisions happened before this choice: adding the first-order terms; the sign-conditioned bias; the selection set and a scoring bug fix. The S1 replay of the earlier settings was seen, so S1 is not untouched. It was never used to pick a setting.
+  - **S1 open-loop replay of the chosen setting** (evaluation states):
+    - clean: 0/300 episodes corrected;
+    - bias_x:0.3: 100% detected, median call 1;
+    - invert_x: 97.7% detected, median call 5;
+    - gain: never miscorrected;
+    - bias_x:0.15: 26% detected.
+- **Code:** `estimator.enabled` / `estimator.params_file` (sweep mode only; not with `fault.oracle` or an arm). The applied `est_sign` / `est_bias` are logged per call. Tests: `tests/test_fault_estimator.py`; full suite 245 passed.
+- **Run:**
+  - **Config:** `x6_est_eval`, frozen GRPO-130, `x6_ec_eval.yaml` with `efference.enabled=false estimator.enabled=true` and the frozen params. Sweep [clean, bias_x:0.3, invert_x].
+  - **Size and place:** 900 episodes, `--max-s 3600`, on the old workspace under `--budget-usd 29.5`.
+- **Readout** (paired with F, B = 2,000, seed 0), the Rule 0 / Rule E criteria applied to the estimator:
+  - **R0′:** est − F on clean ≥ −0.05 with CI_low ≥ −0.10;
+  - **RE′:** est − F on each fault cell ≥ 0.5 · G_f with CI_low > 0.
+  - **Descriptive:** est − oracle bound on the fault cells, and the detection call from the logged estimates.

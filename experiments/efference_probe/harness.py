@@ -29,6 +29,7 @@ Env config choices worth knowing about:
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -37,7 +38,7 @@ import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-from . import ec_policy, observables
+from . import ec_policy, fault_estimator, observables
 from .capture import HiddenStateCapture
 from .config import RunConfig
 from .faults import draw_training_fault
@@ -173,6 +174,14 @@ class EfferenceHarness:
             )
         self.model.eval()
 
+        if self.cfg.estimator.enabled:
+            params_file = Path(self.cfg.estimator.params_file)
+            if not params_file.is_absolute():
+                params_file = REPO_ROOT / params_file
+            self.estimator_params = fault_estimator.EstimatorParams.from_dict(
+                json.loads(params_file.read_text())
+            )
+            self.log(f"fault estimator from {params_file}")
         if self.cfg.efference.enabled:
             arm_dir = Path(self.cfg.efference.arm_dir)
             if not arm_dir.is_absolute():
@@ -419,6 +428,12 @@ class EfferenceHarness:
         history = (
             ec_policy.history_for(self.arm, num_envs) if self.arm is not None else None
         )
+        # X6 R1: the analytic fault estimator around the frozen policy.
+        estimator = (
+            fault_estimator.FaultEstimator(num_envs, self.estimator_params)
+            if self.cfg.estimator.enabled
+            else None
+        )
         descriptions = obs.get("task_descriptions")
         # X1: the raw observation behind `obs`, read before it is replaced.
         extra = self.cfg.capture.extra_observables
@@ -477,6 +492,10 @@ class EfferenceHarness:
                         for i, fault in enumerate(slot_faults)
                     ]
                 )
+            estimate = None
+            if estimator is not None:
+                estimate = estimator.estimate()
+                executed = estimator.correct(executed)
             sent = executed
             if faulted:
                 executed = np.stack(
@@ -500,6 +519,8 @@ class EfferenceHarness:
 
             if history is not None and not self.cfg.efference.zero_history:
                 history.push(sent, states_before, states_after)
+            if estimator is not None:
+                estimator.update(sent, states_after - states_before)
             tokens = (
                 _as_numpy(result["forward_inputs"]["action_tokens"])
                 if drawing
@@ -633,7 +654,10 @@ class EfferenceHarness:
                     n_recoveries[episode_id] += int(recovering[slot])
                 if slot_faults[slot] is not None:
                     row["fault"] = slot_faults[slot].spec
-                if drawing or history is not None:
+                if estimate is not None:
+                    row["est_sign"] = estimate[0][slot].astype(np.float32)
+                    row["est_bias"] = estimate[1][slot].astype(np.float32)
+                if drawing or history is not None or estimate is not None:
                     row["a_sent"] = flatten(sent[slot])
                 if drawing:
                     row["a_target"] = flatten(target[slot])

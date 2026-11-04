@@ -43,6 +43,9 @@ ARRAY_COLUMNS: dict[str, tuple[str, ...]] = {
     "a_sent": ("num_action_chunks", "action_dim"),
     "a_target": ("num_action_chunks", "action_dim"),
     "action_tokens": ("n_act",),
+    # X6 R1: the fault estimator's applied sign and bias on x, y at each call.
+    "est_sign": ("estimator_axes",),
+    "est_bias": ("estimator_axes",),
 }
 
 
