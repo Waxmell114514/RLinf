@@ -2659,3 +2659,14 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - gain never miscorrected.
   - **Code:** `fault_estimator.py`, `x6_estimator_calibrate.py`, `estimator` config, harness wiring, `configs/x6_estimator_params.json`, `tests/test_fault_estimator.py`. Full suite: 245 passed.
   - **Run:** `x6_est_eval` (clean, bias_x:0.3, invert_x; 900 episodes) on the old workspace, $13.116 committed. Readout R0′ / RE′ as Rule 0 / Rule E.
+
+- `2026-11-04 17:10` **X6 AMENDMENT 6 RESULT: the analytic estimator around the frozen VLA in closed loop (`/vol/data/x6/x6_est_eval`, old workspace).** 900 episodes, 20,835 calls, rc 0.
+  - **Success:** clean 0.970; bias_x:0.3 0.757; invert_x 0.337. For reference, F gives 0.963 / 0.013 / 0.000 and the oracle bound — / 0.987 / 0.970.
+  - **R0′ (no nominal cost): passed.** est − F on clean = +0.007 [−0.020, +0.033]. Only 1 of 300 clean episodes was ever corrected, first at call 26.
+  - **RE′ on bias: passed.** est − F = +0.743 [+0.690, +0.790], against 0.475. est − oracle = −0.230 [−0.280, −0.183].
+  - **RE′ on inversion: failed.** est − F = +0.337 [+0.287, +0.390], against 0.482. est − oracle = −0.633 [−0.687, −0.577].
+  - **Diagnosis (post hoc, from the logged estimates):**
+    - **Inversion:** the x sign flips at call 2 in every episode and never reverts. But at call 1, before the sign is decided, the inversion reads as a large bias: mean |b̂_x| = 0.803 is applied for one chunk. That spurious correction, on top of the two inverted chunks, is what loses the episodes.
+    - **Bias:** b̂_x settles at 0.21–0.27, short of the true 0.3. Episodes whose mean b̂ ≥ 0.27 succeed 0.909, against 0.472 for b̂ < 0.2.
+  - **Reading:** for bias, the efference-copy estimator plus a frozen VLA passes both pre-registered gates. No fine-tune ever reached that. Inversion fails by a one-call artefact of the estimator's decision rule.
+  - **Spend:** old journal $13.116 → $14.859 ($1.74); $14.64 left.
