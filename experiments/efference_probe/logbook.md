@@ -2704,3 +2704,41 @@ produced data, so a number in `results.md` can always be traced back to a run.
   - **Code:** `faults.py` rotate; `SimilarityEstimator`, `AffineEstimator`; tests. Full suite 253 passed.
   - **Run:** `x6_est8_eval`, five cells, 1,500 episodes, $17.777 committed.
   - **Decision rule:** the framing stands only if R0′ and RE′ pass on both rotation cells.
+
+
+## 2026-11-05 — Amendment 8 closed-loop readout: frame estimator (x6_est8_eval + x6_est8_eval_b)
+
+- **Runs:**
+  - `x6_est8_eval` (old workspace) stopped at 02:36 UTC after a local container restart. Its manifest holds 880/1500 episodes (tasks 0–4 complete; task 5 partial), and only tasks 0–4 are used.
+  - `x6_est8_eval_b` re-ran tasks 5–9 in all five cells under the same config: 750 episodes, rc=0.
+  - Combined: 300 episodes per cell, paired by (task, reset state). Readout: `x6_est8_readout.py` -> `data/x6/x6_est8_readout.json`.
+- **Spend:** old-workspace x_waves journal: spent $28.465, committed $28.465, cap $29.5.
+
+**Pre-registered readout:**
+
+| cell | est8 | F | G_f | est8 − F [95% CI] | RE′ |
+|---|---|---|---|---|---|
+| clean | 0.977 | — | — | +0.013 [−0.013, +0.040] | R0′ pass |
+| bias_x:0.3 | 0.497 | 0.013 | 0.950 | +0.483 [+0.427, +0.543] | pass (needs 0.475; marginal) |
+| invert_x | 0.200 | 0.000 | 0.963 | +0.200 [+0.157, +0.247] | **fail** |
+| rotate:45 | 0.230 | 0.017 | 0.947 | +0.213 [+0.167, +0.263] | **fail** |
+| rotate:90 | 0.047 | 0.000 | 0.963 | +0.047 [+0.023, +0.073] | **fail** |
+
+- **Decision rule** ("the framing stands only if R0′ and RE′ pass on both rotation cells"): **FAILS.**
+- **Comparison:** Amendment 7's selection estimator scored bias 0.807 and inversion 0.640. The oracle scored bias 0.987 and inversion 0.970.
+
+**Diagnosis** (post-hoc, tasks 0–4; labelled exploratory):
+
+- **Identification is not the problem.** est_A departs from I in 99–100% of fault episodes. The median first call is 3 for invert_x and rotate:90, and 5 for rotate:45. The median last-estimate Frobenius error is 0.06–0.08. At call 12 the executed command tracks the policy's command (corr 0.99) in every cell.
+- **Latency:** executed ≈ commanded is reached at median call 3–4. Amendment 7 reached it at call 1.
+- **Mis-corrections after alignment come from the bias channel:**
+  - Under invert_x, rotate:45 and rotate:90, 0.83 / 0.81 / 0.98 of the late (call ≥ 6) mis-corrected calls carry a spurious bias, with |b| ≈ 0.15.
+  - Under bias_x:0.3, 0.94 of them are calls where the true bias correction had switched off (flicker).
+- **Gate sweep** (offline replay of the logged closed-loop calls; chi2_bias = 6 reproduces the logged rates exactly): the late-call bias-on rate per cell [clean, bias, invert, rot45, rot90] was:
+  - chi2_bias 6: 0.00 / 0.90 / 0.10 / 0.07 / 0.29
+  - chi2_bias 12: 0.00 / 0.61 / 0.02 / 0.00 / 0.08
+  - chi2_bias 20: 0.00 / 0.20 / 0.01 / 0.00 / 0.01
+  - chi2_bias 30: 0.00 / 0.04 / 0.00 / 0.00 / 0.00
+
+  No threshold keeps the true bias while rejecting the spurious one. Under this plant model, the bias term and frame errors are confounded. The fix is structural, not a tuning change.
+- **Reading:** a general (fault-agnostic) frame estimator identifies unseen rotations online from the efference copy plus proprioception. But this correction loop does not turn identification into task success. The paper claim "online action-space alignment of a frozen VLA" is not supported by Amendment 8 as run.
