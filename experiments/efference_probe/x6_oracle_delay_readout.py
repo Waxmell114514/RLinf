@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-
 import x6_ec_report as rep
 
 FAULTS = ("invert_x", "rotate:90")
