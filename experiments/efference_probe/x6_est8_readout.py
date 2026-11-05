@@ -20,7 +20,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 import x6_ec_report as rep
 import x6_fault_report
 
