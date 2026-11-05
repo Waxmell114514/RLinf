@@ -2775,3 +2775,43 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - The structural fix removes the Amendment 8 failure mechanism: no translation is introduced under rotation or inversion, and there is no flicker.
 - The miss is translation sensitivity and latency. A constant offset barely moves the first-order plant after call 0 (v ≈ 0.02 vs u ≈ 0.07 per unit), so it is slow to identify.
 - Per the pre-registration, no closed-loop compute is spent. The decision goes back to the user.
+
+
+## 2026-11-05 — Amendment 9 closed-loop readout (R9a x6_fault_rot60, R9b x6_est9_eval): decision rule FAILS
+
+- **Provenance:** run despite the offline no-go, by user decision (PREREG deviation note).
+- **Spend:** journal after the manual end-event fix: $21.557 -> $26.180 ($4.62 for R9a + R9b; cap $31.0).
+- **R9a:** F rotate:-60 = 0.000 (300 episodes).
+- **R9b:** 1800 episodes, params `x6_estimator_params_frame_select.json`. Readout `x6_est8_readout.py --cells ... --f-rot-run x6_fault_rot,x6_fault_rot60` -> `data/x6/x6_est9_readout.json`.
+
+**Pre-registered readout:**
+
+| cell | est9 | est9 − F [95% CI] | RE′ | est8 | est7 |
+|---|---|---|---|---|---|
+| clean | 0.963 | +0.000 [−0.030, +0.030] | R0′ pass | 0.977 | 0.977 |
+| bias_x:0.3 | 0.290 | +0.277 [+0.227, +0.327] | fail (needs 0.475) | 0.497 | 0.807 |
+| invert_x | 0.630 | +0.630 [+0.573, +0.683] | **pass** | 0.200 | 0.640 |
+| rotate:45 | 0.347 | +0.330 [+0.280, +0.383] | fail (needs 0.465) | 0.230 | — |
+| rotate:90 | 0.267 | +0.267 [+0.220, +0.317] | fail (needs 0.482) | 0.047 | — |
+| rotate:-60 (held out) | 0.297 | +0.297 [+0.247, +0.350] | fail (needs 0.482) | — | — |
+
+**Decision** (R0′ and RE′ on all three rotation cells): **FAILS**. The offline gate had also not been passed.
+
+**Diagnosis** (post-hoc):
+- **The late-call correction is clean in every frame cell.** Bad calls at ≥ 6: 0.6–1.0%, and 6.0% for rot-60. The median execution error is 0.009–0.020. Translation is on in 0.000–0.004 of late calls, and clipped steps are ≤ 2.4%. Amendment 8's spurious-translation mechanism is gone.
+- **Success is set by alignment latency.** The table gives success by the first call at which the executed command matches the policy (episodes in brackets):
+
+| cell | aligned at call 1 | call 2 | call 3 | call 4 | call 5 |
+|---|---|---|---|---|---|
+| invert_x | 0.64 (264) | 0.33 (9) | — | — | — |
+| rotate:45 | — | 0.46 (95) | 0.35 (148) | 0.17 (42) | 0.08 (12) |
+| rotate:90 | — | 0.26 (248) | 0.23 (39) | — | — |
+| rotate:-60 | — | 0.32 (94) | 0.40 (104) | 0.18 (44) | 0.10 (20) |
+
+- **Even call 0 alone is costly:** invert aligned from call 1 reaches 0.64, against the oracle's 0.97 (compensated from call 0). Each call executes an 8-step chunk open-loop, so one misaligned chunk already damages the episode.
+- **Translation is slow, as the offline O2 miss predicted:** bias_x:0.3 has translation on in 0.74 of late calls, with late bad calls 0.29. It is worse than est8 (0.497) and est7 (0.807).
+
+**Reading:**
+- The identification problem is solved: rotation is fixed in a fault-agnostic way, and inversion is matched to Amendment 7's level.
+- The binding constraint is now the open-loop cost of the chunks executed before identification, not estimation quality.
+- The next lever is how the first chunks are executed (cautious or damped probing until the class latches), not the estimator.
