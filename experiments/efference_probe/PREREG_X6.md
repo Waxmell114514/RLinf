@@ -505,3 +505,20 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
   - The x_waves journal had an open start event for `x6_est8_eval`: its local client died, so no end was written. The journal therefore kept charging it until "now".
   - A manual end event at 02:37 UTC (the app stopped at 02:36) brings the journal to $21.557. The earlier $28.465 was inflated by the same gap.
   - The intended limit is $9.5 more of spend, so the cap is **$31.0**, not $37.9. Worst-case reservations: R9a $1.92 + R9b $5.75, for a committed total of $29.2.
+
+### Amendment 10 (2026-11-05, before running): the delayed oracle, a causal curve for the cost of commitment
+
+- **Why:** the user's revised plan makes this the paper's causal spine: "延迟 oracle：第 k 个调用才开始完美补偿，k = 0–5，invert 和 rotate:90，每格 100 局". It replaces the post-hoc latency/success correlation of Amendment 9 with an intervention. Identification quality is held perfect (the exact inverse), and only the start call k varies.
+- **Code:** a sweep cell `<spec>#k` with `fault.oracle=true` sends `Fault.compensate(command)` from call k on. Calls 0..k−1 run under the raw fault. The cell label (`invert_x#2`) is the `fault` column. Tested in `tests/test_x6_ec.py::test_a_delayed_oracle_compensates_from_call_k`.
+- **Run `x6_oracle_delay`** (old workspace):
+  - `x6_ec_eval.yaml` with `efference.enabled=false`, `fault.oracle=true`, `env.init_states_per_task=10` (trials 0–9, 10 tasks, so 100 episodes per cell);
+  - sweep `[invert_x#0..#5, rotate:90#0..#5]`: 12 cells, 1,200 episodes;
+  - `--max-s 3600`, cap $31.0 (journal $26.18; reservation $3.56; expected about $2.6).
+- **Readout** (`x6_oracle_delay_readout.py`): success per cell with a bootstrap CI over (task, state) (B = 2000, seed 0), and paired differences against k = 0 of the same fault.
+  - **C1:** S(k=0) − S(k=1) has CI_low > 0 in both faults. A single uncompensated chunk costs success.
+  - **C2:** S(k=0) − S(k=5) has CI_low > 0 in both faults.
+  - **Claim:** commitment cost is supported only if C1 and C2 both hold in both faults. If C1 fails, the paper's opening number ("one chunk costs a third") is not causal and must not be used.
+- **Descriptive:**
+  - the full curve;
+  - Amendment 7 and 9 estimator points at their median alignment call (states 0–29, so not paired with this run);
+  - S(k=0) against `x6_oracle_bound` (invert 0.970, states 0–29) as a consistency check.

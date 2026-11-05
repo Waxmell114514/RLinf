@@ -16,7 +16,7 @@ and the per-episode draw of the training collection (:func:`draw_training_fault`
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -129,6 +129,23 @@ def parse(spec: str) -> Fault:
     if family == "rotate" and not 0 < abs(magnitude) <= 180:
         raise ValueError(f"rotation must be in (0, 180] degrees: {spec!r}")
     return Fault(spec, family, magnitude)
+
+
+def parse_sweep(spec: str) -> tuple[Fault, int]:
+    """A sweep cell: ``<fault spec>`` or ``<fault spec>#<k>`` (Amendment 10).
+
+    ``#k`` delays the oracle: compensation starts at call k, so calls 0..k-1
+    run under the uncompensated fault.  The returned fault keeps the full
+    cell label as its ``spec``, so every row names its cell.
+    """
+    base, hash_, start = spec.partition("#")
+    fault = parse(base)
+    if not hash_:
+        return fault, 0
+    k = int(start)
+    if k < 0:
+        raise ValueError(f"oracle start must be >= 0: {spec!r}")
+    return replace(fault, spec=spec), k
 
 
 # -- X6-EC training collection (PREREG_X6.md section 3.2) ------------------------

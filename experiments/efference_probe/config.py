@@ -319,7 +319,7 @@ class RunConfig:
         if self.env.init_state_offset < 0:
             raise ValueError("env.init_state_offset must be >= 0")
         if self.fault.enabled:
-            from .faults import parse
+            from .faults import parse_sweep
 
             if self.fault.mode not in ("sweep", "draw"):
                 raise ValueError(f"unknown fault.mode: {self.fault.mode!r}")
@@ -346,7 +346,9 @@ class RunConfig:
                     "fault.oracle or an arm"
                 )
             for spec in self.fault.sweep:
-                parse(spec)
+                parse_sweep(spec)
+                if "#" in spec and not self.fault.oracle:
+                    raise ValueError(f"{spec!r}: a delayed start needs fault.oracle")
             if self.hijack.enabled or self.monitor.enabled:
                 raise ValueError("faults run with hijack and monitor disabled")
         if self.estimator.enabled and not self.estimator.params_file:

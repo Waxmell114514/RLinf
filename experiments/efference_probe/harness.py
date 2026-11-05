@@ -41,8 +41,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from . import ec_policy, fault_estimator, observables
 from .capture import HiddenStateCapture
 from .config import RunConfig
-from .faults import draw_training_fault
-from .faults import parse as parse_fault
+from .faults import draw_training_fault, parse_sweep
 from .hijack import HIJACK, SELF, HijackScheduler, build_executed_chunk
 from .monitor import (
     RECOVERY,
@@ -298,7 +297,7 @@ class EfferenceHarness:
             elif self.cfg.fault.mode == "draw":
                 faults = [None] * self.cfg.fault.passes
             else:
-                faults = [parse_fault(spec) for spec in self.cfg.fault.sweep]
+                faults = [parse_sweep(spec)[0] for spec in self.cfg.fault.sweep]
             for task_id in self.task_ids():
                 reset_ids = self.reset_state_ids_for_task(task_id)
                 num_envs = self.cfg.env.num_envs
@@ -482,8 +481,14 @@ class EfferenceHarness:
                     ]
                 )
                 executed = np.where(compensated[:, None, None], target, executed)
-            elif self.cfg.fault.enabled and self.cfg.fault.oracle and faulted:
-                # Upper bound: perfect identification, the exact inverse sent.
+            elif (
+                self.cfg.fault.enabled
+                and self.cfg.fault.oracle
+                and faulted
+                and call_idx >= parse_sweep(self._fault.spec)[1]
+            ):
+                # Upper bound: perfect identification, the exact inverse sent
+                # (from call k for a delayed cell, Amendment 10).
                 executed = np.stack(
                     [
                         fault.compensate(commanded_env[i])

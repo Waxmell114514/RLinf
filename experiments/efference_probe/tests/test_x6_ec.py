@@ -369,6 +369,37 @@ def test_the_oracle_upper_bound_sends_the_exact_inverse(tmp_path, spec):
             )  # fmt: skip
 
 
+@pytest.mark.parametrize("start", [0, 2])
+def test_a_delayed_oracle_compensates_from_call_k(tmp_path, start):
+    """Amendment 10: ``<spec>#k`` runs calls < k under the raw fault."""
+    spec = f"invert_x#{start}"
+    harness = fake._harness(
+        tmp_path,
+        ["run_id=delayed", "hijack.enabled=false", "capture.enabled=false",
+         "fault.enabled=true", f"fault.sweep=[{spec}]", "fault.oracle=true"],
+        env=PromptEnv(),
+    )  # fmt: skip
+    harness.model, harness.capture = TokenModel(), None
+    harness._fault = faults.parse_sweep(spec)[0]
+    calls, _ = fake._collect(harness)
+    assert set(calls["fault"]) == {spec}
+    fault = faults.parse("invert_x")
+    for _, row in calls.iterrows():
+        cmd = np.asarray(row["a_cmd_env"]).reshape(CHUNKS, DIM)
+        executed = np.asarray(row["a_exec"]).reshape(CHUNKS, DIM)
+        sent = fault.compensate(cmd) if row["call_idx"] >= start else cmd
+        np.testing.assert_allclose(executed, fault.apply(sent))
+    with pytest.raises(ValueError):
+        fake._harness(
+            tmp_path / "bad",
+            ["hijack.enabled=false", "capture.enabled=false",
+             "fault.enabled=true", f"fault.sweep=[{spec}]"],
+            env=PromptEnv(),
+        )  # fmt: skip
+    assert faults.parse_sweep("rotate:90#3")[1] == 3
+    assert faults.parse_sweep("rotate:90")[0].spec == "rotate:90"
+
+
 # -- training and evaluation -----------------------------------------------------
 
 
