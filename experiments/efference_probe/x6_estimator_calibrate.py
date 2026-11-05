@@ -75,6 +75,76 @@ def truth(spec: str) -> tuple[np.ndarray, np.ndarray]:
     return sign, bias
 
 
+def truth_affine(spec: str) -> tuple[np.ndarray, np.ndarray]:
+    """(A [2, 2], b [2]) of a fault spec on the horizontal plane."""
+    fault = faults.parse(spec)
+    amap, bias = np.eye(2), np.zeros(2)
+    if fault.family == "invert_x":
+        amap[0, 0] = -1
+    elif fault.family == "invert_y":
+        amap[1, 1] = -1
+    elif fault.family in ("bias_x", "bias"):
+        bias = np.asarray(fault.bias_vector, dtype=float)
+    elif fault.family == "rotate":
+        amap = fault.rotation.astype(float)
+    elif fault.family == "gain":
+        amap = np.eye(2) * fault.magnitude
+    return amap, bias
+
+
+def score_affine(calls: pd.DataFrame, amaps: np.ndarray, biases: np.ndarray) -> dict:
+    """As :func:`score`, for an estimator that applies (A, b)."""
+    out: dict = {"clean": {}, "faulted": {}}
+    calls = calls.assign(row=np.arange(len(calls)))
+    alarms, alarm_calls, n_clean_calls = [], 0, 0
+    families: dict[str, list] = {}
+    eye = np.eye(2)
+    for _, group in calls.groupby("episode_id", sort=False):
+        rows = group["row"].to_numpy()
+        spec = group["fault"].iloc[0]
+        active = (np.abs(amaps[rows] - eye).max((1, 2)) > 0) | (biases[rows] != 0).any(
+            1
+        )
+        if spec == "clean":
+            alarms.append(bool(active.any()))
+            alarm_calls += int(active.sum())
+            n_clean_calls += len(rows)
+            continue
+        a_t, b_t = truth_affine(spec)
+        kind = faults.parse(spec).family
+        family = kind
+        if kind == "bias" and np.linalg.norm(b_t) >= 0.25:
+            family = "bias_large"
+        a_err = np.linalg.norm(amaps[rows] - a_t, axis=(1, 2))
+        b_err = np.linalg.norm(biases[rows] - b_t, axis=1)
+        good = (a_err < 0.3) & (b_err <= max(0.5 * np.linalg.norm(b_t), 0.1))
+        first = int(np.argmax(good)) if good.any() else len(rows)
+        families.setdefault(family, []).append(
+            {
+                "detect_call": first,
+                "detected": bool(good.any()),
+                "final_a_err": float(a_err[-1]),
+                "final_b_err": float(b_err[-1]),
+            }
+        )
+    out["clean"] = {
+        "episodes": len(alarms),
+        "episode_false_alarm": float(np.mean(alarms)) if alarms else None,
+        "call_false_alarm": alarm_calls / max(n_clean_calls, 1),
+    }
+    for family, items in families.items():
+        frame = pd.DataFrame(items)
+        out["faulted"][family] = {
+            "episodes": len(frame),
+            "detected": float(frame["detected"].mean()),
+            "detect_call_mean": float(frame["detect_call"].mean()),
+            "detect_call_median": float(frame["detect_call"].median()),
+            "final_a_err_mean": float(frame["final_a_err"].mean()),
+            "final_b_err_mean": float(frame["final_b_err"].mean()),
+        }
+    return out
+
+
 def score(calls: pd.DataFrame, signs: np.ndarray, biases: np.ndarray) -> dict:
     """Per-episode false alarms (clean), detection call and errors (faulted)."""
     out: dict = {"clean": {}, "faulted": {}}
@@ -151,7 +221,9 @@ def main(argv=None) -> int:
     parser.add_argument("--heldout", required=True, help="S1 sweep run dir")
     parser.add_argument("--out", required=True)
     parser.add_argument("--max-false-alarm", type=float, default=0.02)
-    parser.add_argument("--kind", choices=["joint", "select"], default="joint")
+    parser.add_argument(
+        "--kind", choices=["joint", "select", "affine", "similarity"], default="joint"
+    )
     args = parser.parse_args(argv)
 
     train = load(Path(args.train), "a_sent")
@@ -159,7 +231,34 @@ def main(argv=None) -> int:
     clean = (train["fault"] == "clean").to_numpy()
     plant = calibrate(sent[clean], prev_chunk[clean], ds_prev[clean], ds[clean])
 
-    if args.kind == "select":
+    if args.kind == "affine":
+        settings = [
+            {
+                "kind": "affine",
+                "a_sd": a_sd,
+                "chi2_act": chi2,
+                "a_sd_max": sd_max,
+                "bias_sd": 0.25,
+            }  # fmt: skip
+            for a_sd, chi2, sd_max in itertools.product(
+                [0.5, 1.0], [16.0, 25.0, 36.0, 49.0], [0.2, 0.35]
+            )
+        ]
+    elif args.kind == "similarity":
+        settings = [
+            {
+                "kind": "similarity",
+                "a_sd": 0.5,
+                "bias_sd": 0.25,
+                "prior_h": (0.0, 0.0, 0.2),
+                "p_act": 0.8,
+                "a_sd_max": 0.35,
+                "chi2_act": chi2,
+                "chi2_bias": chi2_b,
+            }  # fmt: skip
+            for chi2, chi2_b in itertools.product([9.0, 16.0, 25.0], [6.0, 9.0, 12.0])
+        ]
+    elif args.kind == "select":
         settings = [
             {"kind": "select", "p_act": p_act, "bias_sd": bias_sd}
             for p_act, bias_sd in itertools.product(
@@ -173,6 +272,7 @@ def main(argv=None) -> int:
                 [2.0, 3.0, 4.0], [2.0, 2.5, 3.0, 3.5, 4.0], [0.15, 0.3]
             )
         ]
+    scorer = score_affine if args.kind in ("affine", "similarity") else score
     candidates = []
     for setting in settings:
         params = EstimatorParams(**plant, **setting)
@@ -183,7 +283,7 @@ def main(argv=None) -> int:
             train["episode_id"].to_numpy(),
             train["call_idx"].to_numpy(),
         )
-        scored = score(train, signs, biases)
+        scored = scorer(train, signs, biases)
         candidates.append({"params": params.to_dict(), "train": scored})
         print(
             f"{setting}: "
@@ -211,7 +311,7 @@ def main(argv=None) -> int:
             held["episode_id"].to_numpy(),
             held["call_idx"].to_numpy(),
         )
-        chosen["heldout"] = score(held, signs, biases)
+        chosen["heldout"] = scorer(held, signs, biases)
     result = {
         "calibration": plant,
         "max_false_alarm": args.max_false_alarm,

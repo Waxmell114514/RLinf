@@ -655,8 +655,7 @@ class EfferenceHarness:
                 if slot_faults[slot] is not None:
                     row["fault"] = slot_faults[slot].spec
                 if estimate is not None:
-                    row["est_sign"] = estimate[0][slot].astype(np.float32)
-                    row["est_bias"] = estimate[1][slot].astype(np.float32)
+                    row.update(estimator.row_fields(estimate, slot))
                 if drawing or history is not None or estimate is not None:
                     row["a_sent"] = flatten(sent[slot])
                 if drawing:

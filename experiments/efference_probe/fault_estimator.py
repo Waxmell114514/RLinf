@@ -54,6 +54,17 @@ class EstimatorParams:
     prior_h: tuple[float, float, float] = (0.6, 0.2, 0.2)
     bias_sd: float = 0.2
     p_act: float = 0.95
+    # "affine" only (Amendment 8, AffineEstimator): the prior sd of each entry
+    # of the 2 x 2 map A (prior A = I); the posterior Mahalanobis distance
+    # from (I, 0), squared over the 6 parameters, a correction needs; the
+    # largest posterior sd of an entry of A at which it may be applied (the
+    # excitation gate); and the smallest |det A| ever inverted.
+    a_sd: float = 1.0
+    chi2_act: float = 25.0
+    a_sd_max: float = 0.3
+    min_det: float = 0.3
+    # "similarity" only: the bias part's chi2 (2 dof) before it is applied.
+    chi2_bias: float = 9.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -255,8 +266,257 @@ class SelectionEstimator:
     correct = FaultEstimator.correct
 
 
+class AffineEstimator:
+    """Amendment 8: a general affine action-space map, exec = A sent + b on x, y.
+
+    Nothing about the fault families is built in.  Per measured axis j the
+    plant model of :class:`FaultEstimator` becomes linear in the 3 parameters
+    (A_j0, A_j1, b_j), which a Bayesian regression tracks with prior
+    A = I (sd ``a_sd`` per entry), b = 0 (sd ``bias_sd``).  The correction
+    A^-1 (a - b) is sent only when (A, b) is ``chi2_act`` away from (I, 0) in
+    posterior Mahalanobis distance and every entry of A is pinned down to
+    ``a_sd_max`` (so a rotation, an inversion or a bias is acted on only once
+    the commands have excited the map enough to tell them apart).
+    """
+
+    def __init__(self, num_envs: int, params: EstimatorParams):
+        self.p = params
+        self.num_envs = num_envs
+        self.mean = np.zeros((num_envs, 2, 3))
+        self.cov = np.zeros((num_envs, 2, 3, 3))
+        self.prev_chunk = np.zeros((num_envs, params.chunk, 2))
+        self.ds_prev = np.zeros((num_envs, 2))
+        self.has_prev = np.zeros(num_envs, dtype=bool)
+        self.reset()
+
+    def prior_mean(self) -> np.ndarray:
+        return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+    def reset(self, slots=None) -> None:
+        slots = range(self.num_envs) if slots is None else slots
+        prior = np.diag([self.p.a_sd**2, self.p.a_sd**2, self.p.bias_sd**2])
+        for slot in slots:
+            self.mean[slot] = self.prior_mean()
+            self.cov[slot] = prior
+            self.prev_chunk[slot] = 0.0
+            self.ds_prev[slot] = 0.0
+            self.has_prev[slot] = False
+
+    def update(self, sent: np.ndarray, ds: np.ndarray) -> None:
+        sent = np.asarray(sent, dtype=np.float64)
+        ds = np.asarray(ds, dtype=np.float64)
+        xy = sent[:, :, list(AXES)]
+        for a, j in enumerate(AXES):
+            k, kl, kps = self.p.k[a], self.p.k_last[a], self.p.k_psum[a]
+            # The nominal displacement each input axis i would cause on axis j.
+            u = (
+                k * xy.sum(1)
+                + kl * self.prev_chunk[:, -1, :]
+                + kps * self.prev_chunk.sum(1)
+            )  # [N, 2]
+            v = self.p.chunk * k + np.where(self.has_prev, self.p.chunk * kps + kl, 0.0)
+            y = ds[:, j] - self.p.alpha[a] * self.ds_prev[:, a] - self.p.c[a]
+            r = self.p.noise_sd[a] ** 2
+            h = np.concatenate([u, v[:, None]], axis=1)  # [N, 3]
+            for slot in range(self.num_envs):
+                m, cov, hs = self.mean[slot, a], self.cov[slot, a], h[slot]
+                gain = cov @ hs / (hs @ cov @ hs + r)
+                self.mean[slot, a] = m + gain * (y[slot] - hs @ m)
+                self.cov[slot, a] = cov - np.outer(gain, hs) @ cov
+        self.prev_chunk = xy.copy()
+        self.ds_prev = ds[:, list(AXES)].copy()
+        self.has_prev[:] = True
+
+    def estimate(self) -> tuple[np.ndarray, np.ndarray]:
+        """(A [N, 2, 2], b [N, 2]) the correction applies; (I, 0) when gated."""
+        eye = np.broadcast_to(np.eye(2), (self.num_envs, 2, 2)).copy()
+        bias = np.zeros((self.num_envs, 2))
+        delta = self.mean - self.prior_mean()
+        for slot in range(self.num_envs):
+            d2 = sum(
+                delta[slot, a] @ np.linalg.solve(self.cov[slot, a], delta[slot, a])
+                for a in range(2)
+            )
+            a_sd = np.sqrt(
+                np.concatenate([np.diag(self.cov[slot, a])[:2] for a in range(2)])
+            )
+            amap = self.mean[slot, :, :2]
+            if (
+                d2 > self.p.chi2_act
+                and a_sd.max() <= self.p.a_sd_max
+                and abs(np.linalg.det(amap)) >= self.p.min_det
+            ):
+                eye[slot] = amap
+                bias[slot] = self.mean[slot, :, 2]
+        return eye, bias
+
+    def correct(self, command: np.ndarray, bound: float = 1.0) -> np.ndarray:
+        """What to send for ``command`` [N, chunk, dim]: A^-1 (a - b) on x, y."""
+        amap, bias = self.estimate()
+        out = np.array(command, dtype=np.float32, copy=True)
+        for slot in range(self.num_envs):
+            target = out[slot, :, :2].astype(np.float64) - bias[slot]
+            out[slot, :, :2] = np.linalg.solve(amap[slot], target.T).T
+        out[..., :6] = np.clip(out[..., :6], -bound, bound)
+        return out
+
+    @staticmethod
+    def row_fields(estimate, slot: int) -> dict[str, np.ndarray]:
+        return {
+            "est_A": np.asarray(estimate[0][slot], np.float32).reshape(-1),
+            "est_bias": np.asarray(estimate[1][slot], np.float32),
+        }
+
+
+class SimilarityEstimator(AffineEstimator):
+    """Amendment 8b: a planar frame misalignment, exec_xy = A sent_xy + b.
+
+    A is a scaled rotation [[p, -q], [q, p]] (proper: rotation, gain) or a
+    scaled reflection [[p, q], [q, -p]] (improper: a flipped axis convention).
+    Each handedness keeps a joint 4-parameter Gaussian posterior over
+    (p, q, b_x, b_y), fed by both axes' displacements, and its marginal
+    likelihood weighs the two (prior probability ``1 - prior_h[2]`` proper).
+    The improper map is applied once its posterior exceeds ``p_act``; the
+    proper map once it is ``chi2_act`` (4 dof) from the identity.  Both need
+    the map's entries pinned down to ``a_sd_max``.
+    """
+
+    def __init__(self, num_envs: int, params: EstimatorParams):
+        self.p = params
+        self.num_envs = num_envs
+        self.mean = np.zeros((num_envs, 2, 4))
+        self.cov = np.zeros((num_envs, 2, 4, 4))
+        self.log_post = np.zeros((num_envs, 2))
+        self.prev_chunk = np.zeros((num_envs, params.chunk, 2))
+        self.ds_prev = np.zeros((num_envs, 2))
+        self.has_prev = np.zeros(num_envs, dtype=bool)
+        self.reset()
+
+    def reset(self, slots=None) -> None:
+        slots = range(self.num_envs) if slots is None else slots
+        a2, b2 = self.p.a_sd**2, self.p.bias_sd**2
+        p_improper = self.p.prior_h[2]
+        for slot in slots:
+            self.mean[slot, 0] = [1.0, 0.0, 0.0, 0.0]
+            self.mean[slot, 1] = [0.0, 0.0, 0.0, 0.0]
+            self.cov[slot, 0] = np.diag([a2, a2, b2, b2])
+            self.cov[slot, 1] = np.diag([1.0, 1.0, b2, b2])
+            self.log_post[slot] = np.log([1.0 - p_improper, p_improper])
+            self.prev_chunk[slot] = 0.0
+            self.ds_prev[slot] = 0.0
+            self.has_prev[slot] = False
+
+    def _features(self, xy: np.ndarray):
+        """Per axis j: u[:, i] (input axis i's nominal effect on j), v, y-part."""
+        out = []
+        for a in range(2):
+            k, kl, kps = self.p.k[a], self.p.k_last[a], self.p.k_psum[a]
+            u = (
+                k * xy.sum(1)
+                + kl * self.prev_chunk[:, -1, :]
+                + kps * self.prev_chunk.sum(1)
+            )
+            v = self.p.chunk * k + np.where(self.has_prev, self.p.chunk * kps + kl, 0.0)
+            out.append((u, v))
+        return out
+
+    def update(self, sent: np.ndarray, ds: np.ndarray) -> None:
+        sent = np.asarray(sent, dtype=np.float64)
+        ds = np.asarray(ds, dtype=np.float64)
+        xy = sent[:, :, list(AXES)]
+        (ux, vx), (uy, vy) = self._features(xy)
+        y = np.stack(
+            [
+                ds[:, j] - self.p.alpha[a] * self.ds_prev[:, a] - self.p.c[a]
+                for a, j in enumerate(AXES)
+            ],
+            axis=1,
+        )
+        r = np.diag([self.p.noise_sd[0] ** 2, self.p.noise_sd[1] ** 2])
+        for slot in range(self.num_envs):
+            zeros = 0.0
+            h_plus = np.array(
+                [
+                    [ux[slot, 0], -ux[slot, 1], vx[slot], zeros],
+                    [uy[slot, 1], uy[slot, 0], zeros, vy[slot]],
+                ]
+            )
+            h_minus = np.array(
+                [
+                    [ux[slot, 0], ux[slot, 1], vx[slot], zeros],
+                    [-uy[slot, 1], uy[slot, 0], zeros, vy[slot]],
+                ]
+            )
+            for hyp, h in enumerate((h_plus, h_minus)):
+                m, cov = self.mean[slot, hyp], self.cov[slot, hyp]
+                s = h @ cov @ h.T + r
+                resid = y[slot] - h @ m
+                sign, logdet = np.linalg.slogdet(2 * np.pi * s)
+                self.log_post[slot, hyp] += -0.5 * (
+                    logdet + resid @ np.linalg.solve(s, resid)
+                )
+                gain = cov @ h.T @ np.linalg.inv(s)
+                self.mean[slot, hyp] = m + gain @ resid
+                self.cov[slot, hyp] = cov - gain @ h @ cov
+            self.log_post[slot] -= np.logaddexp.reduce(self.log_post[slot])
+        self.prev_chunk = xy.copy()
+        self.ds_prev = ds[:, list(AXES)].copy()
+        self.has_prev[:] = True
+
+    @staticmethod
+    def _map(theta: np.ndarray, improper: bool) -> np.ndarray:
+        p, q = theta[0], theta[1]
+        if improper:
+            return np.array([[p, q], [q, -p]])
+        return np.array([[p, -q], [q, p]])
+
+    def estimate(self) -> tuple[np.ndarray, np.ndarray]:
+        """(A, b) to invert.  Scale is a nuisance: the map is sent at unit scale.
+
+        Improper (a flipped axis): applied once its posterior exceeds p_act.
+        Proper: the rotation part (q) is applied once its chi2 (1 dof) passes
+        ``chi2_act``; the bias once its chi2 (2 dof) passes ``chi2_bias``.
+        Clean episodes vary mostly in scale (p), which is never acted on.
+        """
+        eye = np.broadcast_to(np.eye(2), (self.num_envs, 2, 2)).copy()
+        bias = np.zeros((self.num_envs, 2))
+        for slot in range(self.num_envs):
+            post = np.exp(self.log_post[slot])
+            improper = post[1] > self.p.p_act
+            hyp = 1 if improper else 0
+            m, cov = self.mean[slot, hyp], self.cov[slot, hyp]
+            if np.sqrt(np.diag(cov)[:2]).max() > self.p.a_sd_max:
+                continue
+            amap = self._map(m, improper=improper)
+            scale = np.sqrt(abs(np.linalg.det(amap)))
+            if scale < np.sqrt(self.p.min_det):
+                continue
+            rotate = improper or m[1] ** 2 / cov[1, 1] > self.p.chi2_act
+            if rotate:
+                eye[slot] = amap / scale
+            b = m[2:]
+            if b @ np.linalg.solve(cov[2:, 2:], b) > self.p.chi2_bias:
+                bias[slot] = b
+        return eye, bias
+
+
+def _sign_bias_fields(estimate, slot: int) -> dict[str, np.ndarray]:
+    return {
+        "est_sign": np.asarray(estimate[0][slot], np.float32),
+        "est_bias": np.asarray(estimate[1][slot], np.float32),
+    }
+
+
+FaultEstimator.row_fields = staticmethod(_sign_bias_fields)
+SelectionEstimator.row_fields = staticmethod(_sign_bias_fields)
+
+
 def make_estimator(num_envs: int, params: EstimatorParams):
     """The estimator ``params.kind`` names."""
+    if params.kind == "affine":
+        return AffineEstimator(num_envs, params)
+    if params.kind == "similarity":
+        return SimilarityEstimator(num_envs, params)
     if params.kind == "select":
         return SelectionEstimator(num_envs, params)
     if params.kind == "joint":
@@ -273,16 +533,16 @@ def replay(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Open-loop replay over logged calls (sorted by episode, call).
 
-    Returns the (sign, bias) the estimator would apply *at* each call, i.e.
-    from the calls before it in the same episode.
+    Returns what the estimator would apply *at* each call, from the calls
+    before it in the same episode: (sign, bias), or (A, bias) for "affine".
     """
-    signs = np.ones((len(sent), 2))
-    biases = np.zeros((len(sent), 2))
+    firsts, biases = [], []
     est: Optional[Any] = None
     for i in range(len(sent)):
         if call_idx[i] == 0 or est is None or episodes[i] != episodes[i - 1]:
             est = make_estimator(1, params)
-        sign, bias = est.estimate()
-        signs[i], biases[i] = sign[0], bias[0]
+        first, bias = est.estimate()
+        firsts.append(first[0])
+        biases.append(bias[0])
         est.update(sent[i : i + 1], ds[i : i + 1])
-    return signs, biases
+    return np.asarray(firsts), np.asarray(biases)

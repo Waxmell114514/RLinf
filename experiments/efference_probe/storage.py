@@ -46,6 +46,7 @@ ARRAY_COLUMNS: dict[str, tuple[str, ...]] = {
     # X6 R1: the fault estimator's applied sign and bias on x, y at each call.
     "est_sign": ("estimator_axes",),
     "est_bias": ("estimator_axes",),
+    "est_A": ("estimator_axes", "estimator_axes"),
 }
 
 

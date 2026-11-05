@@ -7,7 +7,8 @@ clipped back to the action bounds afterwards; the gripper (dim 6) is untouched.
 
 Specs: ``clean``, ``invert_x``, ``invert_y``, ``bias_x:<b>`` (b per step on x),
 ``bias:<m>@<deg>`` (a bias of norm m in the horizontal plane, at angle deg from
-+x), ``gain:<g>`` (g on translation dims 0-2).
++x), ``gain:<g>`` (g on translation dims 0-2), ``rotate:<deg>`` (the
+horizontal (x, y) command rotated by deg: a misaligned action frame).
 
 X6-EC (``PREREG_X6.md`` §3.2) adds the oracle's inverse (:meth:`Fault.compensate`)
 and the per-episode draw of the training collection (:func:`draw_training_fault`).
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-FAMILIES = ("clean", "invert_x", "invert_y", "bias_x", "bias", "gain")
+FAMILIES = ("clean", "invert_x", "invert_y", "bias_x", "bias", "gain", "rotate")
 BOUND = 1.0
 
 
@@ -51,7 +52,15 @@ class Fault:
             "bias_x": (0,),
             "bias": (0, 1),
             "gain": (0, 1, 2),
+            "rotate": (0, 1),
         }[self.family]
+
+    @property
+    def rotation(self) -> np.ndarray:
+        """The 2 x 2 rotation a rotate fault applies to (x, y)."""
+        theta = np.deg2rad(self.magnitude)
+        c, s = np.cos(theta), np.sin(theta)
+        return np.array([[c, -s], [s, c]], np.float32)
 
     def apply(self, executed: np.ndarray) -> np.ndarray:
         """The faulted copy of ``executed`` [..., chunks, dim]."""
@@ -66,6 +75,8 @@ class Fault:
             out[..., 0:2] += self.bias_vector
         elif self.family == "gain":
             out[..., 0:3] *= self.magnitude
+        elif self.family == "rotate":
+            out[..., 0:2] = out[..., 0:2] @ self.rotation.T
         out[..., :6] = np.clip(out[..., :6], -BOUND, BOUND)
         return out
 
@@ -86,6 +97,8 @@ class Fault:
             out[..., 0:2] -= self.bias_vector
         elif self.family == "gain":
             out[..., 0:3] /= self.magnitude
+        elif self.family == "rotate":
+            out[..., 0:2] = out[..., 0:2] @ self.rotation
         out[..., :6] = np.clip(out[..., :6], -BOUND, BOUND)
         return out
 
@@ -113,6 +126,8 @@ def parse(spec: str) -> Fault:
         raise ValueError(f"bias magnitude must be in (0, 1): {spec!r}")
     if family == "gain" and not 0 < magnitude <= 1.5:
         raise ValueError(f"gain must be in (0, 1.5]: {spec!r}")
+    if family == "rotate" and not 0 < abs(magnitude) <= 180:
+        raise ValueError(f"rotation must be in (0, 180] degrees: {spec!r}")
     return Fault(spec, family, magnitude)
 
 

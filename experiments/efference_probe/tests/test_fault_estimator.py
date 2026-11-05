@@ -185,3 +185,43 @@ def test_the_committed_selection_params_load_and_dispatch():
     assert isinstance(make_estimator(3, params), SelectionEstimator)
     with pytest.raises(ValueError):
         make_estimator(1, EstimatorParams(**{**params.to_dict(), "kind": "x"}))
+
+
+def _similarity_run(fault, seed=0):
+    from efference_probe.fault_estimator import EstimatorParams as P
+
+    params = P(
+        **{
+            **_params().to_dict(),
+            "kind": "similarity", "a_sd": 0.5, "bias_sd": 0.25,
+            "prior_h": (0.0, 0.0, 0.2), "p_act": 0.8, "a_sd_max": 0.35,
+            "chi2_act": 16.0, "chi2_bias": 6.0,
+        }
+    )  # fmt: skip
+    sent, ds = _episode(np.random.default_rng(seed), fault)
+    return replay(params, sent, ds, np.zeros(len(sent)), np.arange(len(sent)))
+
+
+def test_rotate_fault_and_its_inverse():
+    fault = faults.parse("rotate:90")
+    cmd = np.zeros((CHUNK, DIM), np.float32)
+    cmd[:, 0] = 0.5
+    np.testing.assert_allclose(fault.apply(cmd)[0, :2], [0.0, 0.5], atol=1e-6)
+    np.testing.assert_allclose(fault.apply(fault.compensate(cmd)), cmd, atol=1e-6)
+    with pytest.raises(ValueError):
+        faults.parse("rotate:0")
+
+
+@pytest.mark.parametrize(
+    "spec", ["clean", "rotate:45", "rotate:90", "invert_x", "bias_x:0.3"]
+)
+def test_the_frame_estimator_recovers_planar_misalignments(spec):
+    from efference_probe.x6_estimator_calibrate import truth_affine
+
+    amaps, biases = _similarity_run(faults.parse(spec))
+    a_true, b_true = truth_affine(spec)
+    if spec == "clean":
+        assert np.allclose(amaps, np.eye(2)) and (biases == 0).all()
+        return
+    np.testing.assert_allclose(amaps[-1], a_true, atol=0.15)
+    np.testing.assert_allclose(biases[-1], b_true, atol=0.08)
