@@ -82,6 +82,9 @@ def main() -> int:
     ap.add_argument("--part", action="append", required=True)
     ap.add_argument("--f-run", default="data/x6/x6_fault_oft")
     ap.add_argument("--f-rot-run", default="data/x6/x6_fault_rot")
+    ap.add_argument(
+        "--cells", default=",".join(CELLS), help="comma list; first must be clean"
+    )
     ap.add_argument("--oracle-run", default="data/x6/x6_oracle_bound")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -89,12 +92,16 @@ def main() -> int:
     rng = np.random.default_rng(rep.SEED)
     est, calls = load_parts(args.part)
     f = rep.episodes(Path(args.f_run))
-    f_rot = rep.episodes(Path(args.f_rot_run))
+    # Several F-under-rotation runs may be given, comma separated.
+    f_rot = pd.concat(
+        [rep.episodes(Path(r)) for r in args.f_rot_run.split(",")], ignore_index=True
+    )
+    cells = args.cells.split(",")
     oracle = rep.episodes(Path(args.oracle_run))
     f_clean = rep.success_by_pair(f, "clean")
 
     out: dict = {"n_episodes": {}, "success": {}, "cells": {}}
-    for cell in CELLS:
+    for cell in cells:
         s = rep.success_by_pair(est, cell)
         out["n_episodes"][cell] = int(len(s))
         out["success"][cell] = float(s.mean())
@@ -103,7 +110,7 @@ def main() -> int:
         "est_minus_F_clean": clean,
         "passed": bool(clean["point"] >= -0.05 and clean["ci_low"] >= -0.10),
     }
-    for cell in CELLS[1:]:
+    for cell in cells[1:]:
         ref = f_rot if cell.startswith("rotate:") else f
         f_cell = rep.success_by_pair(ref, cell)
         g_f = float(f_clean.mean() - f_cell.mean())
@@ -123,7 +130,7 @@ def main() -> int:
             )
         out["cells"][cell] = entry
     out["diagnostics_clean"] = diagnostics(calls, "clean")
-    rot = [out["cells"][c]["RE_p"] for c in ("rotate:45", "rotate:90")]
+    rot = [v["RE_p"] for c, v in out["cells"].items() if c.startswith("rotate:")]
     out["framing_stands"] = bool(out["R0p"]["passed"] and all(rot))
     Path(args.out).write_text(json.dumps(out, indent=2))
     print(json.dumps(out, indent=2))
