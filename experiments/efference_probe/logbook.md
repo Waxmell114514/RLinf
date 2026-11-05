@@ -2742,3 +2742,36 @@ produced data, so a number in `results.md` can always be traced back to a run.
 
   No threshold keeps the true bias while rejecting the spurious one. Under this plant model, the bias term and frame errors are confounded. The fix is structural, not a tuning change.
 - **Reading:** a general (fault-agnostic) frame estimator identifies unseen rotations online from the efference copy plus proprioception. But this correction loop does not turn identification into task success. The paper claim "online action-space alignment of a frozen VLA" is not supported by Amendment 8 as run.
+
+
+## 2026-11-05 — Amendment 9 offline go/no-go: NO-GO (narrow miss on O2 bias)
+
+**Calibration** (S3, grid as pre-registered):
+- **Chosen:** prior_frame (0.7, 0.1, 0.1, 0.1), p_act 0.8, a_sd_max 0.35. Written to `configs/x6_estimator_params_frame_select.json`.
+- **S3:** clean FA 0.005. bias_large detected 0.76 (mean call 8.37); invert_x 1.00 (call 1.30); invert_y 0.99 (call 5.04).
+- **S1:** clean FA 0.000. invert_x 1.00 (call 1.21); bias_x 0.47 (0.15 and 0.3 pooled).
+
+**Gate** (`x6_est9_offline_gate.py` -> `data/x6/x6_est9_offline_gate.json`):
+
+| Check | Result | Verdict |
+|---|---|---|
+| O1 rotate:45 (F replay) | detected 1.00, median call 3, A err 0.10 | pass |
+| O1 rotate:90 (F replay) | detected 1.00, median call 3, A err 0.11 | pass |
+| O2 clean (late-call class change) | 0.000 | pass |
+| O2 invert_x (translate-on / class change) | 0.000 / 0.002 | pass |
+| O2 rotate:45 (translate-on / class change) | 0.001 / 0.007 | pass |
+| O2 rotate:90 (translate-on / class change) | 0.000 / 0.007 | pass |
+| O2 bias_x:0.3 (translate-on / class change) | **0.870 (needs ≥ 0.90) / 0.0215 (needs ≤ 0.02)** | **fail** |
+| O3 (S1 clean FA / invert_x detected) | 0.00 / 1.00 | pass |
+
+- Amendment 8 had a late-call spurious translation rate of 0.10 / 0.07 / 0.29 under invert / rot45 / rot90.
+
+**Breakdown** (post-hoc) of the bias cell's 137 late class changes:
+- 131 are first adoptions, i.e. latency.
+- 6 are drops, i.e. flicker (0.09% of late calls).
+- 10% of bias episodes never adopt translation; the first adoption is at median call 5 (mean 6.5).
+
+**Reading:**
+- The structural fix removes the Amendment 8 failure mechanism: no translation is introduced under rotation or inversion, and there is no flicker.
+- The miss is translation sensitivity and latency. A constant offset barely moves the first-order plant after call 0 (v ≈ 0.02 vs u ≈ 0.07 per unit), so it is slow to identify.
+- Per the pre-registration, no closed-loop compute is spent. The decision goes back to the user.
