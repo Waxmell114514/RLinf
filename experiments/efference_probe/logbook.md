@@ -2815,3 +2815,30 @@ produced data, so a number in `results.md` can always be traced back to a run.
 - The identification problem is solved: rotation is fixed in a fault-agnostic way, and inversion is matched to Amendment 7's level.
 - The binding constraint is now the open-loop cost of the chunks executed before identification, not estimation quality.
 - The next lever is how the first chunks are executed (cautious or damped probing until the class latches), not the estimator.
+
+
+## 2026-11-05 — Amendment 10 delayed oracle (x6_oracle_delay): commitment cost SUPPORTED (C1 and C2 in both faults)
+
+- **Run:** 12 cells × 100 episodes (10 tasks × trials 0–9), rc=0. Journal spend $26.180 -> $28.795 ($2.62; cap $31.0).
+- **Readout:** `x6_oracle_delay_readout.py` -> `data/x6/x6_oracle_delay_readout.json`.
+
+Success when perfect compensation starts at call k (95% bootstrap CI). The drop vs k=0 is paired over the same (task, state):
+
+| k | invert_x | drop vs k=0 | rotate:90 | drop vs k=0 |
+|---|---|---|---|---|
+| 0 | 0.94 [0.89, 0.98] | — | 0.98 [0.95, 1.00] | — |
+| 1 | 0.67 [0.58, 0.76] | +0.27 [+0.17, +0.37] | 0.57 [0.47, 0.66] | +0.41 [+0.31, +0.51] |
+| 2 | 0.42 [0.33, 0.52] | +0.52 [+0.42, +0.63] | 0.24 [0.16, 0.33] | +0.74 [+0.65, +0.82] |
+| 3 | 0.27 [0.18, 0.36] | +0.67 [+0.57, +0.76] | 0.06 [0.02, 0.11] | +0.92 [+0.86, +0.97] |
+| 4 | 0.08 [0.03, 0.14] | +0.86 [+0.79, +0.93] | 0.08 [0.03, 0.14] | +0.90 [+0.84, +0.95] |
+| 5 | 0.02 [0.00, 0.05] | +0.92 [+0.87, +0.97] | 0.00 [0.00, 0.00] | +0.98 [+0.95, +1.00] |
+
+- **Rules:** C1 (drop at k=1, CI_low > 0) holds for invert_x and rotate:90. C2 (drop at k=5) holds for both. **The claim is supported.**
+- **Consistency:** invert k=0 is 0.94 here (states 0–9), against `x6_oracle_bound`'s 0.970 (states 0–29).
+- **Descriptive** (unpaired; the estimators ran on states 0–29):
+  - invert: A9 0.630 and A7 0.640, both aligned at median call 1, sit on the oracle k=1 point (0.67).
+  - rotate:90: A9 0.267, aligned at median call 2, sits on the oracle k=2 point (0.24).
+  - So the estimators are at the delayed-oracle ceiling for their alignment call. The remaining gap is commitment, not identification quality.
+- **Reading:**
+  - Each uncompensated 8-step chunk costs roughly 0.25–0.4 of success early on, and the curve reaches near 0 by k = 3–5.
+  - One mis-mapped chunk removes 27% (invert) to 41% (rotate:90) of episodes, even with perfect identification afterwards.
