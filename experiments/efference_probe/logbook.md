@@ -2695,3 +2695,12 @@ produced data, so a number in `results.md` can always be traced back to a run.
     - inversion: the first one to two inverted chunks before the flip;
     - bias: the estimate falls about 20% short.
   - **Spend:** old journal $14.859 → $16.394 ($1.54); $13.11 left.
+
+- `2026-11-05 02:30` **X6 AMENDMENT 8 PRE-REGISTERED: a general frame-misalignment estimator around the frozen VLA, with rotation as an unseen fault.** User: “先做小实验吧”.
+  - **F on rotation** (`/vol/data/x6/x6_fault_rot`, 600 episodes): rotate:45 0.017; rotate:90 0.000.
+  - **Estimator:** proper or improper scaled planar map plus offset; scale as a nuisance. Chosen on S3 (χ²_rot 16, χ²_bias 6); S3 clean false alarms 0.8%.
+  - **Offline replay on the unseen rotations:** rotate:45 99% at a mean call of 5.5; rotate:90 100% at 3.7.
+  - **Rejected offline:** the full 6-parameter affine map (unidentifiable at an acceptable false-alarm rate).
+  - **Code:** `faults.py` rotate; `SimilarityEstimator`, `AffineEstimator`; tests. Full suite 253 passed.
+  - **Run:** `x6_est8_eval`, five cells, 1,500 episodes, $17.777 committed.
+  - **Decision rule:** the framing stands only if R0′ and RE′ pass on both rotation cells.

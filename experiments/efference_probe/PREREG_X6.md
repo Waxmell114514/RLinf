@@ -446,3 +446,23 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
   - **Config:** `x6_est7_eval`, as Amendment 6 with `estimator.params_file=…/x6_estimator_params_select.json`. Sweep [clean, bias_x:0.3, invert_x], 900 episodes, `--max-s 3600`.
   - **Place and cap:** the old workspace, under `--budget-usd 29.5`.
 - **Readout:** R0′ and RE′ as in Amendment 6. Also, descriptively, against Amendment 6 and the oracle.
+
+### Amendment 8 (2026-11-05, before any closed-loop run of the frame estimator): a general frame-misalignment estimator, with rotation as an unseen fault
+
+- **Why:** Amendments 6–7 work, but their hypotheses are the injected fault families. The user's question was whether the work stands as a paper. The proposed framing is online action-space alignment of a frozen VLA under embodiment mismatch. That needs an estimator that names no fault, tested on a mismatch it never saw. The user asked for this small, decisive experiment first: “先做小实验吧”.
+- **New fault family:** `rotate:<deg>`, the horizontal command rotated by deg (a misaligned action frame). S3 holds no rotation, so it is unseen by calibration and selection.
+- **Estimator:** `kind: similarity` (`SimilarityEstimator`). The planar map is exec_xy = A·sent_xy + b, with A either a scaled rotation [[p, −q], [q, p]] (proper) or a scaled reflection [[p, q], [q, −p]] (improper, a flipped axis).
+  - **Inference:** a joint 4-parameter posterior per handedness, the two handednesses weighed by marginal likelihood (prior: improper 0.2).
+  - **Scale as a nuisance:** clean episodes vary mostly in scale (sd of p 0.185), so the map is sent at unit scale. Rotation (q, 1 dof) and bias (b, 2 dof) are gated separately by χ². A reflection is applied once its posterior exceeds 0.8.
+  - **Rejected before this one:** a full 6-parameter affine map (`kind: affine`) failed offline. Holding S3 clean false alarms ≤ 2% needed χ² ≥ 49, which detected 2% of S1's biases.
+- **Selection** (S3 only; Amendment 6's rule; `data/x6/x6_estimator_calibration_similarity.json`): chosen χ²_rot 16, χ²_bias 6 (`configs/x6_estimator_params_frame.json`).
+  - **S3:** clean false alarms 0.8%; biases ≥ 0.25 detected 97%, at a mean call of 5.3; invert_x 99% at call 3.0; invert_y 99% at call 6.1.
+  - **S1 replay:** clean 0/300; invert_x 99%, median call 3.
+- **F on rotation** (`x6_fault_rot`; the same evaluation config, 600 episodes): rotate:45 0.017; rotate:90 0.000.
+  - **Offline replay of the frozen estimator on it** (the unseen family): rotate:45 detected 99%, mean call 5.5; rotate:90 100%, mean call 3.7; final map error about 0.11.
+- **Run:**
+  - **Config:** `x6_est8_eval`, frozen GRPO-130 plus the frame estimator. Sweep [clean, bias_x:0.3, invert_x, rotate:45, rotate:90].
+  - **Size and place:** 1,500 episodes, `--max-s 4200`, on the old workspace under `--budget-usd 29.5`.
+- **Readout:**
+  - **Pre-registered:** R0′ on clean; RE′ on each fault cell, with G_f from F. The rotation cells pair with `x6_fault_rot`, the others with S1.
+  - **Decision:** the frame-alignment framing stands only if R0′ and RE′ pass on both rotation cells. The bias and inversion cells are reported alongside.
