@@ -499,3 +499,5 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
 - **Decision:** the frame-alignment framing stands only if R0′ passes and RE′ passes on all three rotation cells. rotate:-60 is the held-out test; rotate:45 and rotate:90 were seen in the Amendment 8 diagnosis.
 - **Descriptive:** est9 vs est8 and vs est7 on shared cells, and the latency and mis-correction diagnostics of Amendment 8.
 - **Not allowed:** re-tuning after the closed-loop readout.
+
+- **Deviation (2026-11-05, before any closed-loop run):** the offline gate was a no-go. The miss was O2 bias_x:0.3: translate-on 0.870 (needs ≥ 0.90) and class change 0.0215 (needs ≤ 0.02, almost all late first adoptions). Every other O check passed. The user chose to run the closed loop anyway ("选1，跑闭环吧"). R9a and R9b proceed exactly as pre-registered above, with no change to the estimator or params. The readout must state that the offline gate was not passed.
