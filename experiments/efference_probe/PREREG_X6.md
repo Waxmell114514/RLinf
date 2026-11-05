@@ -501,3 +501,7 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
 - **Not allowed:** re-tuning after the closed-loop readout.
 
 - **Deviation (2026-11-05, before any closed-loop run):** the offline gate was a no-go. The miss was O2 bias_x:0.3: translate-on 0.870 (needs ≥ 0.90) and class change 0.0215 (needs ≤ 0.02, almost all late first adoptions). Every other O check passed. The user chose to run the closed loop anyway ("选1，跑闭环吧"). R9a and R9b proceed exactly as pre-registered above, with no change to the estimator or params. The readout must state that the offline gate was not passed.
+- **Budget correction (2026-11-05, before launch):**
+  - The x_waves journal had an open start event for `x6_est8_eval`: its local client died, so no end was written. The journal therefore kept charging it until "now".
+  - A manual end event at 02:37 UTC (the app stopped at 02:36) brings the journal to $21.557. The earlier $28.465 was inflated by the same gap.
+  - The intended limit is $9.5 more of spend, so the cap is **$31.0**, not $37.9. Worst-case reservations: R9a $1.92 + R9b $5.75, for a committed total of $29.2.
