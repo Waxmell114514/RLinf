@@ -466,3 +466,36 @@ An exploratory, post-hoc diagnostic: the seed-0 arms A and B re-evaluated at T =
 - **Readout:**
   - **Pre-registered:** R0′ on clean; RE′ on each fault cell, with G_f from F. The rotation cells pair with `x6_fault_rot`, the others with S1.
   - **Decision:** the frame-alignment framing stands only if R0′ and RE′ pass on both rotation cells. The bias and inversion cells are reported alongside.
+
+
+### Amendment 9 (2026-11-05, before calibrating or running the fix): structural-class selection for the frame estimator
+
+- **Why:** Amendment 8 failed RE′ on both rotation cells (logbook, 2026-11-05). The map A was identified, but the bias channel caused the failure: a spurious translation under rotation and inversion, and a flickering one under a true bias. An offline gate sweep showed no chi2 threshold separates them. The user asked for the fix: "旧workspace还有$10，做修正实验".
+- **Estimator** (`kind: frame_select`, `FrameSelectEstimator`): the planar map exec_xy = A·sent_xy + b is one of four structural classes, each a linear-Gaussian model:
+  - none: A = I, b = 0;
+  - translate: A = I, b ~ N(0, 0.25² I);
+  - rotate: A = [[p, −q], [q, p]], b = 0, (p, q) ~ N((1, 0), 0.5²);
+  - reflect: A = [[p, q], [q, −p]], b = 0, (p, q) ~ N(0, I).
+- **Class posterior:** classes compete by marginal likelihood, so a translation cannot absorb a frame change's residual.
+- **Latching:** the applied class is adopted once its posterior exceeds p_act, and is replaced only when another class exceeds p_switch = 0.99. Its parameters keep updating.
+- **Gating:** a rotate map is applied at unit scale, and only once its q is 9 (chi2, 1 dof) from zero. Map entries must have sd ≤ a_sd_max.
+- **No fault families or angles are named.** Combined maps (rotation plus offset) are out of scope and are stated as a limitation.
+- **Calibration** (the same procedure as Amendments 6–8, S3 only, with no rotation data):
+  - grid: prior mass h per non-none class ∈ {0.02, 0.1}; p_act ∈ {0.8, 0.9, 0.95, 0.99}; a_sd_max ∈ {0.35, 0.5};
+  - selection: the lowest mean detection call over (bias_large, invert_x, invert_y), subject to S3 clean-episode FA ≤ 0.02. Output: `configs/x6_estimator_params_frame_select.json`.
+- **Offline go/no-go** (replays of logged data, no compute). All must pass before any closed-loop spend; otherwise stop and report.
+  - O1, `x6_fault_rot` (uncorrected F under rotation): detected (A error < 0.3 with b = 0) in ≥ 0.90 of episodes for rotate:45 and for rotate:90.
+  - O2, Amendment 8's closed-loop calls (`x6_est8_eval` tasks 0–4 + `x6_est8_eval_b`, replayed on a_sent):
+    - at calls ≥ 6, the translation-on rate is ≤ 0.02 in each of invert_x, rotate:45 and rotate:90;
+    - at calls ≥ 6, the translation-on rate is ≥ 0.90 in bias_x:0.3;
+    - the applied class changes on ≤ 0.02 of the calls ≥ 6 in every cell.
+  - O3, S1 held-out replay: clean FA ≤ 0.02. Invert_x is detected in ≥ 0.90 of episodes.
+  - **Caveat:** O2 uses the very data that motivated the fix, so it checks the mechanism and is not evidence of generalisation.
+- **Closed loop** (old workspace; the user reports $10 of credit left; journal cap raised to $37.9 = $28.465 journal + $9.5 stage gate):
+  - **R9a, `x6_fault_rot60`:** F (no estimator) on rotate:-60, using `x6_ec_eval.yaml` exactly as `x6_fault_rot` did: 300 episodes, `--max-s 1800`. rotate:-60 is an angle (and rotation sense) no design or calibration step has seen.
+  - **R9b, `x6_est9_eval`:** the estimator on [clean, bias_x:0.3, invert_x, rotate:45, rotate:90, rotate:-60]: 1,800 episodes, `--max-s 6000`.
+  - Expected spend is about $5, with worst-case reservations of $7.7.
+- **Rules:** R0′ (clean vs S1 F) and RE′ per fault cell as in Amendment 8, with G_f from F. The rotation cells pair with `x6_fault_rot` / `x6_fault_rot60`.
+- **Decision:** the frame-alignment framing stands only if R0′ passes and RE′ passes on all three rotation cells. rotate:-60 is the held-out test; rotate:45 and rotate:90 were seen in the Amendment 8 diagnosis.
+- **Descriptive:** est9 vs est8 and vs est7 on shared cells, and the latency and mis-correction diagnostics of Amendment 8.
+- **Not allowed:** re-tuning after the closed-loop readout.

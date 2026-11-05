@@ -225,3 +225,34 @@ def test_the_frame_estimator_recovers_planar_misalignments(spec):
         return
     np.testing.assert_allclose(amaps[-1], a_true, atol=0.15)
     np.testing.assert_allclose(biases[-1], b_true, atol=0.08)
+
+
+def _frame_select_run(fault, seed=0):
+    params = EstimatorParams(
+        **{
+            **_params().to_dict(),
+            "kind": "frame_select", "a_sd": 0.5, "bias_sd": 0.25,
+            "prior_frame": (0.7, 0.1, 0.1, 0.1), "p_act": 0.9, "p_switch": 0.99,
+            "a_sd_max": 0.35, "chi2_act": 9.0,
+        }
+    )  # fmt: skip
+    sent, ds = _episode(np.random.default_rng(seed), fault)
+    return replay(params, sent, ds, np.zeros(len(sent)), np.arange(len(sent)))
+
+
+@pytest.mark.parametrize(
+    "spec", ["clean", "rotate:45", "rotate:90", "rotate:-60", "invert_x", "bias_x:0.3"]
+)
+def test_frame_class_selection_recovers_maps_without_cross_talk(spec):
+    from efference_probe.x6_estimator_calibrate import truth_affine
+
+    amaps, biases = _frame_select_run(faults.parse(spec))
+    a_true, b_true = truth_affine(spec)
+    if spec == "clean":
+        assert np.allclose(amaps, np.eye(2)) and (biases == 0).all()
+        return
+    np.testing.assert_allclose(amaps[-1], a_true, atol=0.15)
+    np.testing.assert_allclose(biases[-1], b_true, atol=0.08)
+    if spec != "bias_x:0.3":
+        # A frame change never brings a translation along (Amendment 8's failure).
+        assert (biases == 0).all()

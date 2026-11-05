@@ -222,7 +222,9 @@ def main(argv=None) -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--max-false-alarm", type=float, default=0.02)
     parser.add_argument(
-        "--kind", choices=["joint", "select", "affine", "similarity"], default="joint"
+        "--kind",
+        choices=["joint", "select", "affine", "similarity", "frame_select"],
+        default="joint",
     )
     args = parser.parse_args(argv)
 
@@ -258,6 +260,22 @@ def main(argv=None) -> int:
             }  # fmt: skip
             for chi2, chi2_b in itertools.product([9.0, 16.0, 25.0], [6.0, 9.0, 12.0])
         ]
+    elif args.kind == "frame_select":
+        settings = [
+            {
+                "kind": "frame_select",
+                "a_sd": 0.5,
+                "bias_sd": 0.25,
+                "prior_frame": (1.0 - 3 * h, h, h, h),
+                "p_act": p_act,
+                "p_switch": 0.99,
+                "a_sd_max": sd_max,
+                "chi2_act": 9.0,
+            }  # fmt: skip
+            for h, p_act, sd_max in itertools.product(
+                [0.02, 0.1], [0.8, 0.9, 0.95, 0.99], [0.35, 0.5]
+            )
+        ]
     elif args.kind == "select":
         settings = [
             {"kind": "select", "p_act": p_act, "bias_sd": bias_sd}
@@ -272,7 +290,9 @@ def main(argv=None) -> int:
                 [2.0, 3.0, 4.0], [2.0, 2.5, 3.0, 3.5, 4.0], [0.15, 0.3]
             )
         ]
-    scorer = score_affine if args.kind in ("affine", "similarity") else score
+    scorer = (
+        score_affine if args.kind in ("affine", "similarity", "frame_select") else score
+    )
     candidates = []
     for setting in settings:
         params = EstimatorParams(**plant, **setting)

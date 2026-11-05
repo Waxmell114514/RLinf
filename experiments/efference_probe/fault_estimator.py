@@ -65,6 +65,11 @@ class EstimatorParams:
     min_det: float = 0.3
     # "similarity" only: the bias part's chi2 (2 dof) before it is applied.
     chi2_bias: float = 9.0
+    # "frame_select" only (Amendment 9, FrameSelectEstimator): prior
+    # probabilities of the classes none / translate / rotate / reflect, and the
+    # posterior another class needs to replace the latched one.
+    prior_frame: tuple[float, float, float, float] = (0.7, 0.1, 0.1, 0.1)
+    p_switch: float = 0.99
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,7 +77,16 @@ class EstimatorParams:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EstimatorParams":
         fields = dict(data)
-        for key in ("k", "k_last", "k_psum", "alpha", "c", "noise_sd", "prior_h"):
+        for key in (
+            "k",
+            "k_last",
+            "k_psum",
+            "alpha",
+            "c",
+            "noise_sd",
+            "prior_h",
+            "prior_frame",
+        ):
             if key not in fields:
                 continue
             fields[key] = tuple(float(x) for x in fields[key])
@@ -500,6 +514,134 @@ class SimilarityEstimator(AffineEstimator):
         return eye, bias
 
 
+FRAME_CLASSES = ("none", "translate", "rotate", "reflect")
+
+
+class FrameSelectEstimator(AffineEstimator):
+    """Amendment 9: which *structural class* of planar map is active.
+
+    Classes (exec_xy = A sent_xy + b): none (A = I, b = 0); translate (A = I,
+    b ~ N(0, bias_sd^2 I)); rotate (A = [[p, -q], [q, p]], b = 0, (p, q) ~
+    N((1, 0), a_sd^2)); reflect (A = [[p, q], [q, -p]], b = 0, (p, q) ~
+    N(0, I)).  Each class is a linear-Gaussian model whose marginal likelihood
+    updates its posterior (``prior_frame``), so a translation and a frame
+    change compete instead of one absorbing the other's residual (the
+    Amendment 8 failure).  Nothing names a fault family or angle.
+
+    The applied class latches per episode: it is first adopted when its
+    posterior exceeds ``p_act`` and is replaced only when another non-"none"
+    class exceeds ``p_switch``.  Its parameters keep updating.  A rotate map
+    is applied at unit scale, and only once its rotation part q is
+    ``chi2_act`` (1 dof) from zero (scale alone is a nuisance); maps also need
+    their entries' sd below ``a_sd_max``.
+    """
+
+    def __init__(self, num_envs: int, params: EstimatorParams):
+        self.p = params
+        self.num_envs = num_envs
+        n = len(FRAME_CLASSES)
+        self.mean = np.zeros((num_envs, n, 2))
+        self.cov = np.zeros((num_envs, n, 2, 2))
+        self.log_post = np.zeros((num_envs, n))
+        self.active = np.zeros(num_envs, dtype=int)
+        self.prev_chunk = np.zeros((num_envs, params.chunk, 2))
+        self.ds_prev = np.zeros((num_envs, 2))
+        self.has_prev = np.zeros(num_envs, dtype=bool)
+        self.reset()
+
+    def reset(self, slots=None) -> None:
+        slots = range(self.num_envs) if slots is None else slots
+        prior = np.log(np.asarray(self.p.prior_frame, dtype=float))
+        for slot in slots:
+            self.mean[slot] = [[0.0, 0.0], [0.0, 0.0], [1.0, 0.0], [0.0, 0.0]]
+            self.cov[slot, 0] = np.eye(2)  # unused (no parameters)
+            self.cov[slot, 1] = np.eye(2) * self.p.bias_sd**2
+            self.cov[slot, 2] = np.eye(2) * self.p.a_sd**2
+            self.cov[slot, 3] = np.eye(2)
+            self.log_post[slot] = prior
+            self.active[slot] = 0
+            self.prev_chunk[slot] = 0.0
+            self.ds_prev[slot] = 0.0
+            self.has_prev[slot] = False
+
+    _features = SimilarityEstimator._features
+
+    def update(self, sent: np.ndarray, ds: np.ndarray) -> None:
+        sent = np.asarray(sent, dtype=np.float64)
+        ds = np.asarray(ds, dtype=np.float64)
+        xy = sent[:, :, list(AXES)]
+        (ux, vx), (uy, vy) = self._features(xy)
+        y = np.stack(
+            [
+                ds[:, j] - self.p.alpha[a] * self.ds_prev[:, a] - self.p.c[a]
+                for a, j in enumerate(AXES)
+            ],
+            axis=1,
+        )
+        r = np.diag([self.p.noise_sd[0] ** 2, self.p.noise_sd[1] ** 2])
+        for slot in range(self.num_envs):
+            nominal = np.array([ux[slot, 0], uy[slot, 1]])
+            # (offset, design) per class: y = offset + H theta + noise.
+            models = (
+                (nominal, None),
+                (nominal, np.diag([vx[slot], vy[slot]])),
+                (
+                    np.zeros(2),
+                    np.array([[ux[slot, 0], -ux[slot, 1]], [uy[slot, 1], uy[slot, 0]]]),
+                ),
+                (
+                    np.zeros(2),
+                    np.array([[ux[slot, 0], ux[slot, 1]], [-uy[slot, 1], uy[slot, 0]]]),
+                ),
+            )
+            for cls, (offset, h) in enumerate(models):
+                if h is None:
+                    s, resid = r, y[slot] - offset
+                else:
+                    m, cov = self.mean[slot, cls], self.cov[slot, cls]
+                    s = h @ cov @ h.T + r
+                    resid = y[slot] - offset - h @ m
+                    gain = cov @ h.T @ np.linalg.inv(s)
+                    self.mean[slot, cls] = m + gain @ resid
+                    self.cov[slot, cls] = cov - gain @ h @ cov
+                _, logdet = np.linalg.slogdet(2 * np.pi * s)
+                self.log_post[slot, cls] += -0.5 * (
+                    logdet + resid @ np.linalg.solve(s, resid)
+                )
+            self.log_post[slot] -= np.logaddexp.reduce(self.log_post[slot])
+            post = np.exp(self.log_post[slot])
+            best = int(np.argmax(post[1:])) + 1
+            if self.active[slot] == 0:
+                if post[best] > self.p.p_act:
+                    self.active[slot] = best
+            elif best != self.active[slot] and post[best] > self.p.p_switch:
+                self.active[slot] = best
+        self.prev_chunk = xy.copy()
+        self.ds_prev = ds[:, list(AXES)].copy()
+        self.has_prev[:] = True
+
+    def estimate(self) -> tuple[np.ndarray, np.ndarray]:
+        """(A, b) of the latched class; (I, 0) while none is or it is gated."""
+        eye = np.broadcast_to(np.eye(2), (self.num_envs, 2, 2)).copy()
+        bias = np.zeros((self.num_envs, 2))
+        for slot in range(self.num_envs):
+            cls = self.active[slot]
+            m, cov = self.mean[slot, cls], self.cov[slot, cls]
+            if cls == 1:
+                bias[slot] = m
+                continue
+            if cls == 0 or np.sqrt(np.diag(cov)).max() > self.p.a_sd_max:
+                continue
+            if cls == 2 and m[1] ** 2 / cov[1, 1] <= self.p.chi2_act:
+                continue
+            amap = SimilarityEstimator._map(m, improper=cls == 3)
+            scale = np.sqrt(abs(np.linalg.det(amap)))
+            if scale < np.sqrt(self.p.min_det):
+                continue
+            eye[slot] = amap / scale
+        return eye, bias
+
+
 def _sign_bias_fields(estimate, slot: int) -> dict[str, np.ndarray]:
     return {
         "est_sign": np.asarray(estimate[0][slot], np.float32),
@@ -517,6 +659,8 @@ def make_estimator(num_envs: int, params: EstimatorParams):
         return AffineEstimator(num_envs, params)
     if params.kind == "similarity":
         return SimilarityEstimator(num_envs, params)
+    if params.kind == "frame_select":
+        return FrameSelectEstimator(num_envs, params)
     if params.kind == "select":
         return SelectionEstimator(num_envs, params)
     if params.kind == "joint":
